@@ -3,6 +3,8 @@ package app.openbill.core.model
 @JvmInline
 value class Money private constructor(val paise: Long) : Comparable<Money> {
     companion object {
+        private const val PAISE_PER_RUPEE = 100L
+
         val ZERO: Money = Money(0L)
 
         fun of(paise: Long): Money = Money(paise)
@@ -21,6 +23,9 @@ value class Money private constructor(val paise: Long) : Comparable<Money> {
     operator fun times(factor: Long): Money = Money(checkedMultiply(paise, factor))
 
     override fun compareTo(other: Money): Int = paise.compareTo(other.paise)
+
+    fun roundToRupee(mode: RoundingMode): Money =
+        Money(checkedMultiply(Rounding.divide(paise, PAISE_PER_RUPEE, mode), PAISE_PER_RUPEE))
 
     fun format(): String = formatScaledDecimal(paise, 2, trimTrailingZeros = false)
 

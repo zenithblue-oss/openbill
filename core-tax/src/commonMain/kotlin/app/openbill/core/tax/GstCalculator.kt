@@ -1,5 +1,6 @@
 package app.openbill.core.tax
 
+import app.openbill.core.model.LargestRemainder
 import app.openbill.core.model.Money
 import app.openbill.core.model.Rate
 import app.openbill.core.model.Rounding
@@ -98,7 +99,15 @@ object GstCalculator {
             Rounding.multiplyDivide(net.paise, UNITS_PER_AMOUNT, denominator, rounding),
         )
         val totalTax = net - taxable
-        val amounts = allocate(totalTax, candidates)
+        val amounts = if (candidates.isEmpty()) {
+            require(totalTax == Money.ZERO) {
+                "Cannot allocate a non-zero tax without components"
+            }
+            emptyList()
+        } else {
+            val weights = LongArray(candidates.size) { candidates[it].rate.units }
+            LargestRemainder.allocate(totalTax.paise, weights).map { Money.of(it) }
+        }
         val components = candidates.mapIndexed { index, candidate ->
             TaxComponent(candidate.kind, candidate.rate, amounts[index])
         }
@@ -125,87 +134,6 @@ object GstCalculator {
         return trace
     }
 
-    private fun allocate(totalTax: Money, candidates: List<Candidate>): List<Money> {
-        if (candidates.isEmpty()) {
-            require(totalTax == Money.ZERO) {
-                "Cannot allocate a non-zero tax without components"
-            }
-            return emptyList()
-        }
-
-        val weights = LongArray(candidates.size) { candidates[it].rate.units }
-        var weightSum = 0L
-        for (weight in weights) {
-            weightSum = checkedAdd(weightSum, weight)
-        }
-        require(weightSum > 0L) { "Cannot allocate tax without component weights" }
-
-        val shares = LongArray(candidates.size)
-        val remainders = LongArray(candidates.size)
-        var assigned = 0L
-        for (index in weights.indices) {
-            val (share, remainder) = multiplyDivideFloor(
-                value = totalTax.paise,
-                multiplier = weights[index],
-                divisor = weightSum,
-            )
-            shares[index] = share
-            remainders[index] = remainder
-            assigned = checkedAdd(assigned, share)
-        }
-
-        val leftover = totalTax.paise - assigned
-        require(leftover >= 0L && leftover < candidates.size.toLong()) {
-            "Invalid largest-remainder allocation"
-        }
-        val used = BooleanArray(candidates.size)
-        repeat(leftover.toInt()) {
-            var chosen = -1
-            for (index in candidates.indices) {
-                if (used[index]) continue
-                if (chosen == -1 || remainders[index] > remainders[chosen]) {
-                    chosen = index
-                }
-            }
-            used[chosen] = true
-            shares[chosen] = checkedAdd(shares[chosen], 1L)
-        }
-
-        return shares.map { Money.of(it) }
-    }
-
-    private fun multiplyDivideFloor(value: Long, multiplier: Long, divisor: Long): Pair<Long, Long> {
-        require(value >= 0L) { "value cannot be negative" }
-        require(multiplier >= 0L) { "multiplier cannot be negative" }
-        require(divisor > 0L) { "divisor must be positive" }
-
-        val base = checkedMultiply(value / divisor, multiplier)
-        val reduced = value % divisor
-        var quotient = 0L
-        var remainder = 0L
-        val divisorULong = divisor.toULong()
-        for (bit in 62 downTo 0) {
-            quotient = checkedMultiply(quotient, 2L)
-            val doubled = remainder.toULong() * 2UL
-            if (doubled >= divisorULong) {
-                remainder = (doubled - divisorULong).toLong()
-                quotient = checkedAdd(quotient, 1L)
-            } else {
-                remainder = doubled.toLong()
-            }
-            if ((multiplier ushr bit) and 1L != 0L) {
-                val threshold = divisor - reduced
-                if (remainder >= threshold) {
-                    remainder -= threshold
-                    quotient = checkedAdd(quotient, 1L)
-                } else {
-                    remainder += reduced
-                }
-            }
-        }
-        return checkedAdd(base, quotient) to remainder
-    }
-
     private data class Candidate(val kind: TaxKind, val rate: Rate)
 
     private fun checkedAdd(left: Long, right: Long): Long {
@@ -213,13 +141,6 @@ object GstCalculator {
         if (((left xor result) and (right xor result)) < 0L) {
             throw ArithmeticException("Long overflow")
         }
-        return result
-    }
-
-    private fun checkedMultiply(left: Long, right: Long): Long {
-        if (left == 0L || right == 0L) return 0L
-        val result = left * right
-        if (result / right != left) throw ArithmeticException("Long overflow")
         return result
     }
 }
