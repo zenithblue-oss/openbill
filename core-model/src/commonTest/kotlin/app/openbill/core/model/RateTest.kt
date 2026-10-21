@@ -7,12 +7,38 @@ import kotlin.test.assertTrue
 
 class RateTest {
     @Test
-    fun representsPercentAsBasisPoints() {
-        assertEquals(0L, Rate.ofPercent(0).basisPoints)
-        assertEquals(100L, Rate.ofPercent(1).basisPoints)
-        assertEquals(1_800L, Rate.ofPercent(18).basisPoints)
-        assertEquals(1_800L, Rate.ofPercent(18L).basisPoints)
-        assertEquals(25L, Rate.ofBasisPoints(25).basisPoints)
+    fun representsPercentInHundredthsOfABasisPoint() {
+        assertEquals(0L, Rate.ofPercent(0).units)
+        assertEquals(10_000L, Rate.ofPercent(1).units)
+        assertEquals(180_000L, Rate.ofPercent(18).units)
+        assertEquals(180_000L, Rate.ofPercent(18L).units)
+        assertEquals(2_500L, Rate.ofBasisPoints(25).units)
+    }
+
+    @Test
+    fun representsFractionalBasisPoints() {
+        assertEquals(2_500L, Rate.ofBasisPointsHundredths(2_500).units)
+        assertEquals(Rate.ofBasisPoints(25), Rate.ofBasisPointsHundredths(2_500))
+        assertEquals(1_250L, Rate.ofBasisPointsHundredths(1_250).units)
+        assertEquals(1L, Rate.ofBasisPointsHundredths(1).units)
+    }
+
+    @Test
+    fun halvesRatesExactly() {
+        assertEquals(1_250L, Rate.ofBasisPointsHundredths(2_500).half().units)
+        assertEquals(Rate.ofBasisPointsHundredths(1_250), Rate.ofBasisPointsHundredths(2_500).half())
+        assertEquals(90_000L, Rate.ofPercent(18).half().units)
+        assertEquals(0L, Rate.ofPercent(0).half().units)
+    }
+
+    @Test
+    fun rejectsOddRateHalves() {
+        assertFailsWith<IllegalArgumentException> {
+            Rate.ofBasisPointsHundredths(1).half()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            Rate.ofBasisPointsHundredths(125).half()
+        }
     }
 
     @Test
@@ -58,8 +84,8 @@ class RateTest {
     }
 
     @Test
-    fun comparesByBasisPoints() {
-        assertTrue(Rate.ofBasisPoints(1) < Rate.ofBasisPoints(2))
+    fun comparesByUnits() {
+        assertTrue(Rate.ofBasisPointsHundredths(1) < Rate.ofBasisPointsHundredths(2))
         assertEquals(0, Rate.ofPercent(5).compareTo(Rate.ofBasisPoints(500)))
     }
 
@@ -68,6 +94,7 @@ class RateTest {
         assertFailsWith<IllegalArgumentException> { Rate.ofBasisPoints(-1L) }
         assertFailsWith<IllegalArgumentException> { Rate.ofPercent(-1) }
         assertFailsWith<IllegalArgumentException> { Rate.ofPercent(-1L) }
+        assertFailsWith<IllegalArgumentException> { Rate.ofBasisPointsHundredths(-1L) }
     }
 
     @Test
@@ -81,8 +108,9 @@ class RateTest {
     @Test
     fun rejectsOverflow() {
         assertFailsWith<ArithmeticException> { Rate.ofPercent(Long.MAX_VALUE) }
+        assertFailsWith<ArithmeticException> { Rate.ofBasisPoints(Long.MAX_VALUE) }
         assertFailsWith<ArithmeticException> {
-            Rate.ofBasisPoints(Long.MAX_VALUE).applyTo(Money.of(2L), RoundingMode.HALF_UP)
+            Rate.ofBasisPointsHundredths(Long.MAX_VALUE).applyTo(Money.of(2L), RoundingMode.HALF_UP)
         }
     }
 }

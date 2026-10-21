@@ -22,6 +22,9 @@ kotlin {
         commonMain.dependencies {
             api(project(":core-model"))
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
     }
 }
 

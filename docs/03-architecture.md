@@ -127,7 +127,8 @@ or a simple CI grep for forbidden packages.
 - IDs are ULIDs stored as strings. They are sortable and safe to generate offline.
 - Money is stored as signed 64-bit paise, never floating point.
 - Quantities use a fixed decimal scale (up to four decimal places).
-- Rates are stored as basis points or a decimal string, not a binary float.
+- Rates are stored as fixed-point basis-point units, with hundredth-basis-point precision
+  where needed, not as a binary float.
 - Timestamps are UTC instants; display uses the firm's time zone.
 - Dates that represent business dates (invoice date, due date) are local dates without a
   time component.
