@@ -4,18 +4,32 @@ OpenBill is an Apache-2.0, clean-room billing, invoicing, inventory, and payment
 project for Indian MSMEs. Android is the first target, with Windows and Linux
 following from the same Kotlin codebase.
 
-This guide explains how to contribute while the project is still in its
-specification phase and after the application scaffold lands.
+This guide explains how to contribute as the application scaffold and shared
+modules evolve.
 
 ## Project status
 
-The repository is in the documentation and specification phase. It contains
-product, reverse-engineering, and engineering documents. Application code, the
-Gradle build, and the test harness have not landed yet.
+The Kotlin Multiplatform scaffold, the Android app, the desktop app, and the
+shared modules exist. The test harness and feature work are still early. The
+specifications remain authoritative for scope and behavior.
 
-Build, lint, and test commands will be added to this guide when the scaffold is
-available. Until then, documentation review and domain research are the most
-valuable contributions.
+## Build and test
+
+Prerequisites: JDK 21, Android SDK platform 36 and build-tools 36.1.0, and a
+`local.properties` file at the repository root with `sdk.dir` pointing to the
+Android SDK.
+
+Run these commands from the repository root:
+
+```bash
+./gradlew :androidApp:assembleDebug
+./gradlew :androidApp:lintDebug
+./gradlew :desktopApp:compileKotlin
+```
+
+The debug APK is written to
+`androidApp/build/outputs/apk/debug/androidApp-debug.apk`. To run the desktop
+app, use `./gradlew :desktopApp:run`.
 
 ## Ways to contribute now
 
@@ -104,7 +118,8 @@ cover the case with a table-driven test.
 ## Code style
 
 - Follow the official Kotlin coding conventions and the existing project style.
-- Formatting and lint checks will be enforced when the scaffold lands.
+- Android lint is available now via `./gradlew :androidApp:lintDebug`. Shared
+  formatting and static-analysis checks are planned under E0.2.
 - Prefer the standard library and existing dependencies.
 - Do not add a dependency without justification. Explain its purpose, license,
   size, maintenance status, and privacy or security impact in the pull request.

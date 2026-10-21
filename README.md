@@ -4,8 +4,9 @@ Open-source billing, invoicing, inventory, and payments software for Indian MSME
 
 **Android, Windows, and Linux from one Kotlin codebase.**
 
-> Status: research and specification phase. The repository currently contains product,
-> reverse-engineering, and engineering documents. Application code has not landed yet.
+> Status: Phase 1 foundation in progress. The Kotlin Multiplatform scaffold and the
+> Android and desktop application shells are in place. The specifications remain
+> authoritative for scope and behavior.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
 the source code of myBillBook or any other commercial billing product. See
@@ -154,9 +155,10 @@ that map to it. Features outside Phases 1-6 of the roadmap are after 1.0.
 | Build | Gradle with version catalogs, KSP where required |
 | CI | GitHub Actions matrix for Android, Linux desktop, Windows desktop |
 
-Exact versions will be pinned when the project scaffold lands. Android 8.0 (API 26) is the
-minimum; the project compiles and targets API 36 at the time of writing and will move to the
-latest stable target before release.
+Versions are pinned in `gradle/libs.versions.toml` (AGP 8.13.2, Kotlin 2.3.10,
+Compose Multiplatform 1.11.1). Android 8.0 (API 26) is the minimum; the project compiles
+and targets API 36 at the time of writing and will move to the latest stable target before
+release.
 
 ## Repository layout (target)
 
@@ -200,9 +202,9 @@ feature screens unless a platform-specific interaction genuinely requires a diff
 
 ## Contributing
 
-Contributions are welcome once the scaffold lands. Until then, the most useful
-contributions are review comments on the specifications, GST edge cases, print-layout
-samples that you own the rights to, and accessibility feedback.
+Contributions are welcome now, including code and specifications. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for build and test commands, clean-room rules, and
+other ways to help.
 
 Read [docs/06-clean-room-policy.md](docs/06-clean-room-policy.md) before contributing.
 Do not submit code, assets, strings, or database schemas copied from a proprietary
