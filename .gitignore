@@ -1,0 +1,81 @@
+# OpenBill repository ignore rules.
+# Do not add rules that ignore source files or Gradle wrapper files.
+
+# Gradle and Kotlin
+.gradle/
+build/
+**/build/
+.kotlin/
+.gradletasknamecache
+gradle-app.setting
+
+# Local configuration
+local.properties
+
+# IntelliJ and Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+captures/
+out/
+bin/
+
+# Android build output and native intermediates
+.externalNativeBuild/
+.cxx/
+
+# Compiled artifacts
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.dex
+*.hprof
+hs_err_pid*
+
+# Android packages: never commit APK, AAB, XAPK, DEX, or decompiled output.
+*.apk
+*.aab
+*.xapk
+*.ap_
+*.smali
+
+# Signing material and local secrets
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+signing.properties
+.env
+.env.*
+!.env.example
+
+# Logs and test output
+*.log
+test-results/
+coverage/
+*.exec
+
+# Desktop packaging output
+dist/
+installers/
+packaging/out/
+*.msi
+*.deb
+*.rpm
+*.AppImage
+*.dmg
+
+# Generated project artifacts
+*.openbill.zip
+/tmp/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor settings
+.vscode/
+.fleet/

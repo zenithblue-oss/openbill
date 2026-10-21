@@ -1,0 +1,27 @@
+OpenBill
+Copyright (c) 2026 OpenBill contributors
+
+OpenBill is an open-source billing, invoicing, inventory, and payments
+application for Indian MSMEs, targeting Android, Windows, and Linux.
+
+OpenBill is licensed under the Apache License, Version 2.0. See the LICENSE
+file in this repository for the full license text.
+
+OpenBill is an independent clean-room project. It is not affiliated with,
+endorsed by, or sponsored by myBillBook, Flobiz, or any other commercial
+billing vendor. The project is developed from public specifications, public
+standards, and original implementation work. It does not contain source code,
+assets, strings, database schemas, or other material copied from a proprietary
+application.
+
+"myBillBook", "Flobiz", and other product names are trademarks of their
+respective owners. They are used in this project only for nominative
+comparison, such as describing OpenBill as an independent alternative. Such
+use does not imply endorsement, partnership, or affiliation.
+
+Third-party dependencies are not bundled at this stage. Before any release,
+the project will list every third-party dependency, together with its license
+and required attribution, in a generated notices file or in this NOTICE. No
+third-party attribution is claimed here that has not been verified.
+
+Project repository: https://github.com/zenithblue-oss/openbill-android
