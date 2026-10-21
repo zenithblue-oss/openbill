@@ -226,6 +226,9 @@ Design notes:
 - Support regular GST dealers only in 1.0.
 - Post-1.0: reverse charge and composition-dealer support.
 
+The implemented 1.0 behavior, including its assumptions and exclusions, is documented in
+[09-tax-assumptions.md](09-tax-assumptions.md).
+
 The tax module should have a golden test suite generated from hand-calculated examples.
 Property-based tests should verify invariants such as "line totals sum to invoice total"
 and "tax is non-negative for non-negative inputs."

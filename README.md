@@ -4,9 +4,10 @@ Open-source billing, invoicing, inventory, and payments software for Indian MSME
 
 **Android, Windows, and Linux from one Kotlin codebase.**
 
-> Status: Phase 1 foundation in progress. The Kotlin Multiplatform scaffold and the
-> Android and desktop application shells are in place. The specifications remain
-> authoritative for scope and behavior.
+> Status: Phase 1 tax foundation complete. The Kotlin Multiplatform scaffold, Android
+> and desktop shells, fixed-point money types, GST engine, GSTIN validation, and
+> versioned rate schedule are in place. Database and domain work is next. The
+> specifications remain authoritative for scope and behavior.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
 the source code of myBillBook or any other commercial billing product. See
@@ -199,6 +200,7 @@ feature screens unless a platform-specific interaction genuinely requires a diff
 - [Clean-room policy](docs/06-clean-room-policy.md)
 - [Windows and Linux desktop strategy](docs/07-desktop.md)
 - [Glossary](docs/08-glossary.md)
+- [Tax assumptions](docs/09-tax-assumptions.md)
 
 ## Contributing
 
