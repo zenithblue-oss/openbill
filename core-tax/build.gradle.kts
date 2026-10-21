@@ -21,6 +21,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core-model"))
+            api(libs.kotlinx.datetime)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
