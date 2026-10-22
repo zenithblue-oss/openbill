@@ -1,3 +1,4 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -19,11 +20,44 @@ java {
 
 dependencies {
     implementation(project(":core-ui"))
+    implementation(project(":core-data"))
     implementation(compose.desktop.currentOs)
 }
 
 compose.desktop {
     application {
         mainClass = "app.openbill.desktop.MainKt"
+
+        nativeDistributions {
+            // Each format only builds on its own OS (jpackage); the host ignores others.
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.AppImage)
+            packageName = "OpenBill"
+            packageVersion = "0.1.0"
+            description = "Offline-first GST billing and accounting"
+            vendor = "OpenBill contributors"
+            copyright = "Copyright (c) OpenBill contributors"
+            licenseFile.set(rootProject.file("LICENSE"))
+
+            // Equivalent of suggestRuntimeModules for this app: SQLite/Room (java.sql),
+            // Compose/Skiko native loading (jdk.unsupported), plus logging/crypto/desktop basics.
+            modules("java.sql", "jdk.unsupported", "java.naming", "java.management", "jdk.crypto.ec")
+
+            linux {
+                iconFile.set(project.rootProject.file("branding/icons/openbill.png"))
+                shortcut = true
+                menuGroup = "Office"
+                appCategory = "Office"
+                debMaintainer = "zenithblue-oss@users.noreply.github.com"
+            }
+            windows {
+                iconFile.set(project.rootProject.file("branding/icons/openbill.ico"))
+                menu = true
+                menuGroup = "OpenBill"
+                shortcut = true
+                perUserInstall = true
+                dirChooser = true
+                upgradeUuid = "6d0b0f4e-3c1a-4f7e-9b52-8a1e47c2d5f3"
+            }
+        }
     }
 }
