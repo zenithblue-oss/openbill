@@ -18,6 +18,7 @@ rootProject.name = "openbill"
 
 include(":core-model")
 include(":core-tax")
+include(":core-database")
 include(":core-ui")
 include(":androidApp")
 include(":desktopApp")
