@@ -125,6 +125,7 @@ data class VoucherLineEntity(
     val total: Long,
     val godownId: String?,
     val batchId: String?,
+    val stockDirection: String?,
     @Embedded val sync: SyncMetadata,
 )
 

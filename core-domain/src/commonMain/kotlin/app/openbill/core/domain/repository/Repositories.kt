@@ -5,4 +5,5 @@ data class Repositories(
     val parties: PartyRepository,
     val catalog: CatalogRepository,
     val vouchers: VoucherRepository,
+    val stock: StockRepository,
 )

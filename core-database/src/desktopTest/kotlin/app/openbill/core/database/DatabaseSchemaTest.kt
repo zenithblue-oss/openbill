@@ -46,10 +46,11 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(1, OPENBILL_DATABASE_VERSION)
+        assertEquals(2, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
 
-        helper.createDatabase(1).use { connection ->
+        helper.createDatabase(2).use { connection ->
             val tables = mutableListOf<String>()
             connection.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -62,13 +63,28 @@ class DatabaseSchemaTest {
     }
 
     @Test
-    fun schemaV1MigratesAndValidatesAgainstCurrentEntities() {
+    fun schemaV1MigratesToV2AndValidatesAgainstCurrentEntities() {
         helper.createDatabase(1).close()
-        helper.runMigrationsAndValidate(1, emptyList()).use { connection ->
+        helper.runMigrationsAndValidate(
+            OPENBILL_DATABASE_VERSION,
+            DatabaseMigrations.migrationsFor(1),
+        ).use { connection ->
             connection.prepare("SELECT COUNT(*) FROM firms").use { statement ->
                 assertTrue(statement.step())
                 assertEquals(0, statement.getLong(0))
             }
+
+            var stockDirectionColumnFound = false
+            connection.prepare("PRAGMA table_info(voucher_lines)").use { statement ->
+                while (statement.step()) {
+                    if (statement.getText(1) == "stockDirection") {
+                        stockDirectionColumnFound = true
+                        assertEquals("TEXT", statement.getText(2))
+                        assertEquals(0, statement.getLong(3))
+                    }
+                }
+            }
+            assertTrue(stockDirectionColumnFound)
         }
     }
 
@@ -88,7 +104,11 @@ class DatabaseSchemaTest {
 
     @Test
     fun migrationChainHasNoGaps() {
-        assertEquals(emptyList(), DatabaseMigrations.migrationsFor(1))
+        val migrations = DatabaseMigrations.migrationsFor(1)
+        assertEquals(1, migrations.size)
+        assertEquals(1, migrations.single().startVersion)
+        assertEquals(2, migrations.single().endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(2).isEmpty())
     }
 
     @Test

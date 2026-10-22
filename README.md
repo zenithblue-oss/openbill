@@ -7,8 +7,8 @@ Open-source billing, invoicing, inventory, and payments software for Indian MSME
 > Status: Phase 2 data layer in progress. The Kotlin Multiplatform scaffold, Android
 > and desktop shells, fixed-point money types, GST engine, GSTIN validation, versioned
 > rate schedule, Room schema, DAOs, transaction runner, migration harness, repository
-> ports, in-memory fakes, Room-backed repositories, and voucher posting/cancellation
-> use cases are in place. Stock movements and payment allocation are next. The
+> ports, in-memory fakes, Room-backed repositories, voucher posting/cancellation,
+> and stock movement derivation are in place. Payment allocation is next. The
 > specifications remain authoritative for scope and behavior.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from

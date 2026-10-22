@@ -11,6 +11,7 @@ import app.openbill.core.domain.model.OpeningBalanceType
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyAddress
 import app.openbill.core.domain.model.PartyType
+import app.openbill.core.domain.model.StockDirection
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherCharge
@@ -57,10 +58,13 @@ internal fun testFirm(
 internal fun testSettings(
     firmId: String = "firm-1",
     invoicePrefix: String = "INV",
+    defaultGodownId: String? = "godown-1",
+    negativeStockAllowed: Boolean = false,
 ): FirmSettings = FirmSettings(
     firmId = firmId,
     invoicePrefix = invoicePrefix,
-    defaultGodownId = "godown-1",
+    defaultGodownId = defaultGodownId,
+    negativeStockAllowed = negativeStockAllowed,
 )
 
 internal fun testFinancialYear(
@@ -164,6 +168,8 @@ internal fun testItem(
     firmId: String = "firm-1",
     name: String = "Steel Widget",
     sku: String = "WID-001",
+    isService: Boolean = false,
+    trackInventory: Boolean = true,
 ): Item = Item(
     id = id,
     firmId = firmId,
@@ -172,14 +178,14 @@ internal fun testItem(
     categoryId = "category-1",
     unitId = "unit-1",
     hsnSac = "7326",
-    isService = false,
+    isService = isService,
     taxRate = Rate.ofPercent(18),
     cessRate = Rate.ofPercent(1),
     salePrice = Money.of(10_000L),
     purchasePrice = Money.of(8_000L),
     mrp = Money.of(12_000L),
     wholesalePrice = Money.of(9_500L),
-    trackInventory = true,
+    trackInventory = trackInventory,
     trackBatch = false,
     trackSerial = false,
     lowStockLevel = Quantity.of(5),
@@ -193,12 +199,16 @@ internal fun testLine(
     lineNumber: Int = 1,
     itemId: String? = null,
     rate: Money = Money.of(10_000L),
+    quantity: Quantity = Quantity.of(2),
+    godownId: String? = null,
+    batchId: String? = null,
+    stockDirection: StockDirection? = null,
 ): VoucherLine = VoucherLine(
     id = id,
     lineNumber = lineNumber,
     itemId = itemId,
     description = "Consulting service",
-    quantity = Quantity.of(2),
+    quantity = quantity,
     rate = rate,
     discount = Money.ZERO,
     taxRate = Rate.ofPercent(18),
@@ -206,8 +216,9 @@ internal fun testLine(
     taxable = Money.of(20_000L),
     tax = Money.of(3_800L),
     total = Money.of(23_800L),
-    godownId = null,
-    batchId = null,
+    godownId = godownId,
+    batchId = batchId,
+    stockDirection = stockDirection,
 )
 
 internal fun testCharge(

@@ -8,6 +8,7 @@ import app.openbill.core.database.ItemCategoryEntity
 import app.openbill.core.database.ItemEntity
 import app.openbill.core.database.PartyAddressEntity
 import app.openbill.core.database.PartyEntity
+import app.openbill.core.database.StockMovementEntity
 import app.openbill.core.database.SyncMetadata
 import app.openbill.core.database.UnitEntity
 import app.openbill.core.database.VoucherChargeEntity
@@ -24,6 +25,8 @@ import app.openbill.core.domain.model.OpeningBalanceType
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyAddress
 import app.openbill.core.domain.model.PartyType
+import app.openbill.core.domain.model.StockDirection
+import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherCharge
@@ -413,6 +416,9 @@ internal fun VoucherLineEntity.toDomain(): VoucherLine = VoucherLine(
     total = Money.of(total),
     godownId = godownId,
     batchId = batchId,
+    stockDirection = stockDirection?.let {
+        decodeEnum<StockDirection>(it, "stock direction")
+    },
 )
 
 internal fun VoucherLine.toEntity(
@@ -438,6 +444,7 @@ internal fun VoucherLine.toEntity(
     total = total.paise,
     godownId = godownId,
     batchId = batchId,
+    stockDirection = this.stockDirection?.name?.lowercase(),
     sync = syncFor(
         createdAt = voucher.createdAt,
         updatedAt = voucher.updatedAt,
@@ -473,3 +480,29 @@ internal fun VoucherCharge.toEntity(voucherId: String): VoucherChargeEntity =
 internal fun VoucherType.documentTypeCode(): String = name.lowercase()
 
 internal fun VoucherStatus.code(): String = name.lowercase()
+
+internal fun StockMovementEntity.toDomain(): StockMovement = StockMovement(
+    id = id,
+    firmId = firmId,
+    itemId = itemId,
+    godownId = godownId,
+    batchId = batchId,
+    voucherId = voucherId,
+    voucherLineId = voucherLineId,
+    date = LocalDate.parse(date),
+    quantity = Quantity.ofScaledUnits(quantity),
+    createdAt = createdAt.toInstant(),
+)
+
+internal fun StockMovement.toEntity(): StockMovementEntity = StockMovementEntity(
+    id = id,
+    firmId = firmId,
+    itemId = itemId,
+    godownId = godownId,
+    batchId = batchId,
+    voucherId = voucherId,
+    voucherLineId = voucherLineId,
+    date = date.toString(),
+    quantity = quantity.scaledUnits,
+    createdAt = createdAt.toEpochMillis(),
+)

@@ -26,6 +26,7 @@ data class VoucherLine(
     val total: Money = Money.ZERO,
     val godownId: String? = null,
     val batchId: String? = null,
+    val stockDirection: StockDirection? = null,
 ) {
     init {
         require(id.isNotBlank()) { "VoucherLine id cannot be blank" }

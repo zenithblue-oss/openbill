@@ -1,9 +1,19 @@
 package app.openbill.core.database
 
 import androidx.room.migration.Migration
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 
 object DatabaseMigrations {
-    val all: List<Migration> = emptyList()
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL(
+                "ALTER TABLE voucher_lines ADD COLUMN stockDirection TEXT DEFAULT NULL",
+            )
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2)
 
     fun migrationsFor(
         startVersion: Int,

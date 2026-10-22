@@ -5,11 +5,15 @@ import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.database.VoucherEntity
 import app.openbill.core.database.VoucherNumberSequenceEntity
+import app.openbill.core.domain.model.FirmSettings
+import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherNumbering
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.repository.VoucherRepository
+import app.openbill.core.domain.service.StockMovementDerivation
+import app.openbill.core.model.Quantity
 import app.openbill.core.model.Ulid
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +28,9 @@ class RoomVoucherRepository(
     private val sequences get() = database.voucherNumberSequenceDao()
     private val audits get() = database.auditDao()
     private val settings get() = database.firmSettingsDao()
+    private val items get() = database.itemDao()
+    private val stockMovements get() = database.stockMovementDao()
+    private val derivation = StockMovementDerivation()
 
     override fun observeVouchers(
         firmId: String,
@@ -104,6 +111,13 @@ class RoomVoucherRepository(
         }
         require(entity.number == null) { "Draft voucher must not have a number" }
 
+        val lines = vouchers.linesFor(voucherId)
+        val charges = vouchers.chargesFor(voucherId)
+        val voucher = entity.toDomain(lines, charges)
+        val firmSettings = settingsFor(entity.firmId)
+        val movements = derivePosted(voucher, firmSettings, at)
+        enforceStock(movements, firmSettings)
+
         val type = decodeEnum<VoucherType>(entity.type, "voucher type")
         val number = allocateNumber(entity, type, at)
         val atMillis = at.toEpochMillis()
@@ -117,8 +131,11 @@ class RoomVoucherRepository(
             ),
         )
         vouchers.update(updated)
+        if (movements.isNotEmpty()) {
+            stockMovements.insertAll(movements.map { it.toEntity() })
+        }
         audits.insert(auditEvent(updated, POSTED_ACTION, at))
-        updated.toDomain(vouchers.linesFor(updated.id), vouchers.chargesFor(updated.id))
+        updated.toDomain(lines, charges)
     }
 
     override suspend fun cancel(
@@ -133,6 +150,15 @@ class RoomVoucherRepository(
         }
         require(reason.isNotBlank()) { "Cancellation reason cannot be blank" }
 
+        val lines = vouchers.linesFor(voucherId)
+        val charges = vouchers.chargesFor(voucherId)
+        val voucher = entity.toDomain(lines, charges)
+        val firmSettings = settingsFor(entity.firmId)
+        val originalMovements = stockMovements.movementsForVoucher(voucherId)
+            .map { it.toDomain() }
+        val reversals = derivation.deriveCancellation(voucher, originalMovements, at)
+        enforceStock(reversals, firmSettings)
+
         val atMillis = at.toEpochMillis()
         val updated = entity.copy(
             status = VoucherStatus.CANCELLED.code(),
@@ -143,9 +169,54 @@ class RoomVoucherRepository(
                 revision = entity.sync.revision + 1L,
             ),
         )
+        if (reversals.isNotEmpty()) {
+            stockMovements.insertAll(reversals.map { it.toEntity() })
+        }
         vouchers.update(updated)
         audits.insert(auditEvent(updated, CANCELLED_ACTION, at))
-        updated.toDomain(vouchers.linesFor(updated.id), vouchers.chargesFor(updated.id))
+        updated.toDomain(lines, charges)
+    }
+
+    private suspend fun settingsFor(firmId: String): FirmSettings =
+        settings.findByFirm(firmId)?.toDomain() ?: FirmSettings(firmId = firmId)
+
+    private suspend fun derivePosted(
+        voucher: Voucher,
+        settings: FirmSettings,
+        at: Instant,
+    ): List<StockMovement> {
+        val itemIds = voucher.lines.mapNotNull { it.itemId }.distinct()
+        val itemsById = itemIds
+            .mapNotNull { itemId ->
+                items.findById(itemId)?.let { item -> itemId to item.toDomain() }
+            }
+            .toMap()
+        return derivation.derivePosted(voucher, itemsById, settings, at)
+    }
+
+    private suspend fun enforceStock(
+        movements: List<StockMovement>,
+        settings: FirmSettings,
+    ) {
+        if (settings.negativeStockAllowed) return
+        val balances = mutableMapOf<StockKey, Quantity>()
+        for (movement in movements) {
+            val key = StockKey(movement.firmId, movement.itemId, movement.godownId)
+            val current = balances.getOrPut(key) {
+                Quantity.ofScaledUnits(
+                    stockMovements.balanceForItemGodown(
+                        movement.firmId,
+                        movement.itemId,
+                        movement.godownId,
+                    ),
+                )
+            }
+            val next = current + movement.quantity
+            require(next >= Quantity.of(0)) {
+                "Insufficient stock for item ${movement.itemId} in godown ${movement.godownId}"
+            }
+            balances[key] = next
+        }
     }
 
     private suspend fun allocateNumber(
@@ -201,6 +272,12 @@ class RoomVoucherRepository(
             actor = null,
             createdAt = at.toEpochMilliseconds(),
         )
+
+    private data class StockKey(
+        val firmId: String,
+        val itemId: String,
+        val godownId: String,
+    )
 
     private companion object {
         const val DEFAULT_PADDING = 4

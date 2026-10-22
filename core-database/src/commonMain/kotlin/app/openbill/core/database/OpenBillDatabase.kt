@@ -19,7 +19,7 @@ import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 1
+const val OPENBILL_DATABASE_VERSION = 2
 
 @Database(
     entities = [
@@ -84,4 +84,5 @@ fun openBillDatabase(
     builder: RoomDatabase.Builder<OpenBillDatabase>,
 ): OpenBillDatabase = builder
     .setDriver(BundledSQLiteDriver())
+    .addMigrations(*DatabaseMigrations.all.toTypedArray())
     .build()

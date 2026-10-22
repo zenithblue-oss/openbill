@@ -11,4 +11,5 @@ fun OpenBillDatabase.roomRepositories(
     parties = RoomPartyRepository(this, transactions),
     catalog = RoomCatalogRepository(this, transactions),
     vouchers = RoomVoucherRepository(this, transactions),
+    stock = RoomStockRepository(this),
 )

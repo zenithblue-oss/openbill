@@ -36,3 +36,8 @@ enum class VoucherStatus {
     POSTED,
     CANCELLED,
 }
+
+enum class StockDirection {
+    INWARD,
+    OUTWARD,
+}

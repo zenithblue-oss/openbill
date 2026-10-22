@@ -290,6 +290,7 @@ internal fun sampleLine(
     rate: Long = 2_000,
     godownId: String? = Fixture.GODOWN_ID,
     batchId: String? = null,
+    stockDirection: String? = null,
 ): VoucherLineEntity = VoucherLineEntity(
     id = id,
     voucherId = voucherId,
@@ -309,6 +310,7 @@ internal fun sampleLine(
     total = quantity * rate * 118 / 100,
     godownId = godownId,
     batchId = batchId,
+    stockDirection = stockDirection,
     sync = testSync(),
 )
 
