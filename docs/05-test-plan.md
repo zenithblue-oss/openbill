@@ -2,7 +2,9 @@
 
 OpenBill handles money and stock records that small businesses rely on. Testing is
 organized around invariants, not around screens. This plan covers the shared core, Android,
-Windows, and Linux.
+Windows, Linux, and the `openbill` CLI, which ships with 1.0. Sections 13 to 15 cover the
+optional server, sync, and API ([10-server.md](10-server.md)); they are post-1.0 and must be
+green before any release that includes those features.
 
 ## 1. Test pyramid
 
@@ -12,6 +14,9 @@ Windows, and Linux.
 | Property-based | Accounting and rounding invariants | Fast | Every commit |
 | Integration | Database, transactions, migrations, search | Medium | Every commit |
 | UI component | Compose components and state holders | Medium | Every pull request |
+| CLI golden output | Command stdout, stderr, and exit codes against seeded fixtures | Medium | Every pull request, Ubuntu and Windows |
+| Sync simulation | N simulated devices against an in-memory server (post-1.0) | Medium | Every commit touching `core-sync` |
+| API contract | OpenAPI conformance and authorization matrix (post-1.0) | Medium | Every pull request touching the server |
 | End-to-end | Core workflows on device and desktop | Slow | Nightly and release |
 | Packaging | Install, launch, print, backup on clean OS | Slow | Release candidates |
 
@@ -53,6 +58,9 @@ critical paths but are too slow to cover every rule.
 - Same backup file restored on all three platforms.
 - Same invoice data produces equivalent totals and PDF content.
 - Shared database fixtures loaded on Android and desktop.
+- CLI archives on a clean Ubuntu VM and a clean Windows VM with no system Java.
+- Server (post-1.0): a Raspberry Pi 4 class arm64 host and an amd64 container, with an
+  Android, a Windows, and a Linux client paired to it.
 
 ## 3. Money and tax tests
 
@@ -350,7 +358,7 @@ Budgets:
 | Metric | Target |
 | --- | --- |
 | Android cold start | Under 2 seconds on mid-range, under 4 seconds on low-end |
-| Desktop cold start | Under 3 seconds on a 2-core VM |
+| Desktop cold start | p95 under 4 seconds on a 4-core, 8 GB, SSD machine ([07-desktop.md](07-desktop.md#12-performance-expectations)) |
 | Invoice editor keystroke to total update | Under 50 ms |
 | Search p95 | Under 100 ms at 50k invoices on Android |
 | PDF generation, one-page invoice | Under 500 ms |
@@ -362,7 +370,122 @@ Budgets:
 Use Macrobenchmark and Baseline Profiles on Android. Use JMH or simple repeatable benchmarks
 on the JVM. Store benchmark results as CI artifacts and fail on significant regressions.
 
-## 12. Release checklist
+## 12. CLI tests
+
+The CLI ([11-cli.md](11-cli.md)) is a 1.0 surface; its public contract is frozen at 1.0.
+
+- Golden-output tests run each command in-process against a seeded fixture database and
+  compare stdout, stderr, and exit code with checked-in golden files. The clock and ULID
+  generator are injected through DI, never through a public flag. Line endings are normalized
+  so Ubuntu and Windows share the same goldens.
+- Every documented exit code (0 to 10 and 130) has at least one test that triggers it.
+- `--json` output validates against the JSON Schema generated from `core-api-contract`;
+  removing or renaming a field fails the build, adding one does not.
+- Non-interactive behavior: with stdin not a terminal, a prompting command fails with exit
+  code 2 unless `--yes` is given; an idempotency key replays the first result and never
+  creates a duplicate.
+- Safety: `voucher cancel`, `voucher restore`, `backup restore`, and `import csv` honor
+  `--reason`, `--yes`, and `--dry-run`; there is no flag that bypasses a domain invariant.
+- Lock behavior: a write command fails with exit code 6 while the desktop app holds the
+  database lock; read commands and `--backup` mode still work.
+- Direct-versus-app parity: a voucher posted through the CLI and the same voucher posted
+  through the use case layer produce identical journal entries, stock movements, and audit
+  events (with the CLI recorded as source).
+- Cross-platform backup: a backup created by the CLI on Linux is verified and reported on
+  Windows, and report output is compared byte for byte; Android-created backups feed the
+  same check.
+- Large fixtures: the randomized 10,000-voucher stock test and the 50,000-invoice search
+  fixtures are generated through CLI commands.
+- Packaging: the signed CLI archives run on a clean VM with no system Java, and checksums
+  verify.
+
+## 13. Sync and conflict tests (post-1.0)
+
+Rules and the protocol are in [10-server.md](10-server.md#6-sync-protocol). The `core-sync`
+simulation suite runs an in-memory server with N simulated devices, each with a seeded random
+schedule of offline periods, and checks invariants after every run.
+
+Invariants:
+
+- All devices converge to the same projection once every outbox is drained.
+- No posted voucher is lost or altered; posted vouchers are insert-only facts.
+- Allocations never exceed payment or invoice balances on any device.
+- Server `seq` is gap-free and monotonic per firm.
+
+Fault injection: duplicate delivery, reordering across devices, dropped acknowledgements,
+partial batches, clock skew of hours in either direction, a server restore from backup (new
+epoch), a device offline for weeks, and a device that restores an old backup.
+
+Conflict cases, each with an expected outcome from the conflict table:
+
+- Concurrent cancel of one voucher; cancel racing a restore; restore of a voucher that is not
+  cancelled.
+- Two devices editing different fields of one party (merged) and the same field (last writer
+  by HLC).
+- Concurrent edits to GSTIN, state, HSN/SAC, tax rate, or cess (kept earlier value, conflict
+  record, review task, no auto-merge).
+- Master edit on one device while another posts a voucher using it (the posted snapshot is
+  unchanged).
+- Two devices allocating one payment to different invoices past its balance (later op
+  suspended, review task).
+- Negative stock after merge under each firm policy.
+- Draft edited on two devices (conflicted copy, never merged).
+- Document numbers across per-device series, block-lease exhaustion offline, and a legacy
+  collision.
+- Op group atomicity: a voucher post with its allocations is accepted or rejected as one unit.
+- Tax-engine version skew produces a review task with both traces, not a rejection.
+
+Product guarantees: every workflow still passes with no server; unpairing leaves a complete
+local database; re-pairing requires a fresh snapshot exchange; a server backup restores into a
+standalone app.
+
+## 14. API contract tests (post-1.0)
+
+- The OpenAPI 3.1 document is generated from `core-api-contract` and checked in; CI fails if
+  it changes without a reviewed diff.
+- Every endpoint is exercised from the OpenAPI document: request and response schemas, status
+  codes, and `application/problem+json` error bodies with stable `code` values.
+- Conventions: money, quantities, and rates are decimal strings and never JSON floats;
+  `Idempotency-Key` replays return the first response; stale `If-Match` returns 412; cursor
+  pagination has no offset; unknown response fields are ignored by clients.
+- Authorization matrix: every role (owner, accountant, operator, read-only, CA seat) against
+  every endpoint, plus cross-workspace access attempts, expired and revoked tokens, and
+  scopes narrower than the call.
+- Posted vouchers have no `PATCH` or `DELETE`; long-running work returns 202 with a job.
+- Repository contract tests run against the SQLite and PostgreSQL adapters.
+- Rate limits return 429 with `Retry-After` and are configurable.
+- Upgrade tests: a version N-1 data directory migrates to N after an automatic backup;
+  downgrade is refused.
+- Load: Raspberry Pi 4 class host, 5 devices, 50,000 vouchers, p95 push and pull under
+  500 ms and heap under 256 MB.
+- Remote-mode CLI goldens match direct-mode goldens.
+
+## 15. Device pairing and server security tests (post-1.0)
+
+- Pairing invitations are single-use and expire after 10 minutes; reuse and expiry are
+  rejected; invitation secrets are never logged.
+- The pairing QR carries the certificate fingerprint; a device refuses a server presenting a
+  different certificate.
+- Redeeming an invitation requires the user's password or owner approval; brute-force
+  attempts hit the rate limit and lockout.
+- Revoking a device invalidates its access and refresh tokens immediately; ops it pushes
+  afterwards are quarantined for review, not applied and not discarded.
+- A role downgrade quarantines later-applied offline ops authored before the downgrade.
+- Tokens are random, type-prefixed, stored only as hashes, and never appear in logs, audit
+  rows, or error bodies; API token scopes and expiry are enforced.
+- The server refuses a non-localhost HTTP listener unless the insecure flag is set, and warns
+  on every start when it is.
+- Cross-workspace isolation: no endpoint or sync path returns another workspace's data.
+- Malicious uploads: a snapshot or backup with a bad manifest, checksum, schema version,
+  oversized entry, path traversal, or symlink is rejected before any restore.
+- Outbound calls from integrations go only to hosts declared by the enabled provider; no
+  user-supplied URL is fetched except explicit storage targets.
+- The hash-chained server audit log detects truncation or edits (`audit verify`).
+- End-to-end encrypted workspaces: the server cannot read payloads, key rotation re-wraps
+  keys after revocation, and server-only features are unavailable.
+- Logs contain no invoice contents, party names, phone numbers, GSTINs, or tokens.
+
+## 16. Release checklist
 
 - All release-blocking tests for 1.0 pass; optional post-1.0 tests may be deferred.
 - Tax golden tests pass and rate changes are reviewed.
@@ -376,8 +499,11 @@ on the JVM. Store benchmark results as CI artifacts and fail on significant regr
 - Release artifacts signed and checksums published.
 - Release notes include schema changes, known issues, and rollback steps.
 - A pre-release backup of a real test firm is restored successfully.
+- CLI golden, JSON contract, and exit-code tests pass on Ubuntu and Windows.
+- For any release that includes sync or the server: simulation, API contract, and pairing
+  security suites pass.
 
-## 13. Test data policy
+## 17. Test data policy
 
 - Use synthetic firms, parties, and items. Never commit real customer data.
 - Generate deterministic fixtures with a seeded random generator.

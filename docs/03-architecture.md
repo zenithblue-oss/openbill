@@ -1,8 +1,9 @@
 # Architecture
 
-OpenBill is a Kotlin Multiplatform application with three product targets: Android,
-Windows, and Linux. The architecture optimizes for offline correctness, a single accounting
-core, and platform-native output.
+OpenBill is a Kotlin Multiplatform application with three app targets (Android, Windows, and
+Linux) and two JVM surfaces that reuse the same core: the `openbill` CLI and the optional,
+self-hosted OpenBill Server. The architecture optimizes for offline correctness, a single
+accounting core, and platform-native output.
 
 ## 1. Goals and constraints
 
@@ -40,6 +41,8 @@ Constraints:
 | Async | Coroutines and Flow | Structured concurrency and cancellation |
 | Serialization | kotlinx.serialization | KMP-native JSON |
 | Networking | Ktor client | KMP HTTP client for optional sync |
+| Server | Ktor server; SQLite default, PostgreSQL optional | Same Kotlin core and serialization on the JVM; see [10-server.md](10-server.md) |
+| CLI | Clikt on the JVM; GraalVM native image after a spike | Kotlin-first subcommands and test API; see [11-cli.md](11-cli.md) |
 | Preferences | DataStore KMP | Typed, asynchronous settings |
 | Background work | WorkManager on Android; coroutine scheduler on desktop | Platform-appropriate scheduling |
 | PDF | Platform renderer behind `PdfRenderer` interface | Android `PdfDocument`; desktop OpenPDF or PDFBox |
@@ -55,6 +58,10 @@ module.
 
 ## 3. Module graph
 
+The graph is logical. `app-android` is the Gradle project `:androidApp`, `app-desktop` is
+`:desktopApp`, and `shared:` is a grouping prefix only: the Gradle projects are flat (see the
+note after the rules).
+
 ```text
 app-android
   -> feature-* (Android-specific navigation and permissions)
@@ -66,7 +73,28 @@ app-desktop
   -> feature-* (desktop navigation, menus, shortcuts)
   -> core-ui
   -> shared:core-data
+  -> shared:core-sync (post-1.0)
   -> shared:platform-desktop
+
+cli                        openbill command-line client (JVM)
+  -> shared:core-domain
+  -> shared:core-data
+  -> shared:core-reporting
+  -> shared:core-printing
+  -> shared:core-api-contract
+  -> shared:core-sync (remote mode, post-1.0)
+  -> shared:platform-jvm
+
+server                     OpenBill Server (JVM, post-1.0)
+  -> shared:core-domain
+  -> shared:core-data (SQLite projections)
+  -> shared:core-reporting
+  -> shared:core-printing
+  -> shared:core-api-contract
+  -> shared:core-sync (op log apply and validation)
+  -> server-store-postgres (optional)
+  -> server-integrations (optional providers)
+  -> shared:platform-jvm
 
 shared:core-model          Pure Kotlin domain types and value objects
 shared:core-tax            GST and rounding engine
@@ -77,9 +105,12 @@ shared:core-search         Query parsing, ranking, highlights
 shared:core-reporting      Report models, CSV, GSTR-1, Tally XML
 shared:core-printing       Document models and layout contracts
 shared:core-ui             Design system, shared screens, navigation contracts
+shared:core-api-contract   Serializable DTOs, error codes, and OpenAPI source for API, CLI, sync
+shared:core-sync           Operation log, outbox, HLC, conflict rules, Ktor sync/API client
 shared:platform            expect declarations for platform services
 shared:platform-android    Android actuals
-shared:platform-desktop    JVM actuals
+shared:platform-jvm        Headless JVM actuals (paths, PDF, secure store) for CLI and server
+shared:platform-desktop    Desktop actuals (AWT/Swing dialogs, printing); builds on platform-jvm
 
 feature-onboarding
 feature-dashboard
@@ -105,6 +136,14 @@ Rules:
 - Shared UI is in `core-ui` and feature modules with `commonMain`; platform-specific UI is
   allowed only for interactions that cannot be shared.
 - A feature may expose a route contract consumed by both app shells.
+- `cli` and `server` must not depend on `core-ui`, `feature-*`, Compose, or AWT/Swing.
+- `core-api-contract` holds DTOs only: no repositories, no Room entities, no Ktor.
+- `core-sync` depends on `core-domain` and `core-api-contract`, never on `core-database`
+  directly.
+
+Gradle project names in `settings.gradle.kts` are flat (`:core-model`, `:androidApp`,
+`:desktopApp`); new modules follow the same convention (`:core-api-contract`,
+`:core-sync`, `:platform-jvm`, `:cli`, `:server`).
 
 ## 4. Source sets
 
@@ -226,7 +265,8 @@ Rules:
   posted, non-deleted vouchers. It is not a separate mutable balance table. The opening
   balance comes from the party master's signed opening balance; the closing balance is the
   opening balance plus posted movements.
-- Expense vouchers and allocation editing are deferred.
+- Expense vouchers (E8.10) and allocation editing are not yet implemented in the data layer;
+  expense vouchers are in 1.0 scope.
 
 ## 6. Tax engine
 
@@ -326,6 +366,13 @@ Sync is a post-1.0 feature. Before implementing it:
 
 Do not add sync as an afterthought. The schema should include sync metadata fields from
 day one, even if unused: `updated_at`, `deleted_at`, `revision`, `origin_device_id`.
+Document numbering should also be scoped by a number-series identifier, so per-device
+series can be introduced for sync without migrating posted documents.
+
+The sync design is an append-only, device-authored operation log relayed by the optional
+OpenBill Server. Posted vouchers are insert-only facts, so conflicts are limited to masters,
+settings, drafts, and derived checks (allocations, negative stock). Details, conflict rules,
+and milestones are in [10-server.md](10-server.md).
 
 ## 9. Search architecture
 
@@ -387,6 +434,11 @@ Define `expect` interfaces in `shared:platform`:
 | `AppPaths` | Internal and cache directories | Platform data directories |
 | `DeviceInfo` | Build and screen metrics | OS and JVM properties |
 
+CLI and server use headless JVM actuals from `shared:platform-jvm`: `AppPaths`,
+`PdfRenderer`, `SecureStore` (OS keyring where available, otherwise a mode-0600 key file),
+and `DeviceInfo`. `FilePicker`, `Printer`, `ShareService`, `AppLock`, and `Notifier` are not
+available headless; commands take explicit paths instead.
+
 Keep actual implementations small and covered by platform tests. If an abstraction needs
 more than a few methods, split it.
 
@@ -432,6 +484,8 @@ Controls:
 - Audit log for sensitive actions: delete, restore, export, backup, and configuration
   changes. Role changes are recorded once roles ship after 1.0.
 - Redacted diagnostics; never include invoice contents or party phone numbers by default.
+- Networked surfaces (server, sync, CLI remote mode) have their own threat model in
+  [10-server.md](10-server.md#13-threat-model).
 
 Encryption at rest:
 
@@ -493,12 +547,20 @@ Desktop:
 - Include an application icon, desktop entry, and license file.
 - Publish SHA-256 checksums with every release.
 
+CLI and server:
+
+- CLI: `jlink` runtime archives for Linux and Windows, optionally bundled with the desktop
+  DEB and MSI; native image only after the spike passes.
+- Server (post-1.0): fat JAR, `jlink` runtime tarballs, and a multi-arch OCI image
+  (amd64, arm64).
+
 CI pipeline:
 
 1. Static checks and formatting.
 2. Common unit tests and tax golden tests.
 3. Android debug build and unit tests.
-4. Desktop compile, JVM tests, and package smoke build (from D1).
+4. Desktop compile, JVM tests, and package smoke build (from D1), plus CLI golden-output
+   tests on Ubuntu and Windows (from C0).
 5. Database migration tests.
 6. Compose UI tests on Android emulator and desktop virtual display.
 7. Packaging jobs for MSI, DEB, and AppImage on tagged releases.
@@ -525,3 +587,14 @@ A feature is not done until:
 - Android and desktop behavior is verified, or the platform limitation is documented.
 - Performance is measured against the relevant budget.
 - User-facing documentation is updated.
+
+## 17. CLI and server
+
+- The CLI ([11-cli.md](11-cli.md)) is a thin shell over `core-domain` use cases. Direct mode
+  opens the local database under the same single-writer lock as the desktop app, or a
+  backup archive read-only. Remote mode calls the server API. Direct mode ships with 1.0.
+- The server ([10-server.md](10-server.md)) is optional and post-1.0. It runs the shared
+  core on the JVM, relays the sync operation log, enforces roles, and exposes a versioned
+  REST API described by OpenAPI. Apps never require it.
+- Both share `core-api-contract`, so `--json` CLI output, API payloads, and sync payloads
+  use one schema. Money is serialized as a decimal string, never a JSON float.

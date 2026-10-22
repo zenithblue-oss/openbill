@@ -28,7 +28,8 @@ The scope of record is [ROADMAP.md](../ROADMAP.md#release-scope-of-record): 1.0 
   Linux machine or VM.
 - CI minutes are available for Windows and Ubuntu runners.
 - No proprietary code or assets are used.
-- The first release is local-only; sync and server work are out of scope.
+- The first release is local-only; sync and server work are out of scope for 1.0 and are
+  planned as post-1.0 epics E13-E15 (section 3).
 
 ## 3. Work breakdown
 
@@ -74,6 +75,7 @@ paths.
 | E2.7 | Implement payment allocation and party ledger | E2.5, E1.1 | No overallocation; control accounts and charge-inclusive journals; payment restore covered by E2.8 |
 | E2.8 | Implement audit events and recycle bin | E2.5 | Append-only triggers; draft soft-delete/restore/purge |
 | E2.9 | Add deterministic seed data generator | E2.4 | 1k/50k/500k fixtures |
+| E2.10 | Add sync metadata and number-series-scoped numbering to the schema | E2.1, E2.5 | `updated_at`, `deleted_at`, `revision`, `origin_device_id`; series identifier on numbering; no sync code ([03](03-architecture.md#8-offline-first-and-optional-sync)) |
 
 Exit: domain tests cover posting, cancellation, stock, allocations, and audit behavior.
 
@@ -136,7 +138,7 @@ Exit: a user can create a firm, add parties and items, and search them on all pl
 | E6.9 | Thermal 58/80 mm layout | E6.6 | Test on real printers |
 | E6.10 | Invoice list, filters, and search | E3.6, E6.4 | Status and type filters |
 | E6.11 | Duplicate, cancel, and restore | E6.4, E2.8 | Audit trail |
-| E6.12 | Print preview | E6.8, E6.9 | Desktop first; batch print after 1.0 |
+| E6.12 | Print preview | E6.8, E6.9 | Desktop first; bulk print is E11.10 (1.0) |
 | E6.13 | Attachment storage and picker for party and voucher files | E5.2, E6.4 | Images/PDF; content-addressed under the data directory; included in backup; expense receipt attachments after 1.0 |
 
 Exit: an invoice can be created, posted, printed, shared, cancelled, and restored offline
@@ -197,8 +199,8 @@ Exit: month-end reports, including the expense report, reconcile and GSTR-1 expo
 
 | ID | Task | Depends on | Notes |
 | --- | --- | --- | --- |
-| E10.1 | Backup archive writer and reader | E2.2 | Manifest and checksums |
-| E10.2 | Restore flow with validation and safety copy | E10.1 | Atomic replace |
+| E10.1 | Backup archive writer and reader | E2.2 | Manifest and checksums; core pulled forward to sprint 3 for CLI C0 and the cross-platform backup CI check |
+| E10.2 | Restore flow with validation and safety copy | E10.1 | Atomic replace; core pulled forward with E10.1, UI in sprint 13 |
 | E10.3 | Scheduled local backups | E10.1 | WorkManager and desktop scheduler |
 | E10.4 | Secure storage | E4.7, E4.8 | Keystore, DPAPI, libsecret; app lock after 1.0 |
 | E10.5 | Audit log viewer and export | E2.8 | Redacted diagnostics |
@@ -212,7 +214,7 @@ Exit: backup on one platform restores on another; secure storage works; deletion
 
 | ID | Task | Depends on | Notes |
 | --- | --- | --- | --- |
-| E11.1 | Desktop navigation, menus, and command palette | E4.8, E3.8 | Shell/data milestone; no installer packaging |
+| E11.1 | Desktop navigation, menus, command palette, and single-instance lock | E4.8, E3.8 | Shell/data milestone; no installer packaging |
 | E11.2 | Desktop invoice editor and data tables | E6.1, E5.7 | Larger layouts; installer packaging starts at E11.6 |
 | E11.3 | File pickers and export locations | E11.1 | Native dialogs |
 | E11.4 | PDF generation and printing | E6.8 | CUPS and Windows spooler |
@@ -221,12 +223,53 @@ Exit: backup on one platform restores on another; secure storage works; deletion
 | E11.7 | DEB and AppImage packaging | E11.2 | Ubuntu runner |
 | E11.8 | Clean-VM smoke tests | E11.6, E11.7 | Windows 11 and Ubuntu LTS |
 | E11.9 | Signed release artifacts and checksums | E11.6, E11.7 | GitHub Releases |
+| E11.10 | Silent print, bulk print loop, bulk PDF/ZIP invoice export, export notification with show-in-folder | E11.3, E11.4 | P0; D3; progress, cancellation, per-invoice failures |
 
 Exit: installable Windows and Linux builds complete the core billing workflow.
 
-E11.1-E11.3 run in parallel at sprints 7-8. Packaging, signing, and clean-VM work
+E11.1-E11.3 run in parallel at sprints 7-8; E11.10 follows E11.4 in sprint 9. Packaging, signing, and clean-VM work
 (E11.6-E11.9) are release-phase activities at sprint 14. D1 is a shell/data milestone;
 D4 is the first installable-package milestone.
+
+### Epic E12 - Command-line interface (direct mode)
+
+| ID | Task | Depends on | Notes |
+| --- | --- | --- | --- |
+| E12.1 | `:cli` module with Clikt, `:platform-jvm` headless actuals, golden-test harness | E0.1, E2.2 | C0; no UI dependencies |
+| E12.2 | `db` and `backup` commands | E2.3, E10.1 | C0 `db` commands first; `backup` commands land with E10.1 and drive the cross-platform backup CI check |
+| E12.3 | Master, voucher, and search commands with `--json` and exit codes | E2.5, E3.6 | C1 |
+| E12.4 | Stock, payment, CSV import/export commands | E2.6, E2.7, E5.4 | C2 |
+| E12.5 | Report, GST, Tally, and audit commands; CLI archives in release packaging | E9, E11.9 | C3 |
+
+Exit: CLI golden tests pass on Ubuntu and Windows. E12 tasks ride along with the epics they
+wrap and have no dedicated sprint, except the C0 skeleton in sprint 3. Design:
+[11-cli.md](11-cli.md).
+
+### Post-1.0 epics E13-E15 - Sync, server, and CLI remote mode
+
+Not scheduled in the sprint sequence and not part of 1.0. Sized and sprinted after the 1.0
+release. Design and milestones: [10-server.md](10-server.md); roadmap Phase 7 and the server
+milestones in [ROADMAP.md](../ROADMAP.md#server-milestones). Phase 9 parity work
+(POS hardware, restaurant, payroll, CRM, BYO-provider marketing, online store, opt-in AI/OCR,
+compliance integrations) is sized after 1.0 under later epics; see the
+[parity tracker](../ROADMAP.md#parity-tracker).
+
+| ID | Task | Depends on | Notes |
+| --- | --- | --- | --- |
+| E13.1 | `:core-api-contract` DTOs, error codes, and OpenAPI source | 1.0 | Money as decimal string; shared with the CLI `--json` schema |
+| E13.2 | `:core-sync` operation log, outbox, HLC, and idempotent apply | E13.1, E2.10 | S0 |
+| E13.3 | Conflict rules and review tasks | E13.2 | Posted vouchers insert-only; no automatic merge of financial documents |
+| E13.4 | Sync simulation suite (N devices, offline, duplicates, clock skew, server restore) | E13.2 | S0 exit gate; precedes any server code |
+| E14.1 | `:server` Ktor skeleton, SQLite storage, config, health endpoints | E13.2 | S1 |
+| E14.2 | Device pairing (QR, certificate pinning) and per-device number series | E14.1 | S1 |
+| E14.3 | Snapshot bootstrap, push/pull sync, unpairing | E14.2 | S1; unpairing leaves a complete local database |
+| E14.4 | Scheduled server backups and restore epochs | E14.1, E10.1 | S1 |
+| E14.5 | Users, roles, CA seat, device management, hash-chained audit | E14.3 | S2 |
+| E14.6 | REST API v1, API tokens, rate limits, authorization matrix tests | E14.5 | S3 |
+| E14.7 | PostgreSQL adapter, end-to-end encryption, metrics, OCI image | E14.6 | S4 |
+| E14.8 | Integration plugins: SMTP, e-invoice, e-way bill, messaging, backup targets | E14.6 | S5; bring-your-own credentials |
+| E14.9 | Sync client in Android and desktop apps (pairing UI, status, review tasks) | E14.3 | Every workflow still works unpaired |
+| E15.1 | CLI remote mode, contexts, and `server` admin commands | E14.6, E12.5 | C4; same golden suite against an in-process server |
 
 ## 4. Sprint sequence
 
@@ -237,13 +280,13 @@ Two-week sprints, adjustable after the foundation.
 | 0 | E0 scaffold, CI, design tokens | Android and desktop windows open |
 | 1 | E1 money and tax, E2 schema | Golden invoice totals in tests |
 | 2 | E2 posting and stock, E3 FTS | Post an invoice and search it |
-| 3 | E4 design system and shells | Navigation on Android and desktop |
+| 3 | E4 design system and shells; E10.1-E10.2 backup core and E12.1-E12.2 CLI C0 (parallel) | Navigation on Android and desktop; CLI `backup create/verify` round trip in CI |
 | 4 | E5 parties and items | Create and search master data |
 | 5 | E6 invoice draft and editor | Create a draft invoice |
 | 6 | E6 posting, PDF, share | Issue and share an invoice |
 | 7 | E6 list, filters, cancel, restore; E11.1 desktop shell (parallel) | Full invoice lifecycle; desktop shell with navigation |
 | 8 | E7 inventory core; E11.2 desktop editor and E11.3 file pickers (parallel) | Stock ledger and adjustments; desktop invoice editing and native dialogs |
-| 9 | E7 batch, serial, labels; E11.4-E11.5 desktop printing and portable mode (parallel) | Batch/serial invoice and label print; desktop print and portable data |
+| 9 | E7 batch, serial, labels; E11.4-E11.5 and E11.10 desktop printing, silent/bulk print and export, portable mode (parallel) | Batch/serial invoice and label print; desktop print, bulk print/export, and portable data |
 | 10 | E8 payments, ledger, and expense vouchers | Record payment and expense, and view ledger |
 | 11 | E8 aging, reminders, reconciliation | Receivables workflow |
 | 12 | E9 reports and GST | Month-end reports, expense report, and GSTR-1 |
@@ -304,6 +347,8 @@ A ticket is ready when:
 | UI gate | Empty, loading, error, and accessibility states present |
 | Platform gate | Android and desktop builds install and launch |
 | Security gate | No secrets, no cleartext, no unnecessary permissions |
+| CLI gate | Golden-output, JSON contract, and exit-code tests pass on Ubuntu and Windows |
+| Sync gate (post-1.0) | Simulation suite and API contract tests green before any release that includes sync |
 | Release gate | Signed artifacts, checksums, release notes, rollback plan |
 
 ## 9. Cut list if time is short
@@ -316,10 +361,9 @@ Cut in this order:
 4. Desktop multi-window.
 5. Automated bank feeds.
 6. AI OCR and assisted data entry.
-7. Desktop batch printing.
-8. Additional invoice theme packs.
+7. Additional invoice theme packs.
 
-Do not cut any P0 item from the scope of record. That includes Tally export, batch and serial
+Do not cut any P0 item from the scope of record. That includes silent and bulk print, bulk PDF/ZIP export, Tally export, batch and serial
 tracking, multiple godowns, low-stock alerts, barcode labels, UPI QR, bank CSV import and
 reconciliation, and A5 output.
 

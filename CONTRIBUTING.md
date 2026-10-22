@@ -31,6 +31,33 @@ The debug APK is written to
 `androidApp/build/outputs/apk/debug/androidApp-debug.apk`. To run the desktop
 app, use `./gradlew :desktopApp:run`.
 
+## Working on the CLI and server modules
+
+The `openbill` CLI ([docs/11-cli.md](docs/11-cli.md)) and the optional OpenBill Server
+([docs/10-server.md](docs/10-server.md)) are specified but not scaffolded yet. The
+CLI direct mode ships with 1.0; the server, sync, and CLI remote mode are post-1.0.
+Planned Gradle projects follow the flat naming in `settings.gradle.kts`: `:cli`,
+`:server`, `:core-api-contract`, `:core-sync`, and `:platform-jvm`.
+
+- Both are JVM surfaces over the shared core. They must not depend on `core-ui`, any
+  `feature-*` module, Compose, or AWT/Swing (docs/03, section 3). A new CLI command
+  calls an existing `core-domain` use case; it does not hold business logic or write SQL.
+- Request and response shapes live in `core-api-contract`: DTOs only, with money as a
+  decimal string and never a JSON float. CLI `--json` output, API payloads, and sync
+  payloads share that schema.
+- The CLI `--json` field names and exit codes become a public contract at 1.0. Treat
+  changes to them as breaking, and get maintainer review.
+- CLI changes need golden-output tests. Once `:cli` exists, run `./gradlew :cli:test`
+  and, to regenerate goldens for review, `./gradlew :cli:test -PupdateGoldens`. Goldens
+  must pass on Linux and Windows.
+- Sync and server changes need a simulation-suite or API contract test, and an updated
+  OpenAPI document with a reviewed diff. Conflict rules are fixed in docs/10 before any
+  code that depends on them; propose rule changes in an issue first.
+- Never log tokens, invoice contents, party names, phone numbers, or GSTINs. Use fake
+  credentials and synthetic data in tests; never commit a real server key or token.
+- Integrations (e-invoice, e-way bill, messaging) use the business's own credentials and
+  are disabled by default.
+
 ## Ways to contribute now
 
 - Review the specifications. Read README.md, ROADMAP.md, and the documents in
@@ -133,6 +160,8 @@ cover the case with a table-driven test.
   previous schema version.
 - Cover UI states such as loading, empty, error, and success.
 - Verify behavior on Android and desktop when a change affects shared code.
+- Add CLI golden-output tests for command changes, and sync or API contract tests for
+  server changes (docs/05, sections 12 to 15).
 - Keep tests deterministic and offline. State any platform-specific verification
   in the pull request.
 

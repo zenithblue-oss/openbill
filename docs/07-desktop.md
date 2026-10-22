@@ -24,6 +24,34 @@ are a D4 deliverable.
 Non-goals for 1.0: multiple windows, tray, background sync, automatic update checks,
 self-update, raw ESC/POS, a local server, macOS, and 32-bit builds.
 
+### Competitive baseline
+
+The competing product's Windows app (studied 2026-10-22; see
+[00-reverse-engineering.md](00-reverse-engineering.md)) is a thin Electron shell around its
+web application. It has no local database, needs the internet for all data, ships on Windows
+only, and sits behind a paid tier. What the shell adds over a browser is small: silent
+printing of an invoice PDF to the default printer, bulk invoice download as a zip, bulk print,
+download notifications that reveal the file in its folder, a single-instance lock, and shell
+auto-update. OpenBill desktop must match these natively and exceed them on data ownership.
+
+| Item | Competitor shell | OpenBill target | Timing |
+| --- | --- | --- | --- |
+| Silent print to default printer | Yes, Windows only | Print directly to the default printer without a dialog, as an option beside the system dialog, on Windows and Linux | P0; D3 |
+| Bulk PDF/ZIP export | Yes, server-generated | Export selected invoices as PDFs or one zip, generated locally | P0; D3 |
+| Bulk print | Yes | A sequential loop over silent print or the chosen printer, with progress, cancellation, and per-invoice failures | P0; D3, as in section 6 |
+| Export notification with show-in-folder | Yes | OS notification after export or backup, with a show-in-folder action | P0; D3 |
+| Single instance | Yes | A second launch focuses the existing window; protects the single-writer database | D1 |
+| Signed auto-update | Shell updates; downloaded web bundle verified by version only | Signature-verified updates (signed manifest, checksum, rollback); 1.0 ships the manual Help check, automatic checks follow after 1.0 | Post-1.0 |
+| Offline-first | No | Full ledger, search, print, and backup with no network | D0 onward |
+| Linux | No | DEB and AppImage | D4 |
+| Developer tools in release builds | Reachable | Not shipped | D4 |
+
+Silent print, bulk print, bulk PDF/ZIP export, and export notifications are P0 in
+[01-feature-inventory.md](01-feature-inventory.md) and ship in 1.0 at D3 (ROADMAP Phase 3).
+They are free in OpenBill, whereas the competitor gates them behind its top paid tier. Where
+this table moves a non-goal (automatic update checks), the scope of record in
+[ROADMAP.md](../ROADMAP.md#release-scope-of-record) still governs the 1.0 scope.
+
 ## 2. Supported platforms and architectures
 
 | Platform | Architecture | Status for 1.0 | Package |
@@ -45,7 +73,7 @@ Cross-compilation is not promised, and signing happens on the producing runner.
 ## 3. Shared core and desktop-specific code
 
 Desktop follows the module graph in [03-architecture.md](03-architecture.md). `app-desktop`
-uses the shared feature modules and `shared:platform-desktop`; it never forks domain logic.
+(the Gradle project `:desktopApp`) uses the shared feature modules and `shared:platform-desktop`; it never forks domain logic.
 
 | Layer | Shared | Desktop-specific |
 | --- | --- | --- |
@@ -139,8 +167,12 @@ tests compare text and geometry, not byte identity.
 
 Preview, save, and print share one renderer for a single invoice. The 1.0 matrix covers A4
 and A5 on both spoolers, 58/80 mm thermal, virtual PDF printers, 100 to 150 percent scaling,
-offline queues, and cancellation. Batch print is post-1.0; it takes a selection, order,
-copies, and printer, with sequential jobs, progress, cancellation, and per-invoice failures.
+offline queues, and cancellation. Silent print sends the PDF to the default or a chosen
+printer without a dialog; it is a setting that is off until the user enables it. Bulk print
+(P0) is a loop over silent print: it takes a selection, order, copies, and printer, runs
+sequential jobs, and shows progress, cancellation, and per-invoice failures. Bulk PDF/ZIP
+export renders each invoice locally and writes the zip atomically; after an export or backup
+an OS notification offers a show-in-folder action.
 
 ## 7. File handling
 
@@ -238,7 +270,7 @@ pull-request feedback.
 | Clean install | Windows 11 x64 VM, standard user | MSI install, first run, invoice, print, backup, restore, uninstall, reinstall |
 | Linux | Ubuntu 24.04 and 22.04 LTS; one non-Ubuntu glibc distribution | DEB and AppImage on Ubuntu LTS as the release gate; AppImage smoke test on the other distribution, best effort and not a release gate |
 | Display servers | Wayland and X11 | Placement, fractional scaling, file and print dialogs |
-| Printing | Physical and virtual printers | A4, A5, 58 mm, 80 mm, offline queue; batch failures post-1.0 |
+| Printing | Physical and virtual printers | A4, A5, 58 mm, 80 mm, offline queue; silent print and bulk-print failure handling |
 | Packaging | Clean VMs and CI | Signatures, checksums, no developer paths, read-only install |
 | Keyboard and accessibility | All screens; Narrator and Orca | Tab order, focus, shortcuts, 200 percent text, high contrast |
 
@@ -263,7 +295,7 @@ actions use IDs.
 | Steady memory at 100,000 invoices | At or under 512 MB |
 
 Budgets are ratified in Phase 6; a regression above 20 percent needs a written explanation.
-Batch-print budgets will be set when batch printing ships after 1.0.
+Bulk-print and bulk-export budgets are set during D3 and ratified in Phase 6.
 PDFs write to a temporary file and move atomically, single-invoice printing spools one document
 at a time, and migrations show progress with a backup rather than freezing the window.
 
@@ -272,9 +304,9 @@ at a time, and migrations show progress with a backup rather than freezing the w
 | Milestone | Scope | Exit criteria | Depends on |
 | --- | --- | --- | --- |
 | D0 | Shared core on the JVM | Common, tax, and database tests pass on Linux and Windows | Phase 1 |
-| D1 | Shell, navigation, database, party/item lists; first package smoke build | Window opens, data directory is created, master data can be searched, smoke package builds | D0 |
+| D1 | Shell, navigation, single-instance lock, database, party/item lists; first package smoke build | Window opens, data directory is created, master data can be searched, smoke package builds | D0 |
 | D2 | Invoice editor and PDF | Posted invoice matches Android; A4/A5 render; preview works | D1, Phase 2 |
-| D3 | Printing, file pickers, backup and restore | A4/thermal print; native open/save works; cross-platform restore works | D2 |
+| D3 | Printing through the system dialog, file pickers, backup and restore; silent print to the default printer, bulk print, bulk PDF/ZIP export, export notifications | A4/thermal print; silent and bulk print work with per-invoice failures; bulk zip exports; notification reveals the file; native open/save works; cross-platform restore works | D2 |
 | D4 | MSI, DEB, and AppImage in CI | Tagged build produces all three; each installs or runs on a clean runner | D3 |
 | D5 | Clean-VM tests and signed artifacts | Install, invoice, print, backup, restore, upgrade, and uninstall succeed; artifacts signed and checksummed | D4, Phase 6 |
 

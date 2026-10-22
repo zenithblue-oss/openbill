@@ -4,6 +4,22 @@ This inventory combines public product documentation, the Play Store listing, th
 myBillBook help center, and static inspection of version 8.17.7. It is used to scope
 OpenBill, not to clone every behavior.
 
+**Source note (2026-10-22):** updated after a review of the vendor's public website
+(plan pages and feature landing pages), a behavioral review of its Windows desktop
+client, and a further feature sweep of the Android app. Everything here is restated as
+requirements in original wording; no code, strings, assets, or endpoints are reproduced
+(see [06-clean-room-policy.md](06-clean-room-policy.md)). Items seen only on the vendor's
+paid tiers are recorded for completeness; OpenBill has no paid tiers.
+
+**Parity principle:** All features that the competitor gates behind paid plans are free in
+OpenBill. Every competitor feature is planned (P0, P1, or P2) unless it is inherently
+anti-FOSS or harmful (`No`: advertising, attribution and marketing SDKs, vendor referral
+programs, paywalls and trials, vendor-sold credit packs, data brokerage, lending or money
+transfer, mandatory cloud accounts, paid theme stores, competitor branding). Features that
+depend on a third party (messaging, AI, OCR, e-invoice, payments) use bring-your-own
+provider or credentials, are opt-in, and never block the offline core. The phase for each
+group is in the [parity tracker](../ROADMAP.md#parity-tracker).
+
 **Scope of record:** MVP means 1.0. The authoritative phase-by-phase scope is in
 [ROADMAP.md](../ROADMAP.md#release-scope-of-record). P0 is required for 1.0; P1 follows
 1.0; P2 is later or optional.
@@ -15,8 +31,9 @@ Priority legend:
 - `P2` - later or optional.
 - `No` - explicitly out of scope.
 
-Platform legend: `A` = Android, `W` = Windows, `L` = Linux. Core features are expected on
-all three unless noted.
+Platform legend: `A` = Android, `W` = Windows, `L` = Linux, `S` = self-hosted server,
+`C` = command-line tool. Core features are expected on A, W, and L unless noted; S and C
+are described in [10-server.md](10-server.md) and [11-cli.md](11-cli.md).
 
 ## 1. Onboarding and firm setup
 
@@ -29,6 +46,10 @@ all three unless noted.
 | Business logo and signature | Upload, crop, and place on documents | P0 | Image picker; PDF-safe storage |
 | Language selection | English and Indian languages | P1 | Start with English; externalize strings from day one |
 | Guided setup | Sample party, item, and invoice | P1 | 1.0 first-run flow is a simple manual firm form; guided setup is post-1.0 |
+| Industry type selection | Firm picks an industry (retail, pharmacy, restaurant, jewellery, etc.) to tailor defaults | P2 | Optional preset bundles of units, tax rates, and fields; never required |
+| Import from other billing software | Guided import of items and parties from competitor files and spreadsheets | P1 | Generic CSV mapping first; competitor-specific formats only from public documentation |
+| Shared product library | Pick items from a common catalogue | P2 | Community-maintained, offline item packs (name, HSN, unit, tax rate) imported from a file or a self-hosted server; no vendor-hosted dataset or upload of user data |
+| Credits for scans and messages | Prepaid credits for OCR scans and messaging | No | Vendor-sold credit packs are not offered; OCR and messaging are unmetered and use local models or the user's own provider account |
 | Demo or trial mode | Time-limited premium access | No | OpenBill is free and open source; no trial gates |
 | Referral and rewards | Invite codes and credits | No | Not part of the product |
 | Plan upgrade and paywall | Subscription purchase through Razorpay | No | OpenBill has no paid tiers |
@@ -56,6 +77,9 @@ First-run acceptance criteria:
 | Command palette | Not observed on Android; desktop apps commonly use one | P0 | Ctrl/Cmd+K on desktop, search icon on Android |
 | Home-screen widgets | Sales and quick actions | P2 | Android only |
 | Deep links | Branch links to invoices and campaigns | P1 | Standard Android App Links; no Branch dependency |
+| Tools and feature-discovery tab | Grid of optional modules and promotional banners | P1 | A modules screen to enable or disable optional modules (POS, restaurant, payroll, and so on); no promotional banners |
+| In-app calculator | Calculator that can attach to a party or invoice, with optional floating widget | P2 | Simple calculator; sound and haptics optional |
+| Business-wide tools | GST calculator, late-fee calculator | P2 | Offline, public-formula calculators |
 
 ## 3. Parties
 
@@ -72,6 +96,14 @@ First-run acceptance criteria:
 | GSTIN autofill | Legal name and address | P1 | Manual fallback |
 | Birthday and appointment reminders | CRM-lite features | P2 | Local notifications only |
 | Party-wise item price | Special pricing per party | P1 | Phase 7 |
+| Party categories | Group parties for filtering and reports | P1 | Flat list of user-defined groups |
+| Ship-to GSTIN and delivery site | Separate GSTIN per shipping address, with an unregistered option | P0 | Required for compliant invoices |
+| Shared ledger | Party sees their own ledger entries through a link; party can hide or re-enable sharing | P2 | Needs the server (S); read-only link with expiry |
+| Service reminders | Per-item service period; reminder to owner and party shortly before due date | P2 | Local notifications; party message via share intent |
+| Smart greetings | Templated festival or birthday messages sent to parties | P2 | Share-intent only; no bulk sending service |
+| Loyalty and reward points | Points earned per paid bill, redeemable on later invoices; redemption cannot exceed balance | P2 | Phase 7; per-firm rules |
+| CRM lite | Follow-up notes and simple customer history beyond the ledger | P2 | Notes, tags, next-contact date |
+| Price history for a party | Shows the last few sale or purchase prices for the item and party while billing | P1 | Read-only hint panel |
 | Notes and attachments | Free text and files | P0 | Files included in backup; expense receipt attachments are post-1.0 |
 | Delete and restore | Recycle bin | P0 | Soft delete with audit event |
 
@@ -97,6 +129,23 @@ First-run acceptance criteria:
 | Stock valuation | Costing method | P0 | Document the method; start with weighted average |
 | Item timeline | History of movements | P1 | Read-only audit view |
 | Bulk item upload | CSV or Excel | P0 | CSV import is 1.0; Excel upload is post-1.0; dry-run validation required |
+| Bulk edit items | Change tax rate, category, or godown for a selection | P1 | Preview and confirm; audit event per item |
+| Bulk categorisation | Assign categories to many items at once | P1 | Part of bulk edit |
+| Opening stock on upload | Quantity, godown, and batch columns in the upload file | P1 | Posts opening movements |
+| Wholesale price | Optional second selling price used for bulk sales | P0 | Covered by multiple prices; explicit toggle |
+| Custom item fields | User-defined extra fields (MRP, manufacturing date, part number) shown on documents | P1 | Typed fields; optional on print |
+| Renamable serial label | Serial field relabelled by the user (model number, part number) | P2 | Label setting per item |
+| Batch and serial exclusivity | An item uses either batches or serials, not both | P0 | Validation rule; document in the data model |
+| Duplicate and sold serial checks | Block reuse of a serial already in stock or already sold | P0 | Part of serial invariants |
+| FEFO batch suggestion | Suggest the earliest-expiring batch when selling | P1 | Suggestion only; user can override |
+| Near-expiry alerts | Notify before batches expire | P1 | Local notification and dashboard card; configurable window |
+| Reorder level | Reorder threshold and suggested reorder quantity | P1 | Extends low-stock alerts |
+| Batch and expiry report | Stock by batch with expiry dates | P1 | Report; see section 7 |
+| Godown transfer | Single and bulk transfers between locations; enabling godowns moves existing stock to a default location | P0 | Reversing movements on edit; warn when editing old documents changes opening stock |
+| Multi-godown stock view | Per-item quantity by location | P0 | Limit of locations in a picker is a UI choice, not a data limit |
+| Alternate unit on invoice | Show secondary unit quantity on printed document | P1 | Template option |
+| Barcode scanning in billing | Scan to add a line; clear message when code is unknown | P0 | Camera on Android; HID scanner on desktop |
+| Weighing-scale input | Read weight from a connected scale for loose goods | P2 | Desktop serial or USB; optional |
 
 Inventory invariants:
 
@@ -137,6 +186,36 @@ Inventory invariants:
 | E-invoice | IRN generation via portal or GSP | P1 | Bring-your-own credentials |
 | E-way bill | Generate and share | P1 | Bring-your-own credentials |
 | Delivery challan | Non-posting movement document | P1 | After 1.0 |
+| Delivery challan with e-way bill | Challan carries transport details and can drive e-way generation | P1 | Bring-your-own credentials |
+| Purchase order | Order to a supplier; convert to purchase bill | P1 | Non-posting; preserves source link; partial receipt |
+| Sales order | Customer order that can be converted to an invoice | P1 | Non-posting; preserves source link; partial fulfilment; mirrors purchase order |
+| Sales return e-invoice | E-invoice for credit notes | P1 | With e-invoice support |
+| Bulk e-invoice and e-way generation | Select many invoices and generate in one run | P2 | Rate-limited queue with per-document results |
+| E-way expiry alerts | Notify before an e-way bill expires | P2 | Local notification |
+| Transport details | Transporter ID, document number and date, mode, vehicle, distance | P1 | Needed for e-way bill and challan |
+| Export and shipping details | Shipping bill number and date, port, export type, LUT or bond reference | P1 | Part of foreign-currency billing |
+| E-commerce operator GSTIN | Marketplace GSTIN recorded on the invoice | P1 | Optional header field; the ship-to GSTIN itself is P0 (section 3) |
+| ITC applicable flag | Mark purchase lines eligible or ineligible for input credit | P1 | Feeds GST working |
+| Tax-rate change advisory | After a scheduled rate change, prompt the user to review items still on the old rate | P1 | Driven by the versioned rate schedule; never rewrites posted documents |
+| Price-change prompt | When a line price differs from the item master, offer to update the master | P1 | Explicit confirmation; audit event on change |
+| Filing-period warning | Warn before cancelling or deleting a document inside a period already exported for GSTR-1 | P1 | Warn, do not block; audit event records the acknowledgement |
+| Discount before or after tax | Per-firm choice on whether invoice discount is applied before tax (and spread across lines) or after | P0 | Explicit setting; documented in the tax engine |
+| Free quantity | Bonus quantity on a line that does not change price | P1 | Stock moves, revenue does not |
+| Item description on line | Free text under each line | P0 | Printed under item name |
+| Additional document fields | Custom header fields (PO number, vehicle number) | P1 | Typed, optional on print |
+| Split payment on invoice | Several tenders recorded as separate payments against one invoice | P0 | Creates multiple payment-in entries |
+| Party-level discount on payment | Single discount settled against all outstanding invoices of a party | P1 | Posted as an adjustment |
+| TDS and TCS on payments | Pre-defined and custom rates applied when linking payments to invoices | P2 | After 1.0; enable per firm |
+| Staff loan and salary advance | Payments to staff tracked as loan or advance and offset later | P2 | Part of payroll |
+| Unlimited recurring schedules | Vendor limits the count of active schedules by plan | P1 | Recurring invoices are unlimited in OpenBill; part of the recurring-invoice feature |
+| POS held bills | Several open bills at once, switch between them | P1 | Phase 7 POS |
+| POS multi-tender | Cash, UPI, card, wallet on a single sale | P1 | Phase 7 POS |
+| POS item-first billing | Item grid or barcode first, party optional | P1 | Phase 7 POS |
+| POS keyboard commands | Quick keys for add, discount, tender, hold | P1 | Desktop |
+| Cash drawer | Open drawer on sale via printer kick | P2 | Desktop and thermal printers |
+| Restaurant table orders | Table-wise open orders and kitchen slip | P2 | Optional module |
+| OCR purchase-bill capture | Photograph a supplier bill and prefill a purchase draft | P2 | Opt-in; local on-device OCR first, optional bring-your-own API key for a cloud model; user must review before posting |
+| Gallery scan for invoices | Find bill images in the photo library | P2 | Opt-in; the user picks a folder or photos through the system picker (no blanket media permission); on-device recognition; results are suggestions to review |
 
 Tax engine requirements:
 
@@ -169,6 +248,12 @@ Tax engine requirements:
 | Bank reconciliation | Match statement lines to vouchers | P0 | Manual confirmation |
 | Cheque tracking | Post-dated cheques | P2 | After 1.0 |
 | Bad debt write-off | Adjustment entry | P2 | Audit trail |
+| Share payment link | Link or QR sent with a reminder | P1 | UPI intent or static QR only; no gateway |
+| Multiple bank accounts with deactivation | Retire an account but keep history | P0 | Soft state |
+| Other ledger accounts | User-defined ledgers such as loans given or taken, capital, and other income or expense | P2 | Needs the full accounting model; see balance sheet in section 7 |
+| Staff payroll postings | Salary, bonus, advance as expense or loan postings | P2 | Phase 7 payroll |
+| AI payment-reminder calls | Automated voice reminders | P2 | Opt-in; bring-your-own telephony or voice provider through a server plugin, user-approved script and schedule, consent and do-not-call list honoured; no vendor-hosted calling |
+| AI-assisted bank reconciliation | Suggested matches from statement lines | P2 | Rule-based suggestions first; manual confirm remains |
 
 ## 7. Reports and GST
 
@@ -187,9 +272,24 @@ Tax engine requirements:
 | GST summary | P0 | Output and input tax |
 | HSN summary | P0 | Quantity and taxable value |
 | GSTR-1 export | P0 | CSV or JSON as supported |
-| GSTR-3B working | P1 | Internal computation only |
+| GSTR-3B working | P1 | Internal computation only; the CLI `gst gstr3b` command ships with it, after 1.0 |
 | Tally XML export | P0 | Document mapping |
 | Day summary | P1 | Cash in, cash out, sales |
+| Sales summary by user | P1 | Needs local users |
+| Day book by user | P1 | Needs local users |
+| GSTR-2 working (purchases) | P1 | Internal computation only |
+| GST sales and purchase with HSN | P0 | Included in GST summary and HSN summary |
+| GSTR-1 JSON for portal upload | P0 | Same data as CSV export, portal-compatible layout |
+| Low-stock report | P0 | Companion to the dashboard card |
+| Batch and expiry report | P1 | See section 4 |
+| Cash and bank (all payments) | P0 | Combined view across accounts |
+| Daily balance-sheet snapshot | P2 | Computed on demand, not cached remotely |
+| Select several reports and share together | P1 | One bundle or ZIP |
+| Email a report | P1 | Through the user's mail client |
+| Bulk download of reports as ZIP | P1 | Desktop and Android; streamed (invoice export is P0, section 9) |
+| User activity tracker | P1 | Needs local users; see section 10 |
+| CA report pack | P1 | Preconfigured set of reports for an accountant |
+| Large stock-summary export | P0 | Never silently capped; stream the full list |
 | Balance sheet | P2 | Requires complete accounting model |
 | Profit and loss | P2 | After expense and opening balance maturity |
 | Custom report builder | P2 | Not in 1.0 |
@@ -218,7 +318,15 @@ Report correctness rules:
 | Custom theme editor | Colors, fonts, layout | P2 | Start with built-in themes |
 | Multi-language invoice | Hindi and regional labels | P1 | Template-level locale |
 | Print preview | WYSIWYG before printing | P0 | Shared renderer |
-| Batch print | Multiple invoices | P1 | Desktop especially |
+| Bulk print | Print a selection of invoices in order | P0 | Desktop (W, L): a sequential loop over silent print with progress, cancellation, and per-invoice failures; Android prints one at a time through the system print service |
+| Export notification | OS notification after an export, backup, or download, with a show-in-folder action | P0 | Desktop; Android uses the system download notification |
+| Silent print to default printer | Print without a dialog to the default or a chosen printer | P0 | Desktop (W, L); a setting beside the system dialog, off until the user enables it |
+| A3 paper size | Large-format output | P2 | Template page-size option |
+| Theme families | Several named layout families with colour variants | P0 | Original designs only; no vendor themes |
+| Theme gallery | Downloadable invoice themes | P2 | Free community theme packs as files (import from file or a repository); no paid store and no vendor assets |
+| Custom theme creator | User-defined header, columns, footer | P2 | Same as theme editor |
+| Show bank details, phone, timestamp, alternate unit, discount-on-MRP on document | Per-template toggles | P0 | Template options |
+| Label-printer barcode sheets | Dedicated label printers | P1 | Desktop and thermal |
 | PDF password | Protect shared PDF | P2 | Optional |
 | Share as image | PNG/JPG | P0 | Android share sheet; desktop save |
 
@@ -242,6 +350,9 @@ Rendering strategy:
 | Tally XML export | P0 | Phase 6 |
 | GSTR-1 export | P0 | Phase 6 |
 | Attachment export | P1 | Preserve folder structure |
+| Bulk PDF/ZIP export of invoices | P0 | Selected invoices or a date range as PDFs or one zip, generated locally; desktop at 1.0, Android follows in Phase 7 |
+| Competitor file import | P2 | Only if a public format spec exists |
+| Auto online backup | P2 | Replaced by optional encrypted user-owned storage |
 | Portable desktop mode | P0 | Database beside executable on removable media |
 | Cloud backup | P2 | Optional, encrypted, user-owned storage |
 | Sync between devices | P2 | Requires conflict design; not in 1.0 |
@@ -265,6 +376,13 @@ Backup format requirements:
 | Device management | Active devices | P2 | Tied to optional sync |
 | Approval workflow | Draft and approve vouchers | P2 | After 1.0 |
 | Shared ledger portal | Online view for accountants | P2 | Not in 1.0 |
+| Staff attendance | Daily attendance, weekly off, shift hours, leaves, self check-in | P2 | Separate module; local or server |
+| Payroll | Salary calculated from attendance, overtime, advances; payslip sharing | P2 | Separate module; optional |
+| Geo-tagged attendance and live location | Location with check-in | P2 | Opt-in per firm and per staff member with explicit consent; location stored only on the firm's own devices or server; check-in only, no continuous tracking |
+| Staff companion app | Separate app for staff check-in | P2 | A staff mode of the Android app, plus the thin web client on the self-hosted server; no separate vendor app |
+| CA seat | Accountant gets a read-only or limited login at no extra user count | P1 | Role in post-1.0 model |
+| Staff deactivation | Disable a user while preserving history and balances | P1 | Soft state |
+| Suspicious-activity alerts | Notify owner of unusual edits or deletions | P2 | Rule-based on audit log |
 
 Post-1.0 local role model (design draft):
 
@@ -286,10 +404,15 @@ signal.
 | SMS or email sharing | P1 | User's own app or mail client |
 | Payment reminder templates | P0 | Editable, localized |
 | Online catalogue | P2 | Static export first |
-| Hosted storefront | P2 | Separate service, not core app |
-| UPI and COD on store | P2 | Requires payment integration |
+| Hosted storefront | P2 | Self-hosted server module (Phase 9); not core app |
+| UPI and COD on store | P2 | UPI intent or static QR and COD need no gateway; card gateways only through the user's own provider account |
 | WhatsApp campaigns | P2 | Bring-your-own provider |
 | Loyalty points | P2 | Phase 7 |
+| WhatsApp marketing campaigns with templates | P2 | Bring-your-own provider; no hosted sending |
+| SMS or WhatsApp credit packs | No | No metered messaging |
+| Catalogue share | P2 | Static export or PDF; no item-count cap |
+| Online store with custom domain | P2 | Self-hosted server module; the user brings the domain and TLS |
+| Smart greeting templates | P2 | See section 3 |
 | Referral program | No | No growth gimmicks |
 | In-app ads | No | Never |
 | Data brokerage | No | Never |
@@ -306,17 +429,34 @@ signal.
 | App lock | P1 | Biometric on Android; OS keyring on desktop |
 | Secure storage | P0 | Android Keystore, Windows DPAPI, Linux libsecret |
 | Audit log | P0 | Append-only; exportable |
-| Crash reporting | No | Opt-in only if ever added; no default SDK |
+| Crash reporting | No | No tracking SDK; the opt-in diagnostics export (P1) is the supported path |
 | Help center | P1 | Offline FAQ plus links |
 | Contact support | P1 | Email or issue tracker; no chat SDK in 1.0 |
 | Diagnostics export | P1 | Redacted logs and schema info |
 | Data deletion | P0 | Export first, then delete firm or all data |
 | Legal and licenses | P0 | Apache-2.0, third-party notices |
+| Additional-settings toggles | P0 | Party balance on document and item description; the free-quantity and other-currency toggles arrive with those P1 features |
+| TDS/TCS enable switch | P2 | Per firm |
+| Reminder and notification preferences | P1 | Local notifications; per category |
+| E-invoice and e-way settings | P1 | Credentials stored in secure storage |
+| Recycle bin | P0 | Deleted documents previewable and restorable |
+| Desktop access gating | No | OpenBill desktop is free |
 
 ## 13. Platform-specific inventory
 
 Windows and Linux share a single-window, keyboard-first shell with native file dialogs and
-portable mode.
+portable mode. A single-instance lock (a second launch focuses the existing window) is P0 on
+both, because it protects the single-writer database; see [07-desktop.md](07-desktop.md).
+
+### Server (S)
+
+Optional self-hosted service for sync, shared ledger links, and multi-user access. It is
+never required for 1.0. See [10-server.md](10-server.md).
+
+### CLI (C)
+
+Command-line tool for scripting, imports, exports, and backups against a local database
+or a server. See [11-cli.md](11-cli.md).
 
 ### Android
 
@@ -357,10 +497,16 @@ portable mode.
 
 OpenBill will not include:
 
-- Advertising, attribution, or contact-harvesting SDKs.
+- Advertising, attribution, marketing, or contact-harvesting SDKs.
 - A mandatory cloud account.
-- Paid feature gates for exports, desktop access, or backups.
-- Proprietary invoice themes or illustrations.
+- Paid feature gates of any kind: plans, trials, upgrade prompts, or desktop access.
+- Vendor-sold message, scan, or call credit packs.
+- Vendor referral or rewards programs, and data brokerage.
+- A paid theme store; proprietary invoice themes or illustrations.
 - A clone of another product's navigation, wording, or visual identity.
-- Lending, payment processing, or money transfer.
+- Lending, payment processing, or money transfer by the project.
 - Automated portal filing without the user's credentials and consent.
+
+Everything else the competitor offers is planned. Third-party-dependent features (AI, OCR,
+messaging, e-invoice, stores, payment links) are opt-in, use the user's own provider or
+credentials or a local model, and never block the offline core.

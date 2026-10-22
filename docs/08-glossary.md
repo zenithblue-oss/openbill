@@ -50,11 +50,18 @@ optionally linked to expiry.
 **bill of supply.** A non-tax document used when no GST is charged, such as by a
 composition dealer or for exempt supplies.
 
+**CA seat.** A read-only seat for an external chartered accountant (CA), who can view a
+firm's books and reports without changing them.
+
 **cess.** An additional levy on notified goods, calculated on taxable value and shown
 separately from GST; coverage and rates are versioned.
 
 **CGST.** Central GST on an intra-state supply, charged at half the GST rate. CGST + SGST
 equals the full rate; an illustrative 18 percent rate is 9 percent CGST plus 9 percent SGST.
+
+**CLI.** The `openbill` command-line tool for scripting, reports, GST exports, backups, and
+imports. It works on a local database or against a sync server. See
+[docs/11-cli.md](11-cli.md).
 
 **closing balance.** The balance at the end of a period, carried forward as the next
 opening balance.
@@ -77,17 +84,27 @@ transaction, such as a purchase return.
 **delivery challan.** A document accompanying goods moved without a sale, such as a stock
 transfer or job work; it is not a payment demand.
 
+**device pairing.** The one-time step that trusts a new device to sync with a firm on a sync
+server. Offline use never requires pairing. See [docs/10-server.md](10-server.md).
+
 **e-invoice.** An invoice registered with the Invoice Registration Portal for notified
 businesses, returning an IRN and signed QR; OpenBill uses the user's own credentials.
 
 **e-way bill.** An electronic consignment document for specified goods movements, generated
 through the official portal or an approved integration using user credentials.
 
+**Electron shell.** A desktop wrapper, built on Electron, that loads web content in a native
+window. Observed in a competitor's desktop app; OpenBill's desktop shell is not an Electron
+shell.
+
 **exempt supply.** A supply not liable to GST, so no tax is charged; input tax credit is
 generally unavailable.
 
 **expiry.** The date after which a batch should not be sold. OpenBill stores it per batch
 and warns during billing.
+
+**FEFO (First-Expiry-First-Out).** A stock issue rule that uses the batch closest to expiry
+first. It relies on the per-batch expiry dates described under expiry.
 
 **financial year.** The Indian business year from 1 April to 31 March, used for numbering,
 reports, and year-end close.
@@ -117,6 +134,10 @@ data. OpenBill exports it but does not file it.
 
 **GSTR-3B.** A summary GST return of output tax, input tax credit, and net payable.
 OpenBill prepares a working computation only.
+
+**HLC (hybrid logical clock).** A timestamp combining wall-clock time, a counter, and a device
+id, used to order edits to master records during sync without trusting device clocks. See
+[docs/10-server.md](10-server.md).
 
 **HSN.** Harmonized System of Nomenclature, the goods classification code. Required digit
 length varies, and OpenBill stores it per item with offline lookup.
@@ -171,8 +192,18 @@ thresholds. OpenBill stores the details but does not certify eligibility.
 **nil-rated supply.** A taxable supply with a 0 percent GST rate. No tax is charged, but
 input tax credit is generally available, unlike an exempt supply.
 
+**number series.** A numbering sequence scoped by firm, document type, financial year, and
+sometimes a device prefix, so offline devices can issue unique invoice numbers.
+
 **opening balance.** The balance brought forward at the start of a period for a party,
 account, item, or firm, posted explicitly.
+
+**operation log.** The ordered, append-only record of changes that devices exchange through the
+sync server. Posted vouchers in it are insert-only facts.
+
+**OTA bundle (over-the-air).** A versioned web frontend bundle delivered over the network to
+update an app's user interface without a new store release. It must never be required for
+core billing to work offline.
 
 **output tax.** GST charged on outward taxable supplies; a liability that eligible input
 tax credit can reduce.
@@ -204,6 +235,9 @@ and terms. It is not a tax invoice or a demand for payment.
 **purchase bill.** The recorded supplier invoice for goods or services bought. Posting
 increases stock and payables and may create input tax credit.
 
+**purchase order.** A request to a supplier to buy specified items at agreed quantities and
+prices. It is not a tax document; the supplier's invoice is recorded as a purchase bill.
+
 **purchase price.** The price at which the business buys an item, used for purchase entry,
 margins, and stock valuation.
 
@@ -223,6 +257,10 @@ and a restore reason. See [docs/03-architecture.md](03-architecture.md).
 **reverse charge.** A mechanism where the recipient pays GST instead of the supplier. The
 invoice is flagged and the recipient accounts for the tax.
 
+**review task.** A synced work item raised when sync finds something that must not be merged
+automatically, such as a tax-field conflict or over-allocation. A person resolves it with a
+normal, audited action.
+
 **round-off.** A small adjustment to bring a total to the nearest rupee, posted to a
 rounding account so the ledger balances.
 
@@ -238,6 +276,9 @@ tracked through purchase, sale, and return.
 **SGST.** State GST on an intra-state supply, charged at the same rate as CGST; together
 they equal the full GST rate.
 
+**silent printing.** Sending a print job straight to a configured printer without showing the
+system print dialog, typically for counter receipt printers.
+
 **SKU.** Stock Keeping Unit, a unique internal code for an item or variant, used in search,
 labels, and stock reports.
 
@@ -252,6 +293,10 @@ quantity, and time. On-hand stock is derived, not edited.
 
 **stock transfer.** Moving stock between godowns, creating paired outward and inward
 movements without changing total firm stock.
+
+**sync server.** The optional, self-hostable server that synchronizes firm data between
+devices and offers a multi-user REST API. The apps stay fully usable offline without it. See
+[docs/10-server.md](10-server.md).
 
 **Tally export.** An export of vouchers and masters as Tally-compatible XML for accountant
 import, with explicit document and ledger mapping.
@@ -288,6 +333,9 @@ payment, or adjustment. Drafts are not accounting vouchers.
 
 **wholesale price.** The price offered to trade or bulk buyers, usually below retail; stored
 per item and selectable at billing.
+
+**workspace.** On the OpenBill Server, the isolation boundary that holds one or more firms,
+their devices, and their users.
 
 **zero-rated supply.** A 0 percent supply, typically exports or SEZ supplies. No output tax
 applies, but input tax credit is generally available and refundable.
