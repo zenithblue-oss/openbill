@@ -71,8 +71,8 @@ app-desktop
 shared:core-model          Pure Kotlin domain types and value objects
 shared:core-tax            GST and rounding engine
 shared:core-database       Room KMP entities, DAOs, migrations, FTS
-shared:core-data           Repositories, transactions, backup, import/export
-shared:core-domain         Use cases and validation
+shared:core-domain         Domain models, repository ports, validation, use cases
+shared:core-data           Room-backed repository adapters, transactions, backup, import/export
 shared:core-search         Query parsing, ranking, highlights
 shared:core-reporting      Report models, CSV, GSTR-1, Tally XML
 shared:core-printing       Document models and layout contracts
@@ -235,7 +235,9 @@ and "tax is non-negative for non-negative inputs."
 
 ## 7. Data layer and transactions
 
-Repositories expose suspend functions and flows. They do not leak Room entities to the UI.
+Repository ports live in `core-domain` and expose suspend functions and flows. They use
+domain models, not Room entities, and the in-memory fakes in `core-domain` support use-case
+tests and previews. Room-backed adapters belong in `core-data`.
 
 Transaction boundaries:
 
