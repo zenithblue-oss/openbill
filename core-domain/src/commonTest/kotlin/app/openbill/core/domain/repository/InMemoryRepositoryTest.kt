@@ -2,7 +2,9 @@ package app.openbill.core.domain.repository
 
 import app.openbill.core.domain.fake.InMemoryCatalogRepository
 import app.openbill.core.domain.fake.InMemoryFirmRepository
+import app.openbill.core.domain.fake.InMemoryLedgerRepository
 import app.openbill.core.domain.fake.InMemoryPartyRepository
+import app.openbill.core.domain.fake.InMemoryPaymentRepository
 import app.openbill.core.domain.fake.InMemoryStockRepository
 import app.openbill.core.domain.fake.InMemoryVoucherRepository
 import app.openbill.core.domain.model.AddressKind
@@ -185,6 +187,8 @@ class InMemoryRepositoryTest {
             catalog = InMemoryCatalogRepository(),
             vouchers = InMemoryVoucherRepository(),
             stock = InMemoryStockRepository(),
+            ledger = InMemoryLedgerRepository(),
+            payments = InMemoryPaymentRepository(),
         )
         repositories.firms.saveFirm(firm("firm-1", "OpenBill"))
         repositories.parties.saveParty(party("party-1", "firm-1", "Acme", "9876543210"))

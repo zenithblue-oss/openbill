@@ -6,12 +6,17 @@ import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.database.VoucherEntity
 import app.openbill.core.database.VoucherNumberSequenceEntity
 import app.openbill.core.domain.model.FirmSettings
+import app.openbill.core.domain.model.JournalEntry
 import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherNumbering
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.domain.model.isPayment
+import app.openbill.core.domain.model.isPaymentAccount
+import app.openbill.core.domain.model.postsLedger
 import app.openbill.core.domain.repository.VoucherRepository
+import app.openbill.core.domain.service.LedgerJournalDerivation
 import app.openbill.core.domain.service.StockMovementDerivation
 import app.openbill.core.model.Quantity
 import app.openbill.core.model.Ulid
@@ -23,6 +28,7 @@ import kotlinx.datetime.LocalDate
 class RoomVoucherRepository(
     private val database: OpenBillDatabase,
     private val transactions: DatabaseTransactionRunner = DatabaseTransactionRunner(database),
+    private val ledger: RoomLedgerRepository = RoomLedgerRepository(database, transactions),
 ) : VoucherRepository {
     private val vouchers get() = database.voucherDao()
     private val sequences get() = database.voucherNumberSequenceDao()
@@ -30,7 +36,9 @@ class RoomVoucherRepository(
     private val settings get() = database.firmSettingsDao()
     private val items get() = database.itemDao()
     private val stockMovements get() = database.stockMovementDao()
+    private val paymentDetails get() = database.paymentDetailsDao()
     private val derivation = StockMovementDerivation()
+    private val ledgerDerivation = LedgerJournalDerivation()
 
     override fun observeVouchers(
         firmId: String,
@@ -130,12 +138,17 @@ class RoomVoucherRepository(
                 revision = entity.sync.revision + 1L,
             ),
         )
+        val posted = updated.toDomain(lines, charges)
+        val journalEntries = deriveJournalPosted(posted, at)
         vouchers.update(updated)
         if (movements.isNotEmpty()) {
             stockMovements.insertAll(movements.map { it.toEntity() })
         }
+        if (journalEntries.isNotEmpty()) {
+            ledgerDao().insertEntries(journalEntries.map { it.toEntity() })
+        }
         audits.insert(auditEvent(updated, POSTED_ACTION, at))
-        updated.toDomain(lines, charges)
+        posted
     }
 
     override suspend fun cancel(
@@ -158,6 +171,7 @@ class RoomVoucherRepository(
             .map { it.toDomain() }
         val reversals = derivation.deriveCancellation(voucher, originalMovements, at)
         enforceStock(reversals, firmSettings)
+        val journalReversals = deriveJournalCancelled(voucher, at)
 
         val atMillis = at.toEpochMillis()
         val updated = entity.copy(
@@ -172,9 +186,54 @@ class RoomVoucherRepository(
         if (reversals.isNotEmpty()) {
             stockMovements.insertAll(reversals.map { it.toEntity() })
         }
+        if (journalReversals.isNotEmpty()) {
+            ledgerDao().insertEntries(journalReversals.map { it.toEntity() })
+        }
         vouchers.update(updated)
         audits.insert(auditEvent(updated, CANCELLED_ACTION, at))
         updated.toDomain(lines, charges)
+    }
+
+    private fun ledgerDao() = database.ledgerDao()
+
+    private suspend fun deriveJournalPosted(
+        voucher: Voucher,
+        at: Instant,
+    ): List<JournalEntry> {
+        if (!voucher.type.postsLedger()) return emptyList()
+        require(voucher.partyId != null) {
+            "Voucher must have a party to post to the ledger"
+        }
+        val paymentAccountId = if (voucher.type.isPayment()) {
+            val details = paymentDetails.findForVoucher(voucher.id)
+                ?: throw IllegalArgumentException(
+                    "Payment details are required before posting",
+                )
+            val account = ledgerDao().findAccountById(details.accountId)
+                ?: throw IllegalArgumentException("Unknown account: ${details.accountId}")
+            require(account.firmId == voucher.firmId) {
+                "Payment account belongs to a different firm"
+            }
+            val domainAccount = account.toDomain()
+            require(domainAccount.deletedAt == null) { "Payment account is deleted" }
+            require(domainAccount.type.isPaymentAccount) {
+                "Payment account must be a cash, bank, or asset account"
+            }
+            account.id
+        } else {
+            null
+        }
+        val accounts = ledger.ensureSystemAccountsLocked(voucher.firmId, at)
+        return ledgerDerivation.derivePosted(voucher, accounts, paymentAccountId, at)
+    }
+
+    private suspend fun deriveJournalCancelled(
+        voucher: Voucher,
+        at: Instant,
+    ): List<JournalEntry> {
+        if (!voucher.type.postsLedger()) return emptyList()
+        val entries = ledgerDao().entriesForVoucher(voucher.id).map { it.toDomain() }
+        return ledgerDerivation.deriveReversal(voucher, entries, at)
     }
 
     private suspend fun settingsFor(firmId: String): FirmSettings =

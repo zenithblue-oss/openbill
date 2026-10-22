@@ -46,11 +46,12 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(2, OPENBILL_DATABASE_VERSION)
+        assertEquals(3, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
 
-        helper.createDatabase(2).use { connection ->
+        helper.createDatabase(3).use { connection ->
             val tables = mutableListOf<String>()
             connection.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -103,12 +104,41 @@ class DatabaseSchemaTest {
     }
 
     @Test
+    fun schemaV2MigratesToV3AndValidatesAgainstCurrentEntities() {
+        helper.createDatabase(2).close()
+        helper.runMigrationsAndValidate(
+            OPENBILL_DATABASE_VERSION,
+            DatabaseMigrations.migrationsFor(2),
+        ).use { connection ->
+            var codeColumnFound = false
+            connection.prepare("PRAGMA table_info(accounts)").use { statement ->
+                while (statement.step()) {
+                    if (statement.getText(1) == "code") {
+                        codeColumnFound = true
+                        assertEquals("TEXT", statement.getText(2))
+                        assertEquals(0, statement.getLong(3))
+                        assertTrue(statement.isNull(4))
+                    }
+                }
+            }
+            assertTrue(codeColumnFound)
+
+            connection.prepare("SELECT COUNT(*) FROM payment_details").use { statement ->
+                assertTrue(statement.step())
+                assertEquals(0, statement.getLong(0))
+            }
+        }
+    }
+
+    @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(1, migrations.size)
-        assertEquals(1, migrations.single().startVersion)
-        assertEquals(2, migrations.single().endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(2).isEmpty())
+        assertEquals(2, migrations.size)
+        assertEquals(1, migrations[0].startVersion)
+        assertEquals(2, migrations[0].endVersion)
+        assertEquals(2, migrations[1].startVersion)
+        assertEquals(3, migrations[1].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(3).isEmpty())
     }
 
     @Test
@@ -132,6 +162,7 @@ class DatabaseSchemaTest {
             "party_addresses",
             "parties",
             "payment_allocations",
+            "payment_details",
             "serial_numbers",
             "stock_movements",
             "units",

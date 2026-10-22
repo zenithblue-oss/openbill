@@ -159,6 +159,7 @@ class StockPostingFakeTest {
         type = type,
         date = LocalDate(2026, 5, 10),
         placeOfSupplyStateCode = "27",
+        partyId = "party-1",
         lines = listOf(
             VoucherLine(
                 id = "line-$id",

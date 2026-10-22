@@ -41,6 +41,28 @@ interface VoucherDao {
         toDate: String,
     ): Flow<List<VoucherEntity>>
 
+    @Query(
+        "SELECT * FROM vouchers WHERE firmId = :firmId AND partyId = :partyId " +
+            "AND type = :type AND status = 'posted' AND deletedAt IS NULL " +
+            "ORDER BY date, createdAt, id",
+    )
+    suspend fun postedForPartyAndType(
+        firmId: String,
+        partyId: String,
+        type: String,
+    ): List<VoucherEntity>
+
+    @Query(
+        "SELECT * FROM vouchers WHERE firmId = :firmId AND partyId = :partyId " +
+            "AND type = :type AND status = 'posted' AND deletedAt IS NULL " +
+            "ORDER BY date, createdAt, id",
+    )
+    fun observePostedForPartyAndType(
+        firmId: String,
+        partyId: String,
+        type: String,
+    ): Flow<List<VoucherEntity>>
+
     @Query("SELECT * FROM voucher_lines WHERE voucherId = :voucherId ORDER BY lineNumber")
     suspend fun linesFor(voucherId: String): List<VoucherLineEntity>
 

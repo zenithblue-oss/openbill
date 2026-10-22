@@ -118,6 +118,7 @@ data class StockMovementEntity(
     ],
     indices = [
         Index(value = ["firmId", "name"], unique = true),
+        Index(value = ["firmId", "code"], unique = true),
         Index(value = ["firmId", "type"]),
         Index(value = ["firmId", "isDefault"]),
         Index(value = ["deletedAt"]),
@@ -128,6 +129,7 @@ data class AccountEntity(
     val firmId: String,
     val name: String,
     val type: String,
+    val code: String?,
     val openingBalance: Long,
     val isDefault: Boolean,
     @Embedded val sync: SyncMetadata,

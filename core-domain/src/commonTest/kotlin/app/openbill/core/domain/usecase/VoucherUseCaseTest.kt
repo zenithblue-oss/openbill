@@ -111,6 +111,59 @@ class VoucherUseCaseTest {
     }
 
     @Test
+    fun postRejectsLedgerVoucherWithoutParty(): kotlin.Unit = runBlocking {
+        val repository = InMemoryVoucherRepository()
+        repository.saveDraft(voucher("voucher-1").copy(partyId = null))
+
+        assertFailsWith<IllegalArgumentException> {
+            PostVoucher(repository)("voucher-1", postingTime)
+        }
+        assertEquals(VoucherStatus.DRAFT, repository.findVoucher("voucher-1")?.status)
+        assertNull(repository.findVoucher("voucher-1")?.number)
+    }
+
+    @Test
+    fun paymentVouchersMayOmitLinesButRejectTaxAndRoundOff(): kotlin.Unit = runBlocking {
+        val repository = InMemoryVoucherRepository(numberPadding = 4)
+        val payment = voucher(
+            id = "payment-1",
+            type = VoucherType.PAYMENT_OUT,
+            lines = emptyList(),
+            total = Money.of(5_000),
+        ).copy(subtotal = Money.of(5_000), taxable = Money.ZERO)
+        repository.saveDraft(payment)
+
+        assertEquals("PAY-0001", PostVoucher(repository)("payment-1", postingTime).number)
+
+        repository.saveDraft(
+            payment.copy(
+                id = "payment-2",
+                number = null,
+                status = VoucherStatus.DRAFT,
+                postedAt = null,
+                taxable = Money.of(1),
+            ),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            PostVoucher(repository)("payment-2", postingTime)
+        }
+
+        repository.saveDraft(
+            payment.copy(
+                id = "payment-3",
+                number = null,
+                status = VoucherStatus.DRAFT,
+                postedAt = null,
+                roundOff = Money.of(1),
+            ),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            PostVoucher(repository)("payment-3", postingTime)
+        }
+        assertEquals(VoucherStatus.DRAFT, repository.findVoucher("payment-3")?.status)
+    }
+
+    @Test
     fun postRejectsQuotationAndProforma(): kotlin.Unit = runBlocking {
         val repository = InMemoryVoucherRepository()
         val post = PostVoucher(repository)

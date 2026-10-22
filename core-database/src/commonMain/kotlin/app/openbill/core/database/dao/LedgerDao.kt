@@ -2,6 +2,7 @@ package app.openbill.core.database.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import app.openbill.core.database.AccountEntity
@@ -13,16 +14,44 @@ data class AccountTotals(
     val credit: Long,
 )
 
+data class PartyControlTotals(
+    val debit: Long,
+    val credit: Long,
+)
+
+data class PartyLedgerRow(
+    val id: String,
+    val voucherId: String,
+    val voucherNumber: String?,
+    val voucherType: String,
+    val date: String,
+    val accountId: String,
+    val accountCode: String,
+    val narration: String?,
+    val debit: Long,
+    val credit: Long,
+    val createdAt: Long,
+)
+
 @Dao
 interface LedgerDao {
     @Insert
     suspend fun insertAccount(account: AccountEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAccountIfAbsent(account: AccountEntity): Long
 
     @Update
     suspend fun updateAccount(account: AccountEntity)
 
     @Query("SELECT * FROM accounts WHERE id = :id LIMIT 1")
     suspend fun findAccountById(id: String): AccountEntity?
+
+    @Query("SELECT * FROM accounts WHERE firmId = :firmId AND code = :code LIMIT 1")
+    suspend fun findAccountByCode(firmId: String, code: String): AccountEntity?
+
+    @Query("SELECT * FROM accounts WHERE firmId = :firmId AND name = :name LIMIT 1")
+    suspend fun findAccountByName(firmId: String, name: String): AccountEntity?
 
     @Query(
         "SELECT * FROM accounts WHERE firmId = :firmId AND deletedAt IS NULL " +
@@ -55,4 +84,91 @@ interface LedgerDao {
         fromDate: String,
         toDate: String,
     ): AccountTotals
+
+    @Query(
+        "SELECT j.id AS id, j.voucherId AS voucherId, v.number AS voucherNumber, " +
+            "v.type AS voucherType, j.date AS date, j.accountId AS accountId, " +
+            "a.code AS accountCode, j.narration AS narration, j.debit AS debit, " +
+            "j.credit AS credit, j.createdAt AS createdAt " +
+            "FROM journal_entries j " +
+            "INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "INNER JOIN accounts a ON a.id = j.accountId " +
+            "WHERE j.firmId = :firmId AND v.partyId = :partyId " +
+            "AND v.status = 'posted' AND v.deletedAt IS NULL " +
+            "AND a.code IN ('AR', 'AP') " +
+            "AND j.date >= :fromDate AND j.date <= :toDate " +
+            "ORDER BY j.date, j.createdAt, j.id",
+    )
+    suspend fun partyLedgerEntries(
+        firmId: String,
+        partyId: String,
+        fromDate: String,
+        toDate: String,
+    ): List<PartyLedgerRow>
+
+    @Query(
+        "SELECT j.id AS id, j.voucherId AS voucherId, v.number AS voucherNumber, " +
+            "v.type AS voucherType, j.date AS date, j.accountId AS accountId, " +
+            "a.code AS accountCode, j.narration AS narration, j.debit AS debit, " +
+            "j.credit AS credit, j.createdAt AS createdAt " +
+            "FROM journal_entries j " +
+            "INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "INNER JOIN accounts a ON a.id = j.accountId " +
+            "WHERE j.firmId = :firmId AND v.partyId = :partyId " +
+            "AND v.status = 'posted' AND v.deletedAt IS NULL " +
+            "AND a.code IN ('AR', 'AP') " +
+            "AND j.date >= :fromDate AND j.date <= :toDate " +
+            "ORDER BY j.date, j.createdAt, j.id",
+    )
+    fun observePartyLedgerEntries(
+        firmId: String,
+        partyId: String,
+        fromDate: String,
+        toDate: String,
+    ): Flow<List<PartyLedgerRow>>
+
+    @Query(
+        "SELECT COALESCE(SUM(j.debit), 0) AS debit, COALESCE(SUM(j.credit), 0) AS credit " +
+            "FROM journal_entries j " +
+            "INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "INNER JOIN accounts a ON a.id = j.accountId " +
+            "WHERE j.firmId = :firmId AND v.partyId = :partyId " +
+            "AND v.status = 'posted' AND v.deletedAt IS NULL " +
+            "AND a.code IN ('AR', 'AP') AND j.date < :beforeDate",
+    )
+    suspend fun partyControlTotalsBefore(
+        firmId: String,
+        partyId: String,
+        beforeDate: String,
+    ): PartyControlTotals
+
+    @Query(
+        "SELECT COALESCE(SUM(j.debit), 0) AS debit, COALESCE(SUM(j.credit), 0) AS credit " +
+            "FROM journal_entries j " +
+            "INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "INNER JOIN accounts a ON a.id = j.accountId " +
+            "WHERE j.firmId = :firmId AND v.partyId = :partyId " +
+            "AND v.status = 'posted' AND v.deletedAt IS NULL " +
+            "AND a.code IN ('AR', 'AP') AND j.date < :beforeDate",
+    )
+    fun observePartyControlTotalsBefore(
+        firmId: String,
+        partyId: String,
+        beforeDate: String,
+    ): Flow<PartyControlTotals>
+
+    @Query(
+        "SELECT COALESCE(SUM(j.debit), 0) AS debit, COALESCE(SUM(j.credit), 0) AS credit " +
+            "FROM journal_entries j " +
+            "INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "INNER JOIN accounts a ON a.id = j.accountId " +
+            "WHERE j.firmId = :firmId AND v.partyId = :partyId " +
+            "AND v.status = 'posted' AND v.deletedAt IS NULL " +
+            "AND a.code IN ('AR', 'AP') AND j.date <= :throughDate",
+    )
+    suspend fun partyControlTotalsThrough(
+        firmId: String,
+        partyId: String,
+        throughDate: String,
+    ): PartyControlTotals
 }

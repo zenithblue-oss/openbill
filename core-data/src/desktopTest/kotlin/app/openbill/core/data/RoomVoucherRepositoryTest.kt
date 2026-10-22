@@ -26,6 +26,7 @@ class RoomVoucherRepositoryTest {
     private lateinit var db: OpenBillDatabase
     private lateinit var repository: RoomVoucherRepository
     private lateinit var firms: RoomFirmRepository
+    private lateinit var parties: RoomPartyRepository
 
     @BeforeTest
     fun setUp() {
@@ -35,6 +36,7 @@ class RoomVoucherRepositoryTest {
         val runner = DatabaseTransactionRunner(db)
         repository = RoomVoucherRepository(db, runner)
         firms = RoomFirmRepository(db, runner)
+        parties = RoomPartyRepository(db, runner)
     }
 
     @AfterTest
@@ -312,6 +314,7 @@ class RoomVoucherRepositoryTest {
         firms.saveFirm(testFirm())
         firms.saveSettings(testSettings(invoicePrefix = invoicePrefix))
         firms.saveFinancialYear(testFinancialYear())
+        parties.saveParty(testParty())
     }
 
     private suspend fun auditEvents(voucherId: String): List<AuditEventEntity> =

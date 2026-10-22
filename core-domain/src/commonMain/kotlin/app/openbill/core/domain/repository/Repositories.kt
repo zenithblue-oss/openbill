@@ -6,4 +6,6 @@ data class Repositories(
     val catalog: CatalogRepository,
     val vouchers: VoucherRepository,
     val stock: StockRepository,
+    val ledger: LedgerRepository,
+    val payments: PaymentRepository,
 )

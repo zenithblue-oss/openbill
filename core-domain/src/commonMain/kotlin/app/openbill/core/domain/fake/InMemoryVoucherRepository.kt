@@ -1,14 +1,19 @@
 package app.openbill.core.domain.fake
 
 import app.openbill.core.domain.model.FirmSettings
+import app.openbill.core.domain.model.JournalEntry
 import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherNumbering
 import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.domain.model.isPayment
+import app.openbill.core.domain.model.isPaymentAccount
+import app.openbill.core.domain.model.postsLedger
 import app.openbill.core.domain.repository.CatalogRepository
 import app.openbill.core.domain.repository.FirmRepository
 import app.openbill.core.domain.repository.VoucherRepository
+import app.openbill.core.domain.service.LedgerJournalDerivation
 import app.openbill.core.domain.service.StockMovementDerivation
 import app.openbill.core.model.Quantity
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +33,9 @@ class InMemoryVoucherRepository(
     private val catalog: CatalogRepository? = null,
     private val firms: FirmRepository? = null,
     private val derivation: StockMovementDerivation = StockMovementDerivation(),
+    private val ledger: InMemoryLedgerRepository? = null,
+    private val payments: InMemoryPaymentRepository? = null,
+    private val ledgerDerivation: LedgerJournalDerivation = LedgerJournalDerivation(),
 ) : VoucherRepository {
     private data class NumberKey(
         val firmId: String,
@@ -73,6 +81,7 @@ class InMemoryVoucherRepository(
         val voucher = vouchers.value.firstOrNull { it.id == id }
             ?: throw IllegalArgumentException("Unknown voucher: $id")
         require(voucher.status == VoucherStatus.DRAFT) { "Only drafts can be deleted here" }
+        payments?.deletePaymentDetails(id)
         vouchers.update { current -> current.filterNot { it.id == id } }
     }
 
@@ -90,7 +99,9 @@ class InMemoryVoucherRepository(
             updatedAt = at,
         )
         val movements = prepareStock(draft, at)
+        val journalEntries = prepareLedgerPosted(posted, at)
         this.stock?.record(movements)
+        ledger?.record(journalEntries)
         nextNumbers[key] = next + 1
         vouchers.update { current -> current.filterNot { it.id == voucherId } + posted }
         posted
@@ -112,9 +123,50 @@ class InMemoryVoucherRepository(
         )
         val originalMovements = this.stock?.observeMovements(voucherId)?.first().orEmpty()
         val movements = prepareStock(voucher, at, originalMovements)
+        val journalEntries = prepareLedgerCancelled(voucher, at)
         this.stock?.record(movements)
+        ledger?.record(journalEntries)
         vouchers.update { current -> current.filterNot { it.id == voucherId } + cancelled }
         cancelled
+    }
+
+    private suspend fun prepareLedgerPosted(voucher: Voucher, at: Instant): List<JournalEntry> {
+        val ledger = this.ledger ?: return emptyList()
+        if (!voucher.type.postsLedger()) return emptyList()
+        val partyId = voucher.partyId
+        require(partyId != null) { "Voucher must have a party to post to the ledger" }
+        val paymentAccountId = paymentAccountId(voucher, ledger)
+        val accounts = ledger.ensureSystemAccounts(voucher.firmId, at)
+        return ledgerDerivation.derivePosted(voucher, accounts, paymentAccountId, at)
+    }
+
+    private suspend fun prepareLedgerCancelled(
+        voucher: Voucher,
+        at: Instant,
+    ): List<JournalEntry> {
+        val ledger = this.ledger ?: return emptyList()
+        if (!voucher.type.postsLedger()) return emptyList()
+        val entries = ledger.journalEntriesForVoucher(voucher.id)
+        return ledgerDerivation.deriveReversal(voucher, entries, at)
+    }
+
+    private suspend fun paymentAccountId(
+        voucher: Voucher,
+        ledger: InMemoryLedgerRepository,
+    ): String? {
+        if (!voucher.type.isPayment()) return null
+        val details = payments?.findPaymentDetails(voucher.id)
+            ?: throw IllegalArgumentException("Payment details are required before posting")
+        val account = ledger.findAccountById(details.accountId)
+            ?: throw IllegalArgumentException("Unknown account: ${details.accountId}")
+        require(account.firmId == voucher.firmId) {
+            "Payment account belongs to a different firm"
+        }
+        require(account.deletedAt == null) { "Payment account is deleted" }
+        require(account.type.isPaymentAccount) {
+            "Payment account must be a cash, bank, or asset account"
+        }
+        return account.id
     }
 
     private suspend fun prepareStock(

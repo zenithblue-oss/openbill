@@ -353,6 +353,7 @@ internal fun sampleAccount(
     id: String = Fixture.CASH_ACCOUNT_ID,
     name: String = "Cash",
     type: String = "cash",
+    code: String? = null,
     isDefault: Boolean = true,
     deletedAt: Long? = null,
 ): AccountEntity = AccountEntity(
@@ -360,6 +361,7 @@ internal fun sampleAccount(
     firmId = Fixture.FIRM_ID,
     name = name,
     type = type,
+    code = code,
     openingBalance = 0,
     isDefault = isDefault,
     sync = testSync(deletedAt = deletedAt),
@@ -521,3 +523,24 @@ internal suspend fun OpenBillDatabase.seedBaseline() {
     attachmentDao().insert(sampleAttachment())
     voucherNumberSequenceDao().upsert(sampleSequence())
 }
+
+internal fun samplePaymentDetails(
+    voucherId: String = Fixture.PAYMENT_VOUCHER_ID,
+    accountId: String = Fixture.CASH_ACCOUNT_ID,
+    method: String = "cash",
+    reference: String? = null,
+): PaymentDetailsEntity = PaymentDetailsEntity(
+    voucherId = voucherId,
+    firmId = Fixture.FIRM_ID,
+    accountId = accountId,
+    method = method,
+    instrumentNumber = null,
+    instrumentDate = null,
+    bankName = null,
+    branch = null,
+    upiId = null,
+    reference = reference,
+    notes = null,
+    createdAt = Fixture.CREATED_AT,
+    updatedAt = Fixture.UPDATED_AT,
+)

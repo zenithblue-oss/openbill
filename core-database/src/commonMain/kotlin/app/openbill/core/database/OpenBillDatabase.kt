@@ -14,12 +14,13 @@ import app.openbill.core.database.dao.ItemDao
 import app.openbill.core.database.dao.LedgerDao
 import app.openbill.core.database.dao.PartyDao
 import app.openbill.core.database.dao.PaymentAllocationDao
+import app.openbill.core.database.dao.PaymentDetailsDao
 import app.openbill.core.database.dao.SerialNumberDao
 import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 2
+const val OPENBILL_DATABASE_VERSION = 3
 
 @Database(
     entities = [
@@ -39,6 +40,7 @@ const val OPENBILL_DATABASE_VERSION = 2
         VoucherChargeEntity::class,
         VoucherNumberSequenceEntity::class,
         PaymentAllocationEntity::class,
+        PaymentDetailsEntity::class,
         StockMovementEntity::class,
         AccountEntity::class,
         JournalEntryEntity::class,
@@ -70,6 +72,8 @@ abstract class OpenBillDatabase : RoomDatabase() {
     abstract fun voucherNumberSequenceDao(): VoucherNumberSequenceDao
 
     abstract fun paymentAllocationDao(): PaymentAllocationDao
+
+    abstract fun paymentDetailsDao(): PaymentDetailsDao
 
     abstract fun stockMovementDao(): StockMovementDao
 

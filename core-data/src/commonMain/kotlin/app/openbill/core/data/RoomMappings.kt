@@ -1,19 +1,26 @@
 package app.openbill.core.data
 
+import app.openbill.core.database.AccountEntity
 import app.openbill.core.database.FinancialYearEntity
 import app.openbill.core.database.FirmEntity
 import app.openbill.core.database.FirmSettingsEntity
 import app.openbill.core.database.GodownEntity
 import app.openbill.core.database.ItemCategoryEntity
 import app.openbill.core.database.ItemEntity
+import app.openbill.core.database.JournalEntryEntity
 import app.openbill.core.database.PartyAddressEntity
 import app.openbill.core.database.PartyEntity
+import app.openbill.core.database.PaymentAllocationEntity
+import app.openbill.core.database.PaymentDetailsEntity
 import app.openbill.core.database.StockMovementEntity
 import app.openbill.core.database.SyncMetadata
 import app.openbill.core.database.UnitEntity
 import app.openbill.core.database.VoucherChargeEntity
 import app.openbill.core.database.VoucherEntity
 import app.openbill.core.database.VoucherLineEntity
+import app.openbill.core.domain.model.Account
+import app.openbill.core.domain.model.AccountCode
+import app.openbill.core.domain.model.AccountType
 import app.openbill.core.domain.model.AddressKind
 import app.openbill.core.domain.model.FinancialYear
 import app.openbill.core.domain.model.Firm
@@ -21,10 +28,14 @@ import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.Godown
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.ItemCategory
+import app.openbill.core.domain.model.JournalEntry
 import app.openbill.core.domain.model.OpeningBalanceType
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyAddress
 import app.openbill.core.domain.model.PartyType
+import app.openbill.core.domain.model.PaymentAllocation
+import app.openbill.core.domain.model.PaymentDetails
+import app.openbill.core.domain.model.PaymentMethod
 import app.openbill.core.domain.model.StockDirection
 import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.UnitOfMeasure
@@ -505,4 +516,104 @@ internal fun StockMovement.toEntity(): StockMovementEntity = StockMovementEntity
     date = date.toString(),
     quantity = quantity.scaledUnits,
     createdAt = createdAt.toEpochMillis(),
+)
+
+internal fun AccountEntity.toDomain(): Account = Account(
+    id = id,
+    firmId = firmId,
+    name = name,
+    type = decodeEnum<AccountType>(type, "account type"),
+    code = code?.let { decodeEnum<AccountCode>(it, "account code") },
+    openingBalance = Money.of(openingBalance),
+    isDefault = isDefault,
+    createdAt = sync.createdAt.toInstant(),
+    updatedAt = sync.updatedAt.toInstant(),
+    deletedAt = sync.deletedAt?.toInstant(),
+)
+
+internal fun Account.toEntity(existing: AccountEntity?): AccountEntity = AccountEntity(
+    id = id,
+    firmId = firmId,
+    name = name,
+    type = type.name.lowercase(),
+    code = code?.name,
+    openingBalance = openingBalance.paise,
+    isDefault = isDefault,
+    sync = syncFor(createdAt, updatedAt, deletedAt, existing?.sync),
+)
+
+internal fun JournalEntryEntity.toDomain(): JournalEntry = JournalEntry(
+    id = id,
+    firmId = firmId,
+    voucherId = voucherId,
+    accountId = accountId,
+    date = LocalDate.parse(date),
+    debit = Money.of(debit),
+    credit = Money.of(credit),
+    narration = narration,
+    createdAt = createdAt.toInstant(),
+)
+
+internal fun JournalEntry.toEntity(): JournalEntryEntity = JournalEntryEntity(
+    id = id,
+    firmId = firmId,
+    voucherId = voucherId,
+    accountId = accountId,
+    date = date.toString(),
+    debit = debit.paise,
+    credit = credit.paise,
+    narration = narration,
+    createdAt = createdAt.toEpochMillis(),
+)
+
+internal fun PaymentDetailsEntity.toDomain(): PaymentDetails = PaymentDetails(
+    voucherId = voucherId,
+    firmId = firmId,
+    accountId = accountId,
+    method = decodeEnum<PaymentMethod>(method, "payment method"),
+    instrumentNumber = instrumentNumber,
+    instrumentDate = instrumentDate?.let(LocalDate::parse),
+    bankName = bankName,
+    branch = branch,
+    upiId = upiId,
+    reference = reference,
+    notes = notes,
+    createdAt = createdAt.toInstant(),
+    updatedAt = updatedAt.toInstant(),
+)
+
+internal fun PaymentDetails.toEntity(): PaymentDetailsEntity = PaymentDetailsEntity(
+    voucherId = voucherId,
+    firmId = firmId,
+    accountId = accountId,
+    method = method.name.lowercase(),
+    instrumentNumber = instrumentNumber,
+    instrumentDate = instrumentDate?.toString(),
+    bankName = bankName,
+    branch = branch,
+    upiId = upiId,
+    reference = reference,
+    notes = notes,
+    createdAt = createdAt.toEpochMillis(),
+    updatedAt = updatedAt.toEpochMillis(),
+)
+
+internal fun PaymentAllocationEntity.toDomain(): PaymentAllocation = PaymentAllocation(
+    id = id,
+    firmId = firmId,
+    paymentVoucherId = paymentVoucherId,
+    invoiceVoucherId = invoiceVoucherId,
+    amount = Money.of(amount),
+    createdAt = createdAt.toInstant(),
+    updatedAt = updatedAt.toInstant(),
+)
+
+internal fun PaymentAllocation.toEntity(): PaymentAllocationEntity = PaymentAllocationEntity(
+    id = id,
+    firmId = firmId,
+    paymentVoucherId = paymentVoucherId,
+    invoiceVoucherId = invoiceVoucherId,
+    amount = amount.paise,
+    createdAt = createdAt.toEpochMillis(),
+    updatedAt = updatedAt.toEpochMillis(),
 )

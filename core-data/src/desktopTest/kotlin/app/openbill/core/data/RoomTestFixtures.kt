@@ -11,6 +11,8 @@ import app.openbill.core.domain.model.OpeningBalanceType
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyAddress
 import app.openbill.core.domain.model.PartyType
+import app.openbill.core.domain.model.PaymentDetails
+import app.openbill.core.domain.model.PaymentMethod
 import app.openbill.core.domain.model.StockDirection
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.domain.model.Voucher
@@ -242,6 +244,7 @@ internal fun testVoucher(
     date: LocalDate = LocalDate(2026, 5, 10),
     lines: List<VoucherLine> = listOf(testLine()),
     charges: List<VoucherCharge> = listOf(testCharge()),
+    partyId: String? = "party-1",
 ): Voucher = Voucher(
     id = id,
     firmId = firmId,
@@ -250,7 +253,7 @@ internal fun testVoucher(
     number = null,
     date = date,
     dueDate = null,
-    partyId = null,
+    partyId = partyId,
     status = VoucherStatus.DRAFT,
     placeOfSupplyStateCode = "27",
     lines = lines,
@@ -262,6 +265,46 @@ internal fun testVoucher(
     roundOff = Money.ZERO,
     total = Money.of(23_800L),
     notes = "Draft voucher",
+    createdAt = CREATED_AT,
+    updatedAt = UPDATED_AT,
+)
+
+internal fun testPaymentVoucher(
+    id: String = "payment-1",
+    firmId: String = "firm-1",
+    financialYearId: String = "fy-1",
+    type: VoucherType = VoucherType.PAYMENT_IN,
+    date: LocalDate = LocalDate(2026, 5, 12),
+    partyId: String? = "party-1",
+    total: Long = 10_000L,
+): Voucher = Voucher(
+    id = id,
+    firmId = firmId,
+    financialYearId = financialYearId,
+    type = type,
+    date = date,
+    partyId = partyId,
+    status = VoucherStatus.DRAFT,
+    placeOfSupplyStateCode = "27",
+    lines = emptyList(),
+    charges = emptyList(),
+    total = Money.of(total),
+    notes = "Draft payment",
+    createdAt = CREATED_AT,
+    updatedAt = UPDATED_AT,
+)
+
+internal fun testPaymentDetails(
+    voucherId: String,
+    accountId: String,
+    method: PaymentMethod = PaymentMethod.CASH,
+    reference: String? = null,
+): PaymentDetails = PaymentDetails(
+    voucherId = voucherId,
+    firmId = "firm-1",
+    accountId = accountId,
+    method = method,
+    reference = reference,
     createdAt = CREATED_AT,
     updatedAt = UPDATED_AT,
 )

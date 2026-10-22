@@ -151,6 +151,7 @@ or a simple CI grep for forbidden packages.
 | `Voucher` | Header for any document |
 | `VoucherLine` | Item, quantity, rate, discount, tax |
 | `VoucherCharge` | Additional charges and their tax treatment |
+| `PaymentDetails` | Account and instrument details for a payment voucher |
 | `PaymentAllocation` | Links a payment to a document |
 | `StockMovement` | Signed quantity movement from a posted document |
 | `Account` | Cash, bank, or ledger account |
@@ -193,6 +194,36 @@ Rules:
 - Batch and serial quantities match line quantities.
 - FTS row counts match canonical row counts for indexed types.
 - Foreign keys are enforced; SQLite `foreign_keys` is on for every connection.
+
+### Payments, control accounts, and party ledger
+
+- Each firm owns system accounts for accounts receivable, accounts payable, output GST,
+  input GST, and round-off. Account codes are unique per firm and are created idempotently
+  at first posting. A same-named account without the expected code is a conflict, not a
+  silent match.
+- A payment voucher stores its cash/bank account, method, and instrument data in
+  `payment_details`, one row per payment. The voucher itself carries no payment account
+  columns.
+- Posted vouchers post balanced journal entries. Sales and credit notes move the receivable
+  control account; purchases and debit notes move the payable control account. Payment-in
+  debits cash/bank and credits receivables; payment-out debits payables and credits
+  cash/bank. Charge-inclusive voucher totals split charges into the sales or purchases
+  account and charge tax into the matching GST account. Inconsistent totals fail posting
+  instead of producing an unbalanced journal.
+- Payment allocation does not create journal entries. It reduces the outstanding amount of
+  the invoice, which is derived as invoice total minus effective posted allocations.
+  Allocation rows are append-only. Allocation is validated against the payment balance,
+  the invoice outstanding balance, firm, party, and document type.
+- Cancelling a payment appends reversal journal entries and leaves its allocations in
+  place. Effective allocation queries ignore cancelled or deleted payments, so invoice
+  outstanding amounts and party balances recover without mutating history. Credit notes do
+  not net against invoice outstanding in this phase.
+- The party ledger is derived from receivable/payable journal entries joined to their
+  posted, non-deleted vouchers. It is not a separate mutable balance table. The opening
+  balance comes from the party master's signed opening balance; the closing balance is the
+  opening balance plus posted movements.
+- Expense vouchers, allocation editing, and payment restore are deferred; payment restore
+  belongs to E2.8.
 
 ## 6. Tax engine
 
@@ -245,8 +276,10 @@ Transaction boundaries:
 
 - Posting a voucher: validate, assign number, insert voucher and lines, insert stock
   movements, insert journal entries, update FTS, write audit event.
-- Recording a payment: validate allocations, insert payment, update invoice balances,
-  insert journal entries, write audit event.
+- Recording a payment: validate the account and payment details, insert the payment
+  journal entries, write audit event.
+- Allocating a payment: validate the payment and invoice balances, insert append-only
+  allocation rows, write audit event.
 - Cancelling: validate state, insert reversing movements and entries, update status, write
   audit event.
 - Restoring a cancelled voucher: validate state and reasons, reapply stock movements and

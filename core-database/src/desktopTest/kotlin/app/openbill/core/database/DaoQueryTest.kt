@@ -436,6 +436,155 @@ class DaoQueryTest {
     }
 
     @Test
+    fun paymentDetailsDaoUpsertsFindsAndDeletesOnlyDrafts(): Unit = runBlocking {
+        db.seedBaseline()
+        db.paymentDetailsDao().upsert(samplePaymentDetails(reference = "REF-1"))
+
+        assertEquals(
+            "REF-1",
+            db.paymentDetailsDao().findForVoucher(Fixture.PAYMENT_VOUCHER_ID)?.reference,
+        )
+        assertEquals(
+            "REF-1",
+            db.paymentDetailsDao()
+                .observeForVoucher(Fixture.PAYMENT_VOUCHER_ID)
+                .firstValue()
+                ?.reference,
+        )
+
+        db.paymentDetailsDao().upsert(
+            samplePaymentDetails(reference = "REF-2").copy(updatedAt = Fixture.UPDATED_AT + 1),
+        )
+        assertEquals(
+            "REF-2",
+            db.paymentDetailsDao().findForVoucher(Fixture.PAYMENT_VOUCHER_ID)?.reference,
+        )
+        assertEquals(
+            0,
+            db.paymentDetailsDao().deleteForDraftVoucher(Fixture.PAYMENT_VOUCHER_ID),
+        )
+        assertNotNull(db.paymentDetailsDao().findForVoucher(Fixture.PAYMENT_VOUCHER_ID))
+
+        db.voucherDao().insert(
+            sampleVoucher(
+                id = "payment-draft",
+                type = "payment",
+                number = null,
+                date = Fixture.PAYMENT_DATE,
+                status = "draft",
+                total = 1_000,
+            ),
+        )
+        db.paymentDetailsDao().upsert(
+            samplePaymentDetails(voucherId = "payment-draft", reference = "DRAFT-REF"),
+        )
+        assertEquals(1, db.paymentDetailsDao().deleteForDraftVoucher("payment-draft"))
+        assertNull(db.paymentDetailsDao().findForVoucher("payment-draft"))
+    }
+
+    @Test
+    fun paymentAllocationDaoEffectiveTotalsAndOutstanding(): Unit = runBlocking {
+        db.seedBaseline()
+        db.voucherDao().insert(
+            sampleVoucher(
+                id = "sale-posted",
+                number = "INV-POSTED",
+                status = "posted",
+                total = 10_000,
+                postedAt = Fixture.UPDATED_AT,
+            ),
+        )
+        db.paymentAllocationDao().insertAll(
+            listOf(
+                sampleAllocation(id = "allocation-posted", amount = 2_500).copy(
+                    invoiceVoucherId = "sale-posted",
+                ),
+            ),
+        )
+
+        assertEquals(
+            2_500,
+            db.paymentAllocationDao().effectiveTotalAllocatedForInvoice("sale-posted"),
+        )
+        assertEquals(
+            2_500,
+            db.paymentAllocationDao()
+                .observeEffectiveTotalAllocatedForInvoice("sale-posted")
+                .firstValue(),
+        )
+        assertEquals(
+            5_000,
+            db.paymentAllocationDao().totalAllocatedForPayment(Fixture.PAYMENT_VOUCHER_ID),
+        )
+        assertEquals(
+            5_000,
+            db.paymentAllocationDao()
+                .observeTotalAllocatedForPayment(Fixture.PAYMENT_VOUCHER_ID)
+                .firstValue(),
+        )
+
+        val outstanding = db.paymentAllocationDao()
+            .outstandingInvoices(Fixture.FIRM_ID, Fixture.PARTY_ID, "sale")
+        assertEquals(listOf("sale-posted"), outstanding.map { it.voucherId })
+        assertEquals(2_500, outstanding.single().allocated)
+        assertEquals(10_000, outstanding.single().total)
+
+        db.voucherDao().insert(
+            sampleVoucher(
+                id = "voucher-payment-2",
+                type = "payment",
+                number = "PAY-0002",
+                date = Fixture.PAYMENT_DATE,
+                status = "posted",
+                total = 7_500,
+                postedAt = Fixture.UPDATED_AT,
+            ),
+        )
+        db.paymentAllocationDao().insertAll(
+            listOf(
+                sampleAllocation(id = "allocation-final", amount = 7_500).copy(
+                    paymentVoucherId = "voucher-payment-2",
+                    invoiceVoucherId = "sale-posted",
+                ),
+            ),
+        )
+        assertTrue(
+            db.paymentAllocationDao()
+                .outstandingInvoices(Fixture.FIRM_ID, Fixture.PARTY_ID, "sale")
+                .isEmpty(),
+        )
+
+        db.voucherDao().update(
+            sampleVoucher(
+                id = Fixture.PAYMENT_VOUCHER_ID,
+                type = "payment",
+                number = "PAY-0001",
+                date = Fixture.PAYMENT_DATE,
+                status = "cancelled",
+                total = 2_500,
+                postedAt = Fixture.UPDATED_AT,
+            ).copy(
+                cancellationReason = "Bounced",
+                cancelledAt = Fixture.DELETED_AT,
+            ),
+        )
+        assertEquals(
+            7_500,
+            db.paymentAllocationDao().effectiveTotalAllocatedForInvoice("sale-posted"),
+        )
+        assertEquals(
+            5_000,
+            db.paymentAllocationDao().totalAllocatedForPayment(Fixture.PAYMENT_VOUCHER_ID),
+        )
+        assertEquals(
+            listOf("sale-posted"),
+            db.paymentAllocationDao()
+                .outstandingInvoices(Fixture.FIRM_ID, Fixture.PARTY_ID, "sale")
+                .map { it.voucherId },
+        )
+    }
+
+    @Test
     fun stockMovementDaoBalancesListsAndDraftDeletion(): Unit = runBlocking {
         db.seedBaseline()
 

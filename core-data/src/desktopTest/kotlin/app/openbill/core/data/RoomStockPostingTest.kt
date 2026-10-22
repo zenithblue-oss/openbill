@@ -27,6 +27,7 @@ class RoomStockPostingTest {
     private lateinit var firms: RoomFirmRepository
     private lateinit var catalog: RoomCatalogRepository
     private lateinit var stock: RoomStockRepository
+    private lateinit var parties: RoomPartyRepository
 
     @BeforeTest
     fun setUp() {
@@ -38,6 +39,7 @@ class RoomStockPostingTest {
         firms = RoomFirmRepository(db, runner)
         catalog = RoomCatalogRepository(db, runner)
         stock = RoomStockRepository(db)
+        parties = RoomPartyRepository(db, runner)
     }
 
     @AfterTest
@@ -301,6 +303,7 @@ class RoomStockPostingTest {
             ),
         )
         firms.saveFinancialYear(testFinancialYear())
+        parties.saveParty(testParty())
         catalog.saveCategory(testCategory())
         catalog.saveUnit(testUnit())
         catalog.saveGodown(testGodown())

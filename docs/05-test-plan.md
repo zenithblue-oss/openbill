@@ -126,7 +126,10 @@ Payments:
 - Multiple allocations cannot exceed the payment amount.
 - Allocation cannot exceed the invoice outstanding amount.
 - Advance payments remain unallocated until applied.
-- Deleting a payment reverses allocations and balances.
+- Cancelling a payment appends reversal entries and makes allocations dormant without
+  deleting them.
+- Cancelling an invoice does not reallocate its payments automatically.
+- Credit notes do not net against invoice outstanding in this phase.
 - Party closing balance equals opening plus all posted movements.
 - Aging buckets sum to the total outstanding.
 
@@ -134,7 +137,8 @@ Ledger:
 
 - Chosen accounting equation holds for every posted transaction.
 - Cash and bank balances match their journal entries.
-- Opening balances are represented as explicit entries.
+- Opening balances come from party master data and are included in the party ledger and
+  control reconciliation.
 - Financial-year close preserves balances and prevents back-dated posting into a closed
   year unless the user reopens it.
 
