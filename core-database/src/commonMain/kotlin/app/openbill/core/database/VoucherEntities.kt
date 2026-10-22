@@ -1,5 +1,6 @@
 package app.openbill.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -153,6 +154,47 @@ data class VoucherChargeEntity(
     val taxAmount: Long,
     val total: Long,
     val sortOrder: Int,
+    /** `non_taxable`, `explicit_rate`, or `principal_supply`. Pre-v4 rows were explicit. */
+    @ColumnInfo(defaultValue = "explicit_rate") val taxBasis: String = "explicit_rate",
+    @ColumnInfo(defaultValue = "exclusive") val taxMode: String = "exclusive",
+    /** Applied treatment, lowercase `TaxTreatment` name. */
+    @ColumnInfo(defaultValue = "taxable") val treatment: String = "taxable",
+    val hsnSac: String? = null,
+)
+
+/**
+ * One rate portion of a proportionally apportioned charge. Rows exist only when a charge was
+ * split across more than one rate group; a charge without rows is a single portion described
+ * by its own columns. Portion sums equal the parent charge's taxable, tax and total.
+ */
+@Entity(
+    tableName = "voucher_charge_portions",
+    foreignKeys = [
+        ForeignKey(
+            entity = VoucherChargeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["chargeId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["chargeId", "portionIndex"], unique = true),
+        Index(value = ["voucherId"]),
+    ],
+)
+data class VoucherChargePortionEntity(
+    @PrimaryKey val id: String,
+    val chargeId: String,
+    /** Denormalized for per-voucher loading. */
+    val voucherId: String,
+    val portionIndex: Int,
+    /** Applied treatment, lowercase `TaxTreatment` name. */
+    val treatment: String,
+    val taxRateUnits: Long,
+    val cessRateUnits: Long,
+    val taxableValue: Long,
+    val taxAmount: Long,
+    val total: Long,
 )
 
 @Entity(

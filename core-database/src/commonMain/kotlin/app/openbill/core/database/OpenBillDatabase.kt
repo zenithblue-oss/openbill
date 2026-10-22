@@ -21,7 +21,7 @@ import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 3
+const val OPENBILL_DATABASE_VERSION = 5
 
 @Database(
     entities = [
@@ -39,6 +39,7 @@ const val OPENBILL_DATABASE_VERSION = 3
         VoucherEntity::class,
         VoucherLineEntity::class,
         VoucherChargeEntity::class,
+        VoucherChargePortionEntity::class,
         VoucherNumberSequenceEntity::class,
         PaymentAllocationEntity::class,
         PaymentDetailsEntity::class,

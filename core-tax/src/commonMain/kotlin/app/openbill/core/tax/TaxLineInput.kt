@@ -10,6 +10,8 @@ data class TaxLineInput(
     val cessRate: Rate = Rate.ofBasisPointsHundredths(0L),
     val mode: TaxMode,
     val treatment: TaxTreatment = TaxTreatment.TAXABLE,
+    /** HSN/SAC code used only for [InvoiceTaxResult.summary] grouping. */
+    val hsnSac: String? = null,
 ) {
     init {
         require(grossAmount >= Money.ZERO) { "grossAmount cannot be negative" }

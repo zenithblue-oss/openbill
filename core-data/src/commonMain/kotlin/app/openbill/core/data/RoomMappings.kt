@@ -16,6 +16,7 @@ import app.openbill.core.database.StockMovementEntity
 import app.openbill.core.database.SyncMetadata
 import app.openbill.core.database.UnitEntity
 import app.openbill.core.database.VoucherChargeEntity
+import app.openbill.core.database.VoucherChargePortionEntity
 import app.openbill.core.database.VoucherEntity
 import app.openbill.core.database.VoucherLineEntity
 import app.openbill.core.domain.model.Account
@@ -41,6 +42,7 @@ import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherCharge
+import app.openbill.core.domain.model.VoucherChargePortion
 import app.openbill.core.domain.model.VoucherLine
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
@@ -48,6 +50,7 @@ import app.openbill.core.model.Money
 import app.openbill.core.model.Quantity
 import app.openbill.core.model.Rate
 import app.openbill.core.model.RoundingMode
+import app.openbill.core.tax.ChargeTaxBasis
 import app.openbill.core.tax.TaxMode
 import app.openbill.core.tax.TaxTreatment
 import kotlin.time.Instant
@@ -353,6 +356,7 @@ internal fun Item.toEntity(existing: ItemEntity?): ItemEntity = ItemEntity(
 internal fun VoucherEntity.toDomain(
     lines: List<VoucherLineEntity>,
     charges: List<VoucherChargeEntity>,
+    chargePortions: List<VoucherChargePortionEntity> = emptyList(),
 ): Voucher = Voucher(
     id = id,
     firmId = firmId,
@@ -366,7 +370,11 @@ internal fun VoucherEntity.toDomain(
     status = decodeEnum<VoucherStatus>(status, "voucher status"),
     placeOfSupplyStateCode = placeOfSupplyStateCode,
     lines = lines.map { it.toDomain() },
-    charges = charges.map { it.toDomain() },
+    charges = charges.map { charge ->
+        charge.toDomain(
+            chargePortions.filter { it.chargeId == charge.id }.sortedBy { it.portionIndex },
+        )
+    },
     subtotal = Money.of(subtotal),
     discount = Money.of(discount),
     taxable = Money.of(taxable),
@@ -464,7 +472,34 @@ internal fun VoucherLine.toEntity(
     ),
 )
 
-internal fun VoucherChargeEntity.toDomain(): VoucherCharge = VoucherCharge(
+internal fun VoucherChargePortionEntity.toDomain(): VoucherChargePortion = VoucherChargePortion(
+    treatment = decodeEnum<TaxTreatment>(treatment, "charge portion tax treatment"),
+    taxRate = Rate.ofBasisPointsHundredths(taxRateUnits),
+    cessRate = Rate.ofBasisPointsHundredths(cessRateUnits),
+    taxableValue = Money.of(taxableValue),
+    taxAmount = Money.of(taxAmount),
+    total = Money.of(total),
+)
+
+internal fun VoucherCharge.portionEntities(voucherId: String): List<VoucherChargePortionEntity> =
+    portions.mapIndexed { index, portion ->
+        VoucherChargePortionEntity(
+            id = "$id:$index",
+            chargeId = id,
+            voucherId = voucherId,
+            portionIndex = index,
+            treatment = portion.treatment.name.lowercase(),
+            taxRateUnits = portion.taxRate.units,
+            cessRateUnits = portion.cessRate.units,
+            taxableValue = portion.taxableValue.paise,
+            taxAmount = portion.taxAmount.paise,
+            total = portion.total.paise,
+        )
+    }
+
+internal fun VoucherChargeEntity.toDomain(
+    portions: List<VoucherChargePortionEntity> = emptyList(),
+): VoucherCharge = VoucherCharge(
     id = id,
     name = name,
     amount = Money.of(amount),
@@ -473,6 +508,11 @@ internal fun VoucherChargeEntity.toDomain(): VoucherCharge = VoucherCharge(
     taxAmount = Money.of(taxAmount),
     total = Money.of(total),
     sortOrder = sortOrder,
+    taxBasis = decodeEnum<ChargeTaxBasis>(taxBasis, "charge tax basis"),
+    taxMode = decodeEnum<TaxMode>(taxMode, "charge tax mode"),
+    treatment = decodeEnum<TaxTreatment>(treatment, "charge tax treatment"),
+    hsnSac = hsnSac,
+    portions = portions.map { it.toDomain() },
 )
 
 internal fun VoucherCharge.toEntity(voucherId: String): VoucherChargeEntity =
@@ -486,6 +526,10 @@ internal fun VoucherCharge.toEntity(voucherId: String): VoucherChargeEntity =
         taxAmount = taxAmount.paise,
         total = total.paise,
         sortOrder = sortOrder,
+        taxBasis = taxBasis.name.lowercase(),
+        taxMode = taxMode.name.lowercase(),
+        treatment = treatment.name.lowercase(),
+        hsnSac = hsnSac,
     )
 
 internal fun VoucherType.documentTypeCode(): String = name.lowercase()

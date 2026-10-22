@@ -186,6 +186,6 @@ class RoomPaymentRepository(
 
     private suspend fun loadVoucher(id: String): Voucher? {
         val entity = vouchers.findById(id) ?: return null
-        return entity.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id))
+        return entity.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id), vouchers.portionsFor(id))
     }
 }

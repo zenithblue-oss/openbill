@@ -6,6 +6,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import app.openbill.core.database.VoucherChargeEntity
+import app.openbill.core.database.VoucherChargePortionEntity
 import app.openbill.core.database.VoucherEntity
 import app.openbill.core.database.VoucherLineEntity
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +24,9 @@ interface VoucherDao {
 
     @Insert
     suspend fun insertCharges(charges: List<VoucherChargeEntity>)
+
+    @Insert
+    suspend fun insertChargePortions(portions: List<VoucherChargePortionEntity>)
 
     @Query("SELECT * FROM vouchers WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): VoucherEntity?
@@ -68,6 +72,9 @@ interface VoucherDao {
 
     @Query("SELECT * FROM voucher_charges WHERE voucherId = :voucherId ORDER BY sortOrder")
     suspend fun chargesFor(voucherId: String): List<VoucherChargeEntity>
+
+    @Query("SELECT * FROM voucher_charge_portions WHERE voucherId = :voucherId ORDER BY chargeId, portionIndex")
+    suspend fun portionsFor(voucherId: String): List<VoucherChargePortionEntity>
 
     @Query("SELECT COUNT(*) FROM voucher_lines WHERE voucherId = :voucherId")
     suspend fun lineCount(voucherId: String): Int
@@ -115,9 +122,11 @@ interface VoucherDao {
         voucher: VoucherEntity,
         lines: List<VoucherLineEntity> = emptyList(),
         charges: List<VoucherChargeEntity> = emptyList(),
+        chargePortions: List<VoucherChargePortionEntity> = emptyList(),
     ) {
         insert(voucher)
         insertLines(lines)
         insertCharges(charges)
+        insertChargePortions(chargePortions)
     }
 }

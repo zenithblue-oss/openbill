@@ -15,8 +15,8 @@ object GstCalculator {
         rounding: RoundingMode,
     ): TaxLineResult {
         val net = input.grossAmount - input.discount
-        if (input.treatment != TaxTreatment.TAXABLE) {
-            return TaxLineResult(
+        val result = if (input.treatment != TaxTreatment.TAXABLE) {
+            TaxLineResult(
                 taxableValue = net,
                 components = emptyList(),
                 totalTax = Money.ZERO,
@@ -28,12 +28,17 @@ object GstCalculator {
                     "totalTax=0 total=${net.paise}",
                 ),
             )
+        } else {
+            when (input.mode) {
+                TaxMode.EXCLUSIVE -> calculateExclusive(input, context, net, rounding)
+                TaxMode.INCLUSIVE -> calculateInclusive(input, context, net, rounding)
+            }
         }
-
-        return when (input.mode) {
-            TaxMode.EXCLUSIVE -> calculateExclusive(input, context, net, rounding)
-            TaxMode.INCLUSIVE -> calculateInclusive(input, context, net, rounding)
-        }
+        return result.copy(
+            treatment = input.treatment,
+            gstRate = input.gstRate,
+            cessRate = input.cessRate,
+        )
     }
 
     private fun calculateExclusive(

@@ -170,19 +170,35 @@ class LedgerJournalDerivation(
         val tax: Money,
     )
 
+    /**
+     * Additional charges post to the same income (sales) or expense (purchases) account as
+     * the lines, and their GST to the same output or input GST account: under GST valuation
+     * a charge billed with the supply is part of the value of that supply, so OpenBill does
+     * not use a separate "other charges" ledger. A non-taxable charge posts its value with no
+     * GST.
+     *
+     * Two header conventions are accepted. Preferred: the header taxable value and tax already
+     * include the charges (as returned by `InvoiceTaxCalculator`), so `total` equals
+     * `taxable + tax + roundOff` and nothing extra is posted. Legacy: the header covers lines
+     * only and `total` additionally includes every charge's [VoucherCharge.total]; the
+     * charges' taxable value ([VoucherCharge.taxableValue]) and tax are then added here.
+     * Any other combination is rejected.
+     */
     private fun includedCharges(voucher: Voucher): IncludedCharges {
         val headerBase = voucher.taxable + voucher.tax + voucher.roundOff
-        val chargeAmount = voucher.charges.fold(Money.ZERO) { total, charge ->
-            total + charge.amount
+        val chargeTaxable = voucher.charges.fold(Money.ZERO) { total, charge ->
+            total + charge.taxableValue
         }
         val chargeTax = voucher.charges.fold(Money.ZERO) { total, charge ->
             total + charge.taxAmount
         }
-        val chargeTotal = chargeAmount + chargeTax
+        val chargeTotal = voucher.charges.fold(Money.ZERO) { total, charge ->
+            total + charge.total
+        }
         val extra = voucher.total - headerBase
         return when {
             extra == Money.ZERO -> IncludedCharges(Money.ZERO, Money.ZERO)
-            extra == chargeTotal -> IncludedCharges(chargeAmount, chargeTax)
+            extra == chargeTotal -> IncludedCharges(chargeTaxable, chargeTax)
             else -> throw IllegalArgumentException(
                 "Voucher ${voucher.id} totals are inconsistent with its header, charges, and round-off",
             )

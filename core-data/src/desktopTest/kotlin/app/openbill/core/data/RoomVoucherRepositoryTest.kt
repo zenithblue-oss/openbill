@@ -45,6 +45,63 @@ class RoomVoucherRepositoryTest {
     }
 
     @Test
+    fun chargeTaxBasisModeTreatmentAndSacRoundTrip(): Unit = runBlocking {
+        seedMasterData()
+        val charges = listOf(
+            testCharge(id = "charge-principal", sortOrder = 0).copy(hsnSac = "9965"),
+            testCharge(id = "charge-explicit", sortOrder = 1).copy(
+                taxBasis = app.openbill.core.tax.ChargeTaxBasis.EXPLICIT_RATE,
+                taxMode = app.openbill.core.tax.TaxMode.INCLUSIVE,
+                amount = Money.of(590L),
+            ),
+            app.openbill.core.domain.model.VoucherCharge.nonTaxable(
+                id = "charge-none",
+                name = "Handling",
+                amount = Money.of(100L),
+                sortOrder = 2,
+            ),
+        )
+        val draft = testVoucher(charges = charges)
+        repository.saveDraft(draft)
+
+        assertEquals(charges, repository.findVoucher(draft.id)?.charges)
+        val rows = db.voucherDao().chargesFor(draft.id)
+        assertEquals(listOf("principal_supply", "explicit_rate", "non_taxable"), rows.map { it.taxBasis })
+        assertEquals(listOf("exclusive", "inclusive", "exclusive"), rows.map { it.taxMode })
+        assertEquals(listOf("taxable", "taxable", "non_gst"), rows.map { it.treatment })
+        assertEquals(listOf("9965", null, null), rows.map { it.hsnSac })
+    }
+
+    @Test
+    fun proportionalChargePortionsRoundTripAndAreReplacedOnSave(): Unit = runBlocking {
+        seedMasterData()
+        val portion = { rate: Int, taxable: Long, tax: Long ->
+            app.openbill.core.domain.model.VoucherChargePortion(
+                treatment = app.openbill.core.tax.TaxTreatment.TAXABLE,
+                taxRate = app.openbill.core.model.Rate.ofPercent(rate),
+                cessRate = app.openbill.core.model.Rate.ofBasisPoints(0),
+                taxableValue = Money.of(taxable),
+                taxAmount = Money.of(tax),
+                total = Money.of(taxable + tax),
+            )
+        }
+        val charge = testCharge(id = "charge-split", sortOrder = 0).copy(
+            amount = Money.of(12_000L),
+            taxRate = app.openbill.core.model.Rate.ofPercent(18),
+            taxAmount = Money.of(860L),
+            total = Money.of(12_860L),
+            portions = listOf(portion(5, 10_000L, 500L), portion(18, 2_000L, 360L)),
+        )
+        val draft = testVoucher(charges = listOf(charge))
+        repository.saveDraft(draft)
+        assertEquals(listOf(charge), repository.findVoucher(draft.id)?.charges)
+        assertEquals(2, db.voucherDao().portionsFor(draft.id).size)
+
+        repository.saveDraft(draft.copy(charges = listOf(testCharge(id = "charge-plain", sortOrder = 0))))
+        assertTrue(db.voucherDao().portionsFor(draft.id).isEmpty())
+    }
+
+    @Test
     fun saveDraftReplacesLinesAndChargesAndObservesDateRange(): Unit = runBlocking {
         seedMasterData()
         val draft = testVoucher()

@@ -3,6 +3,7 @@ package app.openbill.core.database
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -47,12 +48,14 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(3, OPENBILL_DATABASE_VERSION)
+        assertEquals(5, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/4.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/5.json").exists())
 
-        helper.createDatabase(3).use { connection ->
+        helper.createDatabase(5).use { connection ->
             val tables = mutableListOf<String>()
             connection.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -151,14 +154,119 @@ class DatabaseSchemaTest {
     }
 
     @Test
+    fun schemaV3MigratesToV4AndKeepsExistingChargesExplicit() {
+        helper.createDatabase(3).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO financial_years (id, firmId, startDate, endDate, createdAt, updatedAt) " +
+                    "VALUES ('fy-1', 'firm-1', '2026-04-01', '2027-03-31', 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO vouchers (id, firmId, financialYearId, type, date, status, " +
+                    "placeOfSupplyStateCode, subtotal, discount, taxable, tax, roundOff, total, " +
+                    "createdAt, updatedAt, revision) VALUES ('voucher-1', 'firm-1', 'fy-1', 'sale', " +
+                    "'2026-05-10', 'draft', '27', 10000, 0, 10000, 1800, 0, 12390, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO voucher_charges (id, voucherId, name, amount, taxRateUnits, " +
+                    "cessRateUnits, taxAmount, total, sortOrder) " +
+                    "VALUES ('charge-1', 'voucher-1', 'Freight', 500, 180000, 0, 90, 590, 0)",
+            )
+        }
+        helper.runMigrationsAndValidate(
+            OPENBILL_DATABASE_VERSION,
+            DatabaseMigrations.migrationsFor(3),
+        ).use { connection ->
+            val columns = mutableMapOf<String, Pair<Long, String?>>()
+            connection.prepare("PRAGMA table_info(voucher_charges)").use { statement ->
+                while (statement.step()) {
+                    columns[statement.getText(1)] =
+                        statement.getLong(3) to (if (statement.isNull(4)) null else statement.getText(4))
+                }
+            }
+            assertEquals(1L to "'explicit_rate'", columns["taxBasis"])
+            assertEquals(1L to "'exclusive'", columns["taxMode"])
+            assertEquals(1L to "'taxable'", columns["treatment"])
+            assertEquals(0L to null, columns["hsnSac"])
+
+            connection.prepare(
+                "SELECT taxBasis, taxMode, treatment, hsnSac, total FROM voucher_charges WHERE id = 'charge-1'",
+            ).use { statement ->
+                assertTrue(statement.step())
+                assertEquals("explicit_rate", statement.getText(0))
+                assertEquals("exclusive", statement.getText(1))
+                assertEquals("taxable", statement.getText(2))
+                assertTrue(statement.isNull(3))
+                assertEquals(590L, statement.getLong(4))
+            }
+        }
+    }
+
+    @Test
+    fun schemaV4MigratesToV5AndAddsChargePortions() {
+        helper.createDatabase(4).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO financial_years (id, firmId, startDate, endDate, createdAt, updatedAt) " +
+                    "VALUES ('fy-1', 'firm-1', '2026-04-01', '2027-03-31', 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO vouchers (id, firmId, financialYearId, type, date, status, " +
+                    "placeOfSupplyStateCode, subtotal, discount, taxable, tax, roundOff, total, " +
+                    "createdAt, updatedAt, revision) VALUES ('voucher-1', 'firm-1', 'fy-1', 'sale', " +
+                    "'2026-05-10', 'draft', '27', 10000, 0, 10000, 1800, 0, 12390, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO voucher_charges (id, voucherId, name, amount, taxRateUnits, " +
+                    "cessRateUnits, taxAmount, total, sortOrder, taxBasis, taxMode, treatment) " +
+                    "VALUES ('charge-1', 'voucher-1', 'Freight', 500, 180000, 0, 90, 590, 0, " +
+                    "'principal_supply', 'exclusive', 'taxable')",
+            )
+        }
+        helper.runMigrationsAndValidate(
+            OPENBILL_DATABASE_VERSION,
+            DatabaseMigrations.migrationsFor(4),
+        ).use { connection ->
+            connection.prepare("SELECT COUNT(*) FROM voucher_charge_portions").use { statement ->
+                assertTrue(statement.step())
+                assertEquals(0L, statement.getLong(0))
+            }
+            connection.execSQL(
+                "INSERT INTO voucher_charge_portions (id, chargeId, voucherId, portionIndex, treatment, " +
+                    "taxRateUnits, cessRateUnits, taxableValue, taxAmount, total) " +
+                    "VALUES ('charge-1:0', 'charge-1', 'voucher-1', 0, 'taxable', 180000, 0, 500, 90, 590)",
+            )
+            connection.prepare("SELECT total FROM voucher_charge_portions WHERE chargeId = 'charge-1'").use {
+                assertTrue(it.step())
+                assertEquals(590L, it.getLong(0))
+            }
+            connection.prepare("SELECT taxBasis, total FROM voucher_charges WHERE id = 'charge-1'").use {
+                assertTrue(it.step())
+                assertEquals("principal_supply", it.getText(0))
+                assertEquals(590L, it.getLong(1))
+            }
+        }
+    }
+
+    @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(2, migrations.size)
+        assertEquals(4, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
         assertEquals(3, migrations[1].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(3).isEmpty())
+        assertEquals(3, migrations[2].startVersion)
+        assertEquals(4, migrations[2].endVersion)
+        assertEquals(4, migrations[3].startVersion)
+        assertEquals(5, migrations[3].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(5).isEmpty())
     }
 
     @Test
@@ -202,6 +310,7 @@ class DatabaseSchemaTest {
             "serial_numbers",
             "stock_movements",
             "units",
+            "voucher_charge_portions",
             "voucher_charges",
             "voucher_lines",
             "voucher_number_sequences",

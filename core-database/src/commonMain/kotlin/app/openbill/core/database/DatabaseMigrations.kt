@@ -46,7 +46,57 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3)
+    /**
+     * Adds the additional-charge tax basis, mode, applied treatment, and SAC code. Existing
+     * charges were entered with an explicit rate on an exclusive amount, so they keep that
+     * meaning.
+     */
+    private val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL(
+                "ALTER TABLE `voucher_charges` ADD COLUMN `taxBasis` TEXT NOT NULL " +
+                    "DEFAULT 'explicit_rate'",
+            )
+            connection.execSQL(
+                "ALTER TABLE `voucher_charges` ADD COLUMN `taxMode` TEXT NOT NULL " +
+                    "DEFAULT 'exclusive'",
+            )
+            connection.execSQL(
+                "ALTER TABLE `voucher_charges` ADD COLUMN `treatment` TEXT NOT NULL " +
+                    "DEFAULT 'taxable'",
+            )
+            connection.execSQL("ALTER TABLE `voucher_charges` ADD COLUMN `hsnSac` TEXT")
+        }
+    }
+
+    /**
+     * Adds per-rate portions for proportionally apportioned charges. Existing charges have no
+     * portion rows, which means a single portion described by the charge itself.
+     */
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL(
+                "CREATE TABLE IF NOT EXISTS `voucher_charge_portions` (" +
+                    "`id` TEXT NOT NULL, `chargeId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, " +
+                    "`portionIndex` INTEGER NOT NULL, `treatment` TEXT NOT NULL, " +
+                    "`taxRateUnits` INTEGER NOT NULL, `cessRateUnits` INTEGER NOT NULL, " +
+                    "`taxableValue` INTEGER NOT NULL, `taxAmount` INTEGER NOT NULL, " +
+                    "`total` INTEGER NOT NULL, PRIMARY KEY(`id`), " +
+                    "FOREIGN KEY(`chargeId`) REFERENCES `voucher_charges`(`id`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE)",
+            )
+            connection.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_voucher_charge_portions_chargeId_portionIndex` " +
+                    "ON `voucher_charge_portions` (`chargeId`, `portionIndex`)",
+            )
+            connection.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_voucher_charge_portions_voucherId` " +
+                    "ON `voucher_charge_portions` (`voucherId`)",
+            )
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
     fun migrationsFor(
         startVersion: Int,

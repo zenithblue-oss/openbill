@@ -153,6 +153,84 @@ class LedgerJournalDerivationTest {
     }
 
     @Test
+    fun chargesPostTaxableValueNotInclusiveAmountInLegacyHeader() {
+        // Inclusive freight of 118.00 at 18%: taxable 100.00, GST 18.00. Header excludes it.
+        val inclusive = VoucherCharge(
+            id = "charge-inc",
+            name = "Freight",
+            amount = Money.of(11_800L),
+            taxRate = app.openbill.core.model.Rate.ofPercent(18),
+            taxAmount = Money.of(1_800L),
+            total = Money.of(11_800L),
+            taxMode = app.openbill.core.tax.TaxMode.INCLUSIVE,
+        )
+        val packing = VoucherCharge.nonTaxable("charge-nt", "Packing", Money.of(250L), sortOrder = 1)
+        val entries = derivation.derivePosted(
+            voucher(VoucherType.SALE, charges = listOf(inclusive, packing), total = 11_800L + 11_800L + 250L),
+            accounts,
+            null,
+            postedAt,
+        )
+        assertBalanced(entries)
+        assertEquals(Money.of(10_000L + 10_000L + 250L), entries.forCode(AccountCode.SALES).credit)
+        assertEquals(Money.of(3_600L), entries.forCode(AccountCode.OUTPUT_GST).credit)
+        assertEquals(Money.of(23_850L), entries.forCode(AccountCode.AR).debit)
+    }
+
+    @Test
+    fun creditNoteWithChargesInHeaderReversesSalesGstAndRoundOff() {
+        // Engine convention: header taxable/tax already include charges (golden K07-style).
+        val freight = VoucherCharge(
+            id = "charge-1",
+            name = "Freight",
+            amount = Money.of(5_000L),
+            taxRate = app.openbill.core.model.Rate.ofPercent(12),
+            taxAmount = Money.of(600L),
+            total = Money.of(5_600L),
+        )
+        val handling = VoucherCharge.nonTaxable("charge-2", "Handling", Money.of(1_000L), sortOrder = 1)
+        val entries = derivation.derivePosted(
+            voucher(
+                VoucherType.CREDIT_NOTE,
+                taxable = 25_000L + 5_000L + 1_000L,
+                tax = 3_000L + 600L,
+                roundOff = -60L,
+                charges = listOf(freight, handling),
+            ),
+            accounts,
+            null,
+            postedAt,
+        )
+        assertBalanced(entries)
+        assertEquals(Money.of(31_000L), entries.forCode(AccountCode.SALES).debit)
+        assertEquals(Money.of(3_600L), entries.forCode(AccountCode.OUTPUT_GST).debit)
+        assertEquals(Money.of(60L), entries.forCode(AccountCode.ROUND_OFF).credit)
+        assertEquals(Money.of(34_540L), entries.forCode(AccountCode.AR).credit)
+    }
+
+    @Test
+    fun purchaseChargesPostToPurchasesAndInputGst() {
+        val freight = VoucherCharge(
+            id = "charge-1",
+            name = "Freight",
+            amount = Money.of(1_000L),
+            taxRate = app.openbill.core.model.Rate.ofPercent(18),
+            taxAmount = Money.of(180L),
+            total = Money.of(1_180L),
+        )
+        val entries = derivation.derivePosted(
+            voucher(VoucherType.PURCHASE, charges = listOf(freight), total = 11_800L + 1_180L),
+            accounts,
+            null,
+            postedAt,
+        )
+        assertBalanced(entries)
+        assertEquals(Money.of(11_000L), entries.forCode(AccountCode.PURCHASES).debit)
+        assertEquals(Money.of(1_980L), entries.forCode(AccountCode.INPUT_GST).debit)
+        assertEquals(Money.of(12_980L), entries.forCode(AccountCode.AP).credit)
+    }
+
+    @Test
     fun zeroTaxProducesNoGstEntry() {
         val entries = derivation.derivePosted(
             voucher(VoucherType.SALE, tax = 0L, total = 10_000L),

@@ -51,23 +51,23 @@ class RoomVoucherRepository(
         firmId = firmId,
         fromDate = fromDate.toString(),
         toDate = toDate.toString(),
-    ).map { values -> values.map { it.toDomain(vouchers.linesFor(it.id), vouchers.chargesFor(it.id)) } }
+    ).map { values -> values.map { it.toDomain(vouchers.linesFor(it.id), vouchers.chargesFor(it.id), vouchers.portionsFor(it.id)) } }
 
     override fun observeVoucher(id: String): Flow<Voucher?> =
         vouchers.observeById(id).map { value ->
-            value?.toDomain(vouchers.linesFor(value.id), vouchers.chargesFor(value.id))
+            value?.toDomain(vouchers.linesFor(value.id), vouchers.chargesFor(value.id), vouchers.portionsFor(value.id))
         }
 
     override fun observeRecycleBin(firmId: String): Flow<List<Voucher>> =
         vouchers.observeRecycleBin(firmId).map { values ->
             values.map { value ->
-                value.toDomain(vouchers.linesFor(value.id), vouchers.chargesFor(value.id))
+                value.toDomain(vouchers.linesFor(value.id), vouchers.chargesFor(value.id), vouchers.portionsFor(value.id))
             }
         }
 
     override suspend fun findVoucher(id: String): Voucher? {
         val voucher = vouchers.findById(id) ?: return null
-        return voucher.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id))
+        return voucher.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id), vouchers.portionsFor(id))
     }
 
     override suspend fun saveDraft(voucher: Voucher) {
@@ -104,6 +104,7 @@ class RoomVoucherRepository(
             }
             if (voucher.charges.isNotEmpty()) {
                 vouchers.insertCharges(voucher.charges.map { it.toEntity(voucher.id) })
+                vouchers.insertChargePortions(voucher.charges.flatMap { it.portionEntities(voucher.id) })
             }
         }
     }
@@ -296,7 +297,7 @@ class RoomVoucherRepository(
                 AuditDetails.json("permanent" to false),
             ),
         )
-        updated.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id))
+        updated.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id), vouchers.portionsFor(id))
     }
 
     override suspend fun restoreDraft(id: String, at: Instant): Voucher = transactions.write {
@@ -312,7 +313,7 @@ class RoomVoucherRepository(
         val updated = vouchers.findById(id)
             ?: throw IllegalStateException("Draft disappeared while leaving the recycle bin")
         audits.insert(auditEvent(updated, DRAFT_RESTORED_ACTION, at))
-        updated.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id))
+        updated.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id), vouchers.portionsFor(id))
     }
 
     override suspend fun purgeDraft(id: String) {

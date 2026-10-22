@@ -433,6 +433,70 @@ class LedgerPaymentFakeTest {
         assertNotNull(fixture.ledger.findAccount("firm-1", AccountCode.AR))
     }
 
+    @Test
+    fun saleWithEngineComputedChargesPostsBalancedJournalThroughFakes(): Unit = runBlocking {
+        val fixture = fixture()
+        val freight = app.openbill.core.domain.model.VoucherCharge(
+            id = "charge-freight",
+            name = "Freight",
+            amount = Money.of(7_525L),
+        )
+        val packing = app.openbill.core.domain.model.VoucherCharge.nonTaxable(
+            id = "charge-packing",
+            name = "Packing",
+            amount = Money.of(500L),
+            sortOrder = 1,
+        )
+        val result = app.openbill.core.tax.InvoiceTaxCalculator.calculate(
+            app.openbill.core.tax.InvoiceTaxInput(
+                lines = listOf(
+                    app.openbill.core.tax.TaxLineInput(
+                        grossAmount = Money.of(100_000L),
+                        gstRate = app.openbill.core.model.Rate.ofPercent(18),
+                        mode = app.openbill.core.tax.TaxMode.EXCLUSIVE,
+                    ),
+                ),
+                invoiceDiscount = Money.of(10_000L),
+                charges = listOf(freight.toTaxInput(), packing.toTaxInput()),
+            ),
+            app.openbill.core.tax.TaxContext("27", "27"),
+            app.openbill.core.model.RoundingMode.HALF_UP,
+        )
+        val charges = listOf(freight, packing).mapIndexed { index, charge ->
+            charge.withTaxResult(result.charges[index])
+        }
+        val draft = fixture.voucher(VoucherType.SALE, id = "sale-charges", total = 0L).copy(
+            charges = charges,
+            discount = Money.of(10_000L),
+            taxable = result.totalTaxable,
+            tax = result.totalTax,
+            roundOff = result.roundOff,
+            total = result.grandTotal,
+        )
+        // 900.00 + 75.25 + 5.00 taxable; 162.00 + 13.54 GST; 1155.79 -> 1156.00.
+        assertEquals(Money.of(98_025L), draft.taxable)
+        assertEquals(Money.of(17_554L), draft.tax)
+        assertEquals(Money.of(21L), draft.roundOff)
+        assertEquals(Money.of(115_600L), draft.total)
+
+        val posted = fixture.post(draft, postedAt)
+        assertEquals(charges, posted.charges)
+        val entries = fixture.ledger.journalEntriesForVoucher(posted.id)
+        val accounts = fixture.ledger.ensureSystemAccounts("firm-1", createdAt)
+        assertEquals(
+            Money.of(98_025L),
+            entries.filter { it.accountId == accounts.sales.id }.fold(Money.ZERO) { t, e -> t + e.credit },
+        )
+        assertEquals(
+            Money.of(17_554L),
+            entries.filter { it.accountId == accounts.outputGst.id }.fold(Money.ZERO) { t, e -> t + e.credit },
+        )
+        val debit = entries.fold(Money.ZERO) { total, entry -> total + entry.debit }
+        val credit = entries.fold(Money.ZERO) { total, entry -> total + entry.credit }
+        assertEquals(debit, credit)
+        assertEquals(Money.of(115_600L), debit)
+    }
+
     private fun fixture(): Fixture = Fixture(createdAt, postedAt)
 
     private class Fixture(

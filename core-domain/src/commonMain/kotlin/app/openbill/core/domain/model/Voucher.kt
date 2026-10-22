@@ -3,6 +3,9 @@ package app.openbill.core.domain.model
 import app.openbill.core.model.Money
 import app.openbill.core.model.Quantity
 import app.openbill.core.model.Rate
+import app.openbill.core.tax.ChargeTaxBasis
+import app.openbill.core.tax.ChargeTaxInput
+import app.openbill.core.tax.ChargeTaxResult
 import app.openbill.core.tax.TaxMode
 import app.openbill.core.tax.TaxTreatment
 import kotlin.time.Instant
@@ -41,6 +44,43 @@ data class VoucherLine(
     }
 }
 
+/**
+ * An invoice additional charge (freight, packing, insurance, ...).
+ *
+ * [amount] is what the user entered: tax-exclusive for [TaxMode.EXCLUSIVE], tax-inclusive for
+ * [TaxMode.INCLUSIVE]. [taxBasis] says how GST is determined (see [ChargeTaxBasis]);
+ * [treatment], [taxRate] and [cessRate] are the values actually applied, resolved from the
+ * principal line for [ChargeTaxBasis.PRINCIPAL_SUPPLY], so a posted document never depends on
+ * re-running the rule. [taxAmount] and [total] are computed by the tax engine; see
+ * [withTaxResult]. [hsnSac] is the optional SAC used for HSN summaries.
+ */
+/**
+ * One rate portion of a charge that was apportioned across several rate groups. [taxableValue]
+ * plus tax equals [total]; portions sum to the parent charge.
+ */
+data class VoucherChargePortion(
+    val treatment: TaxTreatment,
+    val taxRate: Rate,
+    val cessRate: Rate,
+    val taxableValue: Money,
+    val taxAmount: Money,
+    val total: Money,
+) {
+    init {
+        require(taxableValue >= Money.ZERO && taxAmount >= Money.ZERO) {
+            "VoucherChargePortion amounts cannot be negative"
+        }
+        require(total == taxableValue + taxAmount) {
+            "VoucherChargePortion total must equal taxable value plus tax"
+        }
+        if (treatment != TaxTreatment.TAXABLE) {
+            require(taxRate.units == 0L && cessRate.units == 0L && taxAmount == Money.ZERO) {
+                "Non-taxable VoucherChargePortion cannot carry GST or cess"
+            }
+        }
+    }
+}
+
 data class VoucherCharge(
     val id: String,
     val name: String,
@@ -50,6 +90,16 @@ data class VoucherCharge(
     val taxAmount: Money = Money.ZERO,
     val total: Money = Money.ZERO,
     val sortOrder: Int = 0,
+    val taxBasis: ChargeTaxBasis = ChargeTaxBasis.PRINCIPAL_SUPPLY,
+    val taxMode: TaxMode = TaxMode.EXCLUSIVE,
+    val treatment: TaxTreatment = TaxTreatment.TAXABLE,
+    val hsnSac: String? = null,
+    /**
+     * Per-rate portions when the charge was apportioned across more than one rate group;
+     * empty for a single-rate charge. When present, [taxRate], [cessRate] and [treatment] are
+     * the highest-ranked portion's (a representative) and ledgers/summaries use the portions.
+     */
+    val portions: List<VoucherChargePortion> = emptyList(),
 ) {
     init {
         require(id.isNotBlank()) { "VoucherCharge id cannot be blank" }
@@ -57,7 +107,79 @@ data class VoucherCharge(
         require(amount >= Money.ZERO) { "VoucherCharge amount cannot be negative" }
         require(taxAmount >= Money.ZERO) { "VoucherCharge tax cannot be negative" }
         require(total >= Money.ZERO) { "VoucherCharge total cannot be negative" }
+        require(total >= taxAmount) { "VoucherCharge tax cannot exceed its total" }
         require(sortOrder >= 0) { "VoucherCharge sortOrder cannot be negative" }
+        if (treatment != TaxTreatment.TAXABLE) {
+            require(taxRate.units == 0L && cessRate.units == 0L && taxAmount == Money.ZERO) {
+                "Non-taxable VoucherCharge cannot carry GST or cess"
+            }
+        }
+        if (portions.isNotEmpty()) {
+            require(portions.size > 1) { "VoucherCharge portions must be empty or have 2 or more entries" }
+            require(
+                portions.fold(Money.ZERO) { t, p -> t + p.taxAmount } == taxAmount &&
+                    portions.fold(Money.ZERO) { t, p -> t + p.total } == total,
+            ) { "VoucherCharge portions must sum to the charge tax and total" }
+        }
+        if (taxBasis == ChargeTaxBasis.NON_TAXABLE) {
+            require(treatment == TaxTreatment.NON_GST) {
+                "NON_TAXABLE VoucherCharge must use the NON_GST treatment"
+            }
+        }
+    }
+
+    /** Taxable value of the charge: [total] less [taxAmount]. */
+    val taxableValue: Money
+        get() = total - taxAmount
+
+    /** Tax-engine input for this charge. Only explicit-rate charges pass their rates. */
+    fun toTaxInput(): ChargeTaxInput = ChargeTaxInput(
+        amount = amount,
+        basis = taxBasis,
+        gstRate = if (taxBasis == ChargeTaxBasis.EXPLICIT_RATE) taxRate else Rate.ofBasisPoints(0),
+        cessRate = if (taxBasis == ChargeTaxBasis.EXPLICIT_RATE) cessRate else Rate.ofBasisPoints(0),
+        mode = taxMode,
+        hsnSac = hsnSac,
+    )
+
+    /** Copies the applied treatment, rates and computed amounts from the tax engine. */
+    fun withTaxResult(result: ChargeTaxResult): VoucherCharge {
+        require(result.basis == taxBasis) { "Charge tax result basis does not match" }
+        return copy(
+            treatment = result.treatment,
+            taxRate = result.gstRate,
+            cessRate = result.cessRate,
+            taxAmount = result.result.totalTax,
+            total = result.result.totalAmount,
+            portions = if (result.portions.size > 1) {
+                result.portions.map {
+                    VoucherChargePortion(
+                        treatment = it.treatment,
+                        taxRate = it.gstRate,
+                        cessRate = it.cessRate,
+                        taxableValue = it.result.taxableValue,
+                        taxAmount = it.result.totalTax,
+                        total = it.result.totalAmount,
+                    )
+                }
+            } else {
+                emptyList()
+            },
+        )
+    }
+
+    companion object {
+        /** A charge outside the value of supply (no GST). */
+        fun nonTaxable(id: String, name: String, amount: Money, sortOrder: Int = 0): VoucherCharge =
+            VoucherCharge(
+                id = id,
+                name = name,
+                amount = amount,
+                total = amount,
+                sortOrder = sortOrder,
+                taxBasis = ChargeTaxBasis.NON_TAXABLE,
+                treatment = TaxTreatment.NON_GST,
+            )
     }
 }
 
