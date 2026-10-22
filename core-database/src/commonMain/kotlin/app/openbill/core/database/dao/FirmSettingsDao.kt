@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import app.openbill.core.database.FirmSettingsEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FirmSettingsDao {
@@ -12,4 +13,7 @@ interface FirmSettingsDao {
 
     @Query("SELECT * FROM firm_settings WHERE firmId = :firmId LIMIT 1")
     suspend fun findByFirm(firmId: String): FirmSettingsEntity?
+
+    @Query("SELECT * FROM firm_settings WHERE firmId = :firmId LIMIT 1")
+    fun observeByFirm(firmId: String): Flow<FirmSettingsEntity?>
 }

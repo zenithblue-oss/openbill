@@ -50,6 +50,15 @@ interface VoucherDao {
     @Query("SELECT COUNT(*) FROM voucher_lines WHERE voucherId = :voucherId")
     suspend fun lineCount(voucherId: String): Int
 
+    @Query("DELETE FROM voucher_lines WHERE voucherId = :voucherId")
+    suspend fun deleteLinesFor(voucherId: String): Int
+
+    @Query("DELETE FROM voucher_charges WHERE voucherId = :voucherId")
+    suspend fun deleteChargesFor(voucherId: String): Int
+
+    @Query("DELETE FROM vouchers WHERE id = :id")
+    suspend fun deleteById(id: String): Int
+
     @Query("UPDATE vouchers SET status = :status, updatedAt = :updatedAt WHERE id = :voucherId")
     suspend fun updateStatus(voucherId: String, status: String, updatedAt: Long): Int
 

@@ -19,6 +19,9 @@ interface PartyDao {
     @Query("SELECT * FROM parties WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): PartyEntity?
 
+    @Query("SELECT * FROM parties WHERE id = :id LIMIT 1")
+    fun observeById(id: String): Flow<PartyEntity?>
+
     @Query(
         "SELECT * FROM parties WHERE firmId = :firmId AND deletedAt IS NULL " +
             "ORDER BY name COLLATE NOCASE, id",
@@ -51,4 +54,22 @@ interface PartyDao {
             "ORDER BY isDefault DESC, kind, line1, id",
     )
     suspend fun addressesFor(partyId: String): List<PartyAddressEntity>
+
+    @Query(
+        "SELECT * FROM party_addresses WHERE partyId = :partyId " +
+            "ORDER BY isDefault DESC, kind, line1, id",
+    )
+    fun observeAddressesForParty(partyId: String): Flow<List<PartyAddressEntity>>
+
+    @Query(
+        "SELECT party_addresses.* FROM party_addresses " +
+            "INNER JOIN parties ON parties.id = party_addresses.partyId " +
+            "WHERE parties.firmId = :firmId AND parties.deletedAt IS NULL " +
+            "ORDER BY party_addresses.isDefault DESC, party_addresses.kind, " +
+            "party_addresses.line1, party_addresses.id",
+    )
+    fun observeAddressesForFirm(firmId: String): Flow<List<PartyAddressEntity>>
+
+    @Query("DELETE FROM party_addresses WHERE partyId = :partyId")
+    suspend fun deleteAddressesForParty(partyId: String): Int
 }

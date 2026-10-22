@@ -32,4 +32,10 @@ interface ItemDao {
             "ORDER BY name COLLATE NOCASE, id",
     )
     suspend fun search(firmId: String, query: String): List<ItemEntity>
+
+    @Query(
+        "UPDATE items SET deletedAt = :deletedAt, updatedAt = :updatedAt, revision = revision + 1 " +
+            "WHERE id = :id AND deletedAt IS NULL",
+    )
+    suspend fun softDelete(id: String, deletedAt: Long, updatedAt: Long): Int
 }

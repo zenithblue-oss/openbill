@@ -32,6 +32,12 @@ interface CatalogDao {
     )
     suspend fun searchCategories(firmId: String, query: String): List<ItemCategoryEntity>
 
+    @Query(
+        "UPDATE item_categories SET deletedAt = :deletedAt, updatedAt = :updatedAt, " +
+            "revision = revision + 1 WHERE id = :id AND deletedAt IS NULL",
+    )
+    suspend fun softDeleteCategory(id: String, deletedAt: Long, updatedAt: Long): Int
+
     @Insert
     suspend fun insertUnit(unit: UnitEntity)
 

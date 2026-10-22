@@ -180,7 +180,9 @@ Rules:
 - Backup restore is a separate operation that replaces local data from an archive; see
   section 14. It is not a voucher transition.
 - Drafts can be deleted physically or soft-deleted; posted documents are soft-deleted.
-- Document numbers are assigned at posting, inside the same transaction.
+- Document numbers are assigned at posting, inside the same transaction. The format is
+  the sequence prefix plus a separator when needed, then the zero-padded number, scoped by
+  firm, document type, and financial year.
 - Every transition writes an `AuditEvent`.
 
 ### Database invariants

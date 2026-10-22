@@ -140,6 +140,10 @@ Ledger:
 
 ## 5. Database and migration tests
 
+Voucher posting tests cover number assignment, financial-year sequence isolation, duplicate
+post prevention, cancellation state and reasons, audit rows, and rollback of number and
+audit writes when the voucher update fails.
+
 - Create the schema from empty and compare with the exported schema.
 - Migrate from every released schema version to the current version.
 - Verify row counts and checksums for critical tables after migration.

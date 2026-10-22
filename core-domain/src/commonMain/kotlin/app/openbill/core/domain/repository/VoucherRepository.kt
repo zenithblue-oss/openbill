@@ -3,6 +3,7 @@ package app.openbill.core.domain.repository
 import app.openbill.core.domain.model.Voucher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.LocalDate
+import kotlin.time.Instant
 
 interface VoucherRepository {
     fun observeVouchers(
@@ -18,4 +19,8 @@ interface VoucherRepository {
     suspend fun saveDraft(voucher: Voucher)
 
     suspend fun deleteDraft(id: String)
+
+    suspend fun post(voucherId: String, at: Instant): Voucher
+
+    suspend fun cancel(voucherId: String, reason: String, at: Instant): Voucher
 }
