@@ -2,6 +2,7 @@ package app.openbill.core.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import app.openbill.core.database.dao.AttachmentDao
 import app.openbill.core.database.dao.AuditDao
@@ -84,9 +85,16 @@ abstract class OpenBillDatabase : RoomDatabase() {
     abstract fun attachmentDao(): AttachmentDao
 }
 
+private object AuditTriggerCallback : RoomDatabase.Callback() {
+    override fun onOpen(connection: SQLiteConnection) {
+        AuditTriggers.install(connection)
+    }
+}
+
 fun openBillDatabase(
     builder: RoomDatabase.Builder<OpenBillDatabase>,
 ): OpenBillDatabase = builder
     .setDriver(BundledSQLiteDriver())
     .addMigrations(*DatabaseMigrations.all.toTypedArray())
+    .addCallback(AuditTriggerCallback)
     .build()

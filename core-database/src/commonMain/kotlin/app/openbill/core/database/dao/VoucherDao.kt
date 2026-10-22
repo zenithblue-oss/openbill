@@ -81,6 +81,29 @@ interface VoucherDao {
     @Query("DELETE FROM vouchers WHERE id = :id")
     suspend fun deleteById(id: String): Int
 
+    @Query(
+        "SELECT * FROM vouchers WHERE firmId = :firmId AND status = 'draft' " +
+            "AND deletedAt IS NOT NULL ORDER BY deletedAt DESC, id",
+    )
+    fun observeRecycleBin(firmId: String): Flow<List<VoucherEntity>>
+
+    @Query(
+        "UPDATE vouchers SET deletedAt = :at, updatedAt = :at, revision = revision + 1 " +
+            "WHERE id = :id AND status = 'draft' AND deletedAt IS NULL",
+    )
+    suspend fun softDeleteDraft(id: String, at: Long): Int
+
+    @Query(
+        "UPDATE vouchers SET deletedAt = NULL, updatedAt = :at, revision = revision + 1 " +
+            "WHERE id = :id AND status = 'draft' AND deletedAt IS NOT NULL",
+    )
+    suspend fun restoreDraft(id: String, at: Long): Int
+
+    @Query(
+        "DELETE FROM vouchers WHERE id = :id AND status = 'draft' AND deletedAt IS NOT NULL",
+    )
+    suspend fun purgeSoftDeletedDraft(id: String): Int
+
     @Query("UPDATE vouchers SET status = :status, updatedAt = :updatedAt WHERE id = :voucherId")
     suspend fun updateStatus(voucherId: String, status: String, updatedAt: Long): Int
 

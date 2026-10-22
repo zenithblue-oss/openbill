@@ -71,8 +71,8 @@ paths.
 | E2.4 | Implement repository interfaces and fakes | E2.2 | Domain does not depend on Room |
 | E2.5 | Implement voucher posting, numbering, and cancellation | E2.2, E1.2 | One transaction per operation |
 | E2.6 | Implement stock movement derivation | E2.5 | Purchase, sale, return, adjustment |
-| E2.7 | Implement payment allocation and party ledger | E2.5, E1.1 | No overallocation; control accounts and charge-inclusive journals; restore deferred to E2.8 |
-| E2.8 | Implement audit events and recycle bin | E2.5 | Append-only |
+| E2.7 | Implement payment allocation and party ledger | E2.5, E1.1 | No overallocation; control accounts and charge-inclusive journals; payment restore covered by E2.8 |
+| E2.8 | Implement audit events and recycle bin | E2.5 | Append-only triggers; draft soft-delete/restore/purge |
 | E2.9 | Add deterministic seed data generator | E2.4 | 1k/50k/500k fixtures |
 
 Exit: domain tests cover posting, cancellation, stock, allocations, and audit behavior.

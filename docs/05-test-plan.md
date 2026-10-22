@@ -109,6 +109,18 @@ Posting:
 - A voucher restore and a backup restore are separate operations; a backup restore does not
   create a voucher restore audit event or duplicate stock and ledger effects.
 
+Recycle bin:
+
+- Soft-deleting a draft removes it from active voucher lists but keeps it in the firm's
+  recycle bin with its lines and charges.
+- Restoring a soft-deleted draft clears its deletion timestamp and restores it to draft
+  state; restoring an active draft is rejected.
+- Purging requires a soft-deleted draft and removes its lines, charges, and payment details.
+- Posted and cancelled vouchers cannot be soft-deleted or restored through the draft recycle
+  path.
+- Recycle-bin reads are scoped to the firm and ordered by deletion time, newest first.
+- Soft-delete, restore, and purge each write an audit event in the same transaction.
+
 Stock:
 
 - Sale decreases stock; purchase increases stock.
@@ -147,6 +159,11 @@ Ledger:
 Voucher posting tests cover number assignment, financial-year sequence isolation, duplicate
 post prevention, cancellation state and reasons, audit rows, and rollback of number and
 audit writes when the voucher update fails.
+
+Audit guards:
+
+- Fresh and migrated databases install the `audit_events` update/delete rejection triggers.
+- Direct `UPDATE` and `DELETE` attempts against `audit_events` fail, while inserts succeed.
 
 - Create the schema from empty and compare with the exported schema.
 - Migrate from every released schema version to the current version.

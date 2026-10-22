@@ -20,10 +20,13 @@ import app.openbill.core.domain.service.LedgerJournalDerivation
 import app.openbill.core.domain.service.StockMovementDerivation
 import app.openbill.core.model.Quantity
 import app.openbill.core.model.Ulid
+import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 class RoomVoucherRepository(
     private val database: OpenBillDatabase,
@@ -53,6 +56,13 @@ class RoomVoucherRepository(
     override fun observeVoucher(id: String): Flow<Voucher?> =
         vouchers.observeById(id).map { value ->
             value?.toDomain(vouchers.linesFor(value.id), vouchers.chargesFor(value.id))
+        }
+
+    override fun observeRecycleBin(firmId: String): Flow<List<Voucher>> =
+        vouchers.observeRecycleBin(firmId).map { values ->
+            values.map { value ->
+                value.toDomain(vouchers.linesFor(value.id), vouchers.chargesFor(value.id))
+            }
         }
 
     override suspend fun findVoucher(id: String): Voucher? {
@@ -105,6 +115,15 @@ class RoomVoucherRepository(
             require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
                 "Only drafts can be deleted here"
             }
+            val at = Clock.System.now()
+            audits.insert(
+                auditEvent(
+                    entity,
+                    DRAFT_DELETED_ACTION,
+                    at,
+                    AuditDetails.json("permanent" to true),
+                ),
+            )
             vouchers.deleteLinesFor(id)
             vouchers.deleteChargesFor(id)
             vouchers.deleteById(id)
@@ -192,6 +211,133 @@ class RoomVoucherRepository(
         vouchers.update(updated)
         audits.insert(auditEvent(updated, CANCELLED_ACTION, at))
         updated.toDomain(lines, charges)
+    }
+
+    override suspend fun restoreCancelled(
+        voucherId: String,
+        cancellationReason: String,
+        restoreReason: String,
+        at: Instant,
+    ): Voucher = transactions.write {
+        val entity = vouchers.findById(voucherId)
+            ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
+        require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.CANCELLED) {
+            "Only cancelled vouchers can be restored"
+        }
+        require(entity.sync.deletedAt == null) { "Deleted vouchers cannot be restored" }
+        val recordedReason = entity.cancellationReason
+        require(!recordedReason.isNullOrBlank()) {
+            "Cancelled voucher has no cancellation reason"
+        }
+        require(cancellationReason.trim() == recordedReason.trim()) {
+            "Cancellation reason does not match the recorded reason"
+        }
+        val trimmedRestoreReason = restoreReason.trim()
+        require(trimmedRestoreReason.isNotEmpty()) { "Restore reason cannot be blank" }
+
+        val lines = vouchers.linesFor(voucherId)
+        val charges = vouchers.chargesFor(voucherId)
+        val cancelled = entity.toDomain(lines, charges)
+        val posted = cancelled.copy(status = VoucherStatus.POSTED)
+        val firmSettings = settingsFor(entity.firmId)
+        val restoreDate = at.toLocalDateTime(TimeZone.UTC).date
+        val movements = derivePosted(posted, firmSettings, at).map { it.copy(date = restoreDate) }
+        enforceStock(movements, firmSettings)
+        val journalEntries = deriveJournalPosted(posted, at).map { it.copy(date = restoreDate) }
+
+        val atMillis = at.toEpochMillis()
+        val updated = entity.copy(
+            status = VoucherStatus.POSTED.code(),
+            restoredAt = atMillis,
+            sync = entity.sync.copy(
+                updatedAt = atMillis,
+                revision = entity.sync.revision + 1L,
+            ),
+        )
+        if (movements.isNotEmpty()) {
+            stockMovements.insertAll(movements.map { it.toEntity() })
+        }
+        if (journalEntries.isNotEmpty()) {
+            ledgerDao().insertEntries(journalEntries.map { it.toEntity() })
+        }
+        vouchers.update(updated)
+        audits.insert(
+            auditEvent(
+                updated,
+                RESTORED_ACTION,
+                at,
+                AuditDetails.json(
+                    "cancellationReason" to recordedReason,
+                    "restoreReason" to trimmedRestoreReason,
+                    "restoredAt" to atMillis,
+                ),
+            ),
+        )
+        updated.toDomain(lines, charges)
+    }
+
+    override suspend fun softDeleteDraft(id: String, at: Instant): Voucher = transactions.write {
+        val entity = vouchers.findById(id)
+            ?: throw IllegalArgumentException("Unknown voucher: $id")
+        require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
+            "Only drafts can be moved to the recycle bin"
+        }
+        require(entity.sync.deletedAt == null) { "Draft is already in the recycle bin" }
+        val atMillis = at.toEpochMillis()
+        val changed = vouchers.softDeleteDraft(id, atMillis)
+        require(changed == 1) { "Only drafts can be moved to the recycle bin" }
+        val updated = vouchers.findById(id)
+            ?: throw IllegalStateException("Draft disappeared while moving to the recycle bin")
+        audits.insert(
+            auditEvent(
+                updated,
+                DRAFT_DELETED_ACTION,
+                at,
+                AuditDetails.json("permanent" to false),
+            ),
+        )
+        updated.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id))
+    }
+
+    override suspend fun restoreDraft(id: String, at: Instant): Voucher = transactions.write {
+        val entity = vouchers.findById(id)
+            ?: throw IllegalArgumentException("Unknown voucher: $id")
+        require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
+            "Only drafts can be restored from the recycle bin"
+        }
+        require(entity.sync.deletedAt != null) { "Draft is not in the recycle bin" }
+        val atMillis = at.toEpochMilliseconds()
+        val changed = vouchers.restoreDraft(id, atMillis)
+        require(changed == 1) { "Only drafts can be restored from the recycle bin" }
+        val updated = vouchers.findById(id)
+            ?: throw IllegalStateException("Draft disappeared while leaving the recycle bin")
+        audits.insert(auditEvent(updated, DRAFT_RESTORED_ACTION, at))
+        updated.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id))
+    }
+
+    override suspend fun purgeDraft(id: String) {
+        transactions.write {
+            val entity = vouchers.findById(id)
+                ?: throw IllegalArgumentException("Unknown voucher: $id")
+            require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
+                "Only drafts can be purged"
+            }
+            require(entity.sync.deletedAt != null) { "Only recycle bin drafts can be purged" }
+            val at = Clock.System.now()
+            audits.insert(
+                auditEvent(
+                    entity,
+                    PURGED_ACTION,
+                    at,
+                    AuditDetails.json("permanent" to true),
+                ),
+            )
+            vouchers.deleteLinesFor(id)
+            vouchers.deleteChargesFor(id)
+            paymentDetails.delete(id)
+            val changed = vouchers.purgeSoftDeletedDraft(id)
+            require(changed == 1) { "Only recycle bin drafts can be purged" }
+        }
     }
 
     private fun ledgerDao() = database.ledgerDao()
@@ -319,18 +465,22 @@ class RoomVoucherRepository(
         VoucherType.STOCK_TRANSFER -> "TRF"
     }
 
-    private fun auditEvent(voucher: VoucherEntity, action: String, at: Instant): AuditEventEntity =
-        AuditEventEntity(
-            id = Ulid.create(at.toEpochMilliseconds()).toString(),
-            firmId = voucher.firmId,
-            entityType = VOUCHER_ENTITY_TYPE,
-            entityId = voucher.id,
-            voucherId = voucher.id,
-            action = action,
-            detailsJson = null,
-            actor = null,
-            createdAt = at.toEpochMilliseconds(),
-        )
+    private fun auditEvent(
+        voucher: VoucherEntity,
+        action: String,
+        at: Instant,
+        detailsJson: String? = null,
+    ): AuditEventEntity = AuditEventEntity(
+        id = Ulid.create(at.toEpochMilliseconds()).toString(),
+        firmId = voucher.firmId,
+        entityType = VOUCHER_ENTITY_TYPE,
+        entityId = voucher.id,
+        voucherId = voucher.id,
+        action = action,
+        detailsJson = detailsJson,
+        actor = null,
+        createdAt = at.toEpochMilliseconds(),
+    )
 
     private data class StockKey(
         val firmId: String,
@@ -343,5 +493,9 @@ class RoomVoucherRepository(
         const val VOUCHER_ENTITY_TYPE = "voucher"
         const val POSTED_ACTION = "voucher.posted"
         const val CANCELLED_ACTION = "voucher.cancelled"
+        const val RESTORED_ACTION = "voucher.restored"
+        const val DRAFT_DELETED_ACTION = "voucher.draft_deleted"
+        const val DRAFT_RESTORED_ACTION = "voucher.draft_restored"
+        const val PURGED_ACTION = "voucher.purged"
     }
 }

@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 class InMemoryVoucherRepository(
@@ -67,6 +69,18 @@ class InMemoryVoucherRepository(
 
     override fun observeVoucher(id: String): Flow<Voucher?> =
         vouchers.map { values -> values.firstOrNull { it.id == id } }
+
+    override fun observeRecycleBin(firmId: String): Flow<List<Voucher>> =
+        vouchers.map { values ->
+            values.filter {
+                it.firmId == firmId &&
+                    it.status == VoucherStatus.DRAFT &&
+                    it.deletedAt != null
+            }.sortedWith(
+                compareByDescending<Voucher> { it.deletedAt }
+                    .thenBy { it.id },
+            )
+        }
 
     override suspend fun findVoucher(id: String): Voucher? =
         vouchers.value.firstOrNull { it.id == id }
@@ -128,6 +142,75 @@ class InMemoryVoucherRepository(
         ledger?.record(journalEntries)
         vouchers.update { current -> current.filterNot { it.id == voucherId } + cancelled }
         cancelled
+    }
+
+    override suspend fun restoreCancelled(
+        voucherId: String,
+        cancellationReason: String,
+        restoreReason: String,
+        at: Instant,
+    ): Voucher = mutex.withLock {
+        val voucher = vouchers.value.firstOrNull { it.id == voucherId }
+            ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
+        require(voucher.status == VoucherStatus.CANCELLED) {
+            "Only cancelled vouchers can be restored"
+        }
+        require(voucher.deletedAt == null) { "Deleted vouchers cannot be restored" }
+        val recordedReason = voucher.cancellationReason
+        require(!recordedReason.isNullOrBlank()) {
+            "Cancelled voucher has no cancellation reason"
+        }
+        require(cancellationReason.trim() == recordedReason.trim()) {
+            "Cancellation reason does not match the recorded reason"
+        }
+        val trimmedRestoreReason = restoreReason.trim()
+        require(trimmedRestoreReason.isNotEmpty()) { "Restore reason cannot be blank" }
+
+        val posted = voucher.copy(status = VoucherStatus.POSTED)
+        val restoreDate = at.toLocalDateTime(TimeZone.UTC).date
+        val movements = prepareStock(posted, at).map { it.copy(date = restoreDate) }
+        val journalEntries = prepareLedgerPosted(posted, at).map { it.copy(date = restoreDate) }
+        val restored = posted.copy(
+            restoredAt = at,
+            updatedAt = at,
+        )
+        this.stock?.record(movements)
+        ledger?.record(journalEntries)
+        vouchers.update { current -> current.filterNot { it.id == voucherId } + restored }
+        restored
+    }
+
+    override suspend fun softDeleteDraft(id: String, at: Instant): Voucher = mutex.withLock {
+        val voucher = vouchers.value.firstOrNull { it.id == id }
+            ?: throw IllegalArgumentException("Unknown voucher: $id")
+        require(voucher.status == VoucherStatus.DRAFT) {
+            "Only drafts can be moved to the recycle bin"
+        }
+        require(voucher.deletedAt == null) { "Draft is already in the recycle bin" }
+        val deleted = voucher.copy(deletedAt = at, updatedAt = at)
+        vouchers.update { current -> current.filterNot { it.id == id } + deleted }
+        deleted
+    }
+
+    override suspend fun restoreDraft(id: String, at: Instant): Voucher = mutex.withLock {
+        val voucher = vouchers.value.firstOrNull { it.id == id }
+            ?: throw IllegalArgumentException("Unknown voucher: $id")
+        require(voucher.status == VoucherStatus.DRAFT) {
+            "Only drafts can be restored from the recycle bin"
+        }
+        require(voucher.deletedAt != null) { "Draft is not in the recycle bin" }
+        val restored = voucher.copy(deletedAt = null, updatedAt = at)
+        vouchers.update { current -> current.filterNot { it.id == id } + restored }
+        restored
+    }
+
+    override suspend fun purgeDraft(id: String) = mutex.withLock {
+        val voucher = vouchers.value.firstOrNull { it.id == id }
+            ?: throw IllegalArgumentException("Unknown voucher: $id")
+        require(voucher.status == VoucherStatus.DRAFT) { "Only drafts can be purged" }
+        require(voucher.deletedAt != null) { "Only recycle bin drafts can be purged" }
+        payments?.deletePaymentDetails(id)
+        vouchers.update { current -> current.filterNot { it.id == id } }
     }
 
     private suspend fun prepareLedgerPosted(voucher: Voucher, at: Instant): List<JournalEntry> {

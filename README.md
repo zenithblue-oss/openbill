@@ -8,8 +8,8 @@ Open-source billing, invoicing, inventory, and payments software for Indian MSME
 > and desktop shells, fixed-point money types, GST engine, GSTIN validation, versioned
 > rate schedule, Room schema, DAOs, transaction runner, migration harness, repository
 > ports, in-memory fakes, Room-backed repositories, voucher posting/cancellation,
-> stock movement derivation, payment allocation, and the party ledger are in place.
-> Audit coverage and the recycle bin are next. The specifications remain authoritative
+> stock movement derivation, payment allocation, the party ledger, append-only audit
+> events, and the draft recycle bin are in place. The specifications remain authoritative
 > for scope and behavior.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from

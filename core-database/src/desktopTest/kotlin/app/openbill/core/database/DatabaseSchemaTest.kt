@@ -10,6 +10,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
@@ -92,15 +93,34 @@ class DatabaseSchemaTest {
     @Test
     fun freshDatabaseCreatesCurrentSchemaAndAcceptsWrites() = runBlocking {
         val freshPath = tempDir.resolve("fresh.db")
-        val db = Room.databaseBuilder<OpenBillDatabase>(freshPath.toString())
-            .setDriver(BundledSQLiteDriver())
-            .build()
+        val db = openBillDatabase(Room.databaseBuilder<OpenBillDatabase>(freshPath.toString()))
         try {
             db.firmDao().insert(sampleFirm())
             assertEquals("OpenBill Traders", db.firmDao().findById(Fixture.FIRM_ID)?.name)
         } finally {
             db.close()
         }
+        assertEquals(
+            listOf("audit_events_no_delete", "audit_events_no_update"),
+            triggerNames(freshPath),
+        )
+    }
+
+    @Test
+    fun migratedDatabaseInstallsAuditTriggers() = runBlocking {
+        helper.createDatabase(2).close()
+        val db = openBillDatabase(
+            Room.databaseBuilder<OpenBillDatabase>(databasePath.toString()),
+        )
+        try {
+            assertNull(db.firmDao().findById(Fixture.FIRM_ID))
+        } finally {
+            db.close()
+        }
+        assertEquals(
+            listOf("audit_events_no_delete", "audit_events_no_update"),
+            triggerNames(databasePath),
+        )
     }
 
     @Test
@@ -144,6 +164,22 @@ class DatabaseSchemaTest {
     @Test
     fun migrationRangesAreRejectedWhenInvalid() {
         assertTrue(runCatching { DatabaseMigrations.migrationsFor(2, 1) }.isFailure)
+    }
+
+    private fun triggerNames(path: Path): List<String> {
+        val connection = BundledSQLiteDriver().open(path.toString())
+        try {
+            val names = mutableListOf<String>()
+            connection.prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'trigger' " +
+                    "AND name LIKE 'audit_events_%' ORDER BY name",
+            ).use { statement ->
+                while (statement.step()) names += statement.getText(0)
+            }
+            return names
+        } finally {
+            connection.close()
+        }
     }
 
     private companion object {

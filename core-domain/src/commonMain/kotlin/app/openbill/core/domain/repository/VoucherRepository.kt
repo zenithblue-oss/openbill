@@ -23,4 +23,19 @@ interface VoucherRepository {
     suspend fun post(voucherId: String, at: Instant): Voucher
 
     suspend fun cancel(voucherId: String, reason: String, at: Instant): Voucher
+
+    suspend fun restoreCancelled(
+        voucherId: String,
+        cancellationReason: String,
+        restoreReason: String,
+        at: Instant,
+    ): Voucher
+
+    suspend fun softDeleteDraft(id: String, at: Instant): Voucher
+
+    suspend fun restoreDraft(id: String, at: Instant): Voucher
+
+    suspend fun purgeDraft(id: String)
+
+    fun observeRecycleBin(firmId: String): Flow<List<Voucher>>
 }

@@ -180,7 +180,9 @@ Rules:
   cancelled-voucher transition.
 - Backup restore is a separate operation that replaces local data from an archive; see
   section 14. It is not a voucher transition.
-- Drafts can be deleted physically or soft-deleted; posted documents are soft-deleted.
+- Drafts can be deleted physically or soft-deleted into the recycle bin. Soft-deleted
+  drafts can be restored or purged. Posted and cancelled vouchers are not eligible for the
+  draft recycle path; they remain in the document history.
 - Document numbers are assigned at posting, inside the same transaction. The format is
   the sequence prefix plus a separator when needed, then the zero-padded number, scoped by
   firm, document type, and financial year.
@@ -194,6 +196,8 @@ Rules:
 - Batch and serial quantities match line quantities.
 - FTS row counts match canonical row counts for indexed types.
 - Foreign keys are enforced; SQLite `foreign_keys` is on for every connection.
+- `audit_events` is append-only. Triggers reject every `UPDATE` and `DELETE`, on fresh and
+  migrated databases alike.
 
 ### Payments, control accounts, and party ledger
 
@@ -222,8 +226,7 @@ Rules:
   posted, non-deleted vouchers. It is not a separate mutable balance table. The opening
   balance comes from the party master's signed opening balance; the closing balance is the
   opening balance plus posted movements.
-- Expense vouchers, allocation editing, and payment restore are deferred; payment restore
-  belongs to E2.8.
+- Expense vouchers and allocation editing are deferred.
 
 ## 6. Tax engine
 
@@ -284,6 +287,10 @@ Transaction boundaries:
   audit event.
 - Restoring a cancelled voucher: validate state and reasons, reapply stock movements and
   journal entries, update status, write audit event.
+- Soft-deleting a draft: validate draft state, set `deletedAt`, write audit event.
+- Restoring a draft: validate it is soft-deleted, clear `deletedAt`, write audit event.
+- Purging a draft: require it to be soft-deleted, remove lines, charges, and payment
+  details, permanently delete the voucher, write audit event.
 
 Use a single writer per database. SQLite handles concurrency, but the app should serialize
 writes through a mutex or a single-threaded dispatcher to avoid `SQLITE_BUSY` and
