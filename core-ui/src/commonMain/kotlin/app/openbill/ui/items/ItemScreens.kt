@@ -1,0 +1,496 @@
+package app.openbill.ui.items
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.ShoppingCart
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import app.openbill.core.domain.model.Item
+import app.openbill.core.domain.model.UnitOfMeasure
+import app.openbill.core.model.Money
+import app.openbill.core.model.Rate
+import app.openbill.core.tax.GstRateSchedules
+import app.openbill.ui.AppContainer
+import app.openbill.ui.BackHandlerSlot
+import app.openbill.ui.Session
+import app.openbill.ui.components.AppSearchBar
+import app.openbill.ui.components.AppSnackbarHost
+import app.openbill.ui.components.AppTopBar
+import app.openbill.ui.components.CenteredContent
+import app.openbill.ui.components.CollapsingTopBar
+import app.openbill.ui.components.DiscardChangesDialog
+import app.openbill.ui.components.EmptyState
+import app.openbill.ui.components.FormColumn
+import app.openbill.ui.components.FormField
+import app.openbill.ui.components.LoadingState
+import app.openbill.ui.components.LocalAppMessages
+import app.openbill.ui.components.PickerField
+import app.openbill.ui.components.PickerSheet
+import app.openbill.ui.components.PrimaryButton
+import app.openbill.ui.components.SelectableChip
+import app.openbill.ui.components.pageGutter
+import app.openbill.ui.format.Fmt
+import app.openbill.ui.format.Parse
+import app.openbill.ui.forms.Validation
+import app.openbill.ui.invoice.Monogram
+import app.openbill.ui.theme.LocalReducedMotion
+import app.openbill.ui.theme.Motion
+import app.openbill.ui.theme.Spacing
+import app.openbill.ui.theme.motionTween
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
+
+fun Item.matches(query: String): Boolean {
+    val q = query.trim()
+    if (q.isEmpty()) return true
+    return name.contains(q, true) || (hsnSac?.contains(q) ?: false) || (sku?.contains(q, true) ?: false)
+}
+
+/** Selectable GST slabs on a date, from the versioned schedule in core-tax. */
+fun gstSlabsOn(date: LocalDate): List<Rate> =
+    GstRateSchedules.standard.ratesOn(date).ifEmpty { listOf(Rate.ofPercent(0)) }
+
+/** GST slab picker sheet shared by the item form and the invoice line editor. */
+@Composable
+fun GstRateSheet(slabs: List<Rate>, selected: Rate, onPick: (Rate) -> Unit, onDismiss: () -> Unit) {
+    PickerSheet(
+        title = "GST rate",
+        options = (slabs + selected).distinct().sorted(),
+        label = { "${Fmt.percent(it)}%" },
+        supporting = { if (it == Rate.ofPercent(0)) "Nil-rated or exempt" else null },
+        selected = { it == selected },
+        searchable = false,
+        onSelect = onPick,
+        onDismiss = onDismiss,
+    )
+}
+
+/** Unit picker sheet shared by the item form. */
+@Composable
+fun UnitSheet(units: List<UnitOfMeasure>, selectedId: String?, onPick: (UnitOfMeasure) -> Unit, onDismiss: () -> Unit) {
+    PickerSheet(
+        title = "Unit",
+        options = units,
+        label = { "${it.name} (${it.symbol})" },
+        selected = { it.id == selectedId },
+        key = { it.id },
+        onSelect = onPick,
+        onDismiss = onDismiss,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ItemListScreen(
+    container: AppContainer,
+    session: Session,
+    onOpen: (String?) -> Unit,
+) {
+    val firmId = session.firm.id
+    val items by remember(firmId) { container.repositories.catalog.observeItems(firmId) }.collectAsState(initial = null)
+    val units by remember(firmId) { container.repositories.catalog.observeUnits(firmId) }.collectAsState(initial = emptyList())
+    val unitById = units.associateBy { it.id }
+    var query by rememberSaveable { mutableStateOf("") }
+    var kind by rememberSaveable { mutableStateOf(0) } // 0 all, 1 goods, 2 services
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val listState = rememberLazyListState()
+    val reduced = LocalReducedMotion.current
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = { CollapsingTopBar("Items", scrollBehavior) },
+        snackbarHost = { AppSnackbarHost() },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { onOpen(null) },
+                expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("New item") },
+            )
+        },
+    ) { padding ->
+        CenteredContent(Modifier.padding(padding)) {
+            val list = items
+            if (list == null) {
+                LoadingState()
+                return@CenteredContent
+            }
+            if (list.isEmpty()) {
+                EmptyState(
+                    Icons.Outlined.ShoppingCart,
+                    "No items yet",
+                    "Add the goods and services you sell, with their HSN/SAC and GST rate.",
+                    Modifier.align(Alignment.Center),
+                )
+                return@CenteredContent
+            }
+            val filtered = list.filter {
+                it.matches(query) && when (kind) {
+                    1 -> !it.isService
+                    2 -> it.isService
+                    else -> true
+                }
+            }
+            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
+                item(key = "search") { AppSearchBar(query, { query = it }, "Search name or HSN/SAC") }
+                item(key = "filters") {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        listOf("All", "Goods", "Services").forEachIndexed { i, label -> SelectableChip(label, kind == i, { kind = i }) }
+                    }
+                }
+                if (filtered.isEmpty()) {
+                    item(key = "empty") { EmptyState(Icons.Outlined.Search, "No match", "No item matches your search or filter.") }
+                }
+                items(filtered, key = { it.id }) { item ->
+                    ListItem(
+                        leadingContent = { Monogram(item.name) },
+                        headlineContent = { Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                        supportingContent = {
+                            Text(
+                                listOfNotNull(
+                                    item.hsnSac?.let { (if (item.isService) "SAC " else "HSN ") + it },
+                                    "GST ${Fmt.percent(item.taxRate)}%",
+                                ).joinToString(" · "),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        trailingContent = {
+                            Text(
+                                Fmt.inr(item.salePrice) + (unitById[item.unitId]?.let { " / ${it.symbol}" } ?: ""),
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        },
+                        modifier = Modifier
+                            .animateItem(
+                                fadeInSpec = if (reduced) null else motionTween(false, Motion.SHORT4),
+                                placementSpec = if (reduced) null else motionTween(false, Motion.MEDIUM1, Motion.Emphasized),
+                                fadeOutSpec = if (reduced) null else motionTween(false, Motion.SHORT3),
+                            )
+                            .clickable(onClickLabel = "Edit item") { onOpen(item.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+data class ItemForm(
+    val loaded: Boolean = false,
+    val name: String = "",
+    val isService: Boolean = false,
+    val unitId: String? = null,
+    val hsnSac: String = "",
+    val gstRate: Rate = Rate.ofPercent(18),
+    val salePrice: String = "",
+    val purchasePrice: String = "",
+    val errors: Map<String, String> = emptyMap(),
+    val saving: Boolean = false,
+    val failure: String? = null,
+    /** Bumped on each rejected save so the screen can scroll the first error into view. */
+    val rejectedSaves: Int = 0,
+)
+
+object ItemRules {
+    /** The user-editable part of the form, for "unsaved changes" checks. */
+    fun content(form: ItemForm): ItemForm =
+        form.copy(loaded = true, errors = emptyMap(), saving = false, failure = null, rejectedSaves = 0)
+
+    fun hasChanges(baseline: ItemForm?, current: ItemForm): Boolean =
+        baseline != null && content(baseline) != content(current)
+
+    fun validate(form: ItemForm): Map<String, String> = buildMap {
+        if (form.name.isBlank()) put("name", "Name is required")
+        if (form.unitId == null) put("unit", "Choose a unit")
+        Validation.hsnError(form.hsnSac)?.let { put("hsn", it) }
+        Validation.moneyError(form.salePrice)?.let { put("sale", it) }
+        Validation.moneyError(form.purchasePrice)?.let { put("purchase", it) }
+    }
+}
+
+class ItemEditorModel(
+    private val container: AppContainer,
+    private val firmId: String,
+    private val itemId: String?,
+    private val scope: CoroutineScope,
+) {
+    private val _state = MutableStateFlow(ItemForm())
+    val state: StateFlow<ItemForm> = _state
+    private var existing: Item? = null
+
+    /** The form as loaded; compared against to detect unsaved edits. */
+    var baseline: ItemForm? = null
+        private set
+
+    init {
+        scope.launch {
+            val units = container.repositories.catalog.observeUnits(firmId).first()
+            val defaultUnit = units.firstOrNull { it.symbol == "NOS" }?.id ?: units.firstOrNull()?.id
+            if (itemId == null) {
+                _state.value = ItemForm(loaded = true, unitId = defaultUnit)
+            } else {
+                val item = container.repositories.catalog.findItem(itemId)
+                existing = item
+                _state.value = if (item == null) {
+                    ItemForm(loaded = true, failure = "Item not found")
+                } else {
+                    ItemForm(
+                        loaded = true,
+                        name = item.name,
+                        isService = item.isService,
+                        unitId = item.unitId,
+                        hsnSac = item.hsnSac.orEmpty(),
+                        gstRate = item.taxRate,
+                        salePrice = if (item.salePrice.paise == 0L) "" else item.salePrice.format(),
+                        purchasePrice = if (item.purchasePrice.paise == 0L) "" else item.purchasePrice.format(),
+                    )
+                }
+            }
+            baseline = _state.value
+        }
+    }
+
+    fun edit(transform: (ItemForm) -> ItemForm) {
+        _state.update { old ->
+            val next = transform(old)
+            next.copy(errors = if (old.errors.isEmpty()) emptyMap() else ItemRules.validate(next))
+        }
+    }
+
+    /** Moves the item to the recycle bin; [onDone] gets the item as it was, for undo. */
+    fun archive(onDone: (Item?) -> Unit) {
+        val id = itemId ?: return
+        _state.update { it.copy(saving = true, failure = null) }
+        scope.launch {
+            runCatching { container.repositories.catalog.archiveItem(id, container.now()) }
+                .onSuccess { onDone(existing) }
+                .onFailure { e -> _state.update { it.copy(saving = false, failure = e.message ?: "Could not remove") } }
+        }
+    }
+
+    fun save(onSaved: (Item) -> Unit) {
+        val form = _state.value
+        val errors = ItemRules.validate(form)
+        if (errors.isNotEmpty()) {
+            _state.update { it.copy(errors = errors, rejectedSaves = it.rejectedSaves + 1) }
+            return
+        }
+        _state.update { it.copy(saving = true, failure = null) }
+        scope.launch {
+            runCatching {
+                val now = container.now()
+                val old = existing
+                val item = (old ?: Item(
+                    id = container.newId(),
+                    firmId = firmId,
+                    name = form.name.trim(),
+                    unitId = form.unitId!!,
+                    // Stock tracking arrives in a later phase; billing alpha does not move stock.
+                    trackInventory = false,
+                    createdAt = now,
+                    updatedAt = now,
+                )).copy(
+                    name = form.name.trim(),
+                    unitId = form.unitId!!,
+                    isService = form.isService,
+                    hsnSac = form.hsnSac.trim().ifBlank { null },
+                    taxRate = form.gstRate,
+                    salePrice = Parse.money(form.salePrice) ?: Money.ZERO,
+                    purchasePrice = Parse.money(form.purchasePrice) ?: Money.ZERO,
+                    updatedAt = now,
+                )
+                container.repositories.catalog.saveItem(item)
+                item
+            }.onSuccess { saved ->
+                baseline = _state.value
+                onSaved(saved)
+            }
+                .onFailure { e -> _state.update { it.copy(saving = false, failure = e.message ?: "Could not save") } }
+        }
+    }
+}
+
+@Composable
+fun ItemEditScreen(
+    container: AppContainer,
+    session: Session,
+    itemId: String?,
+    onDone: () -> Unit,
+    backHandler: BackHandlerSlot = { _, _ -> },
+) {
+    val scope = rememberCoroutineScope()
+    val model = remember(itemId) { ItemEditorModel(container, session.firm.id, itemId, scope) }
+    val form by model.state.collectAsState()
+    var confirmRemove by remember { mutableStateOf(false) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    LaunchedEffect(form.rejectedSaves) { if (form.rejectedSaves > 0) scroll.animateScrollTo(0) }
+    val units by remember { container.repositories.catalog.observeUnits(session.firm.id) }.collectAsState(initial = emptyList<UnitOfMeasure>())
+    var pickUnit by remember { mutableStateOf(false) }
+    var pickRate by remember { mutableStateOf(false) }
+    val slabs = remember { gstSlabsOn(container.today()) }
+    val messages = LocalAppMessages.current
+    val dirty = ItemRules.hasChanges(model.baseline, form) && !form.saving
+    val requestClose = { if (dirty) confirmDiscard = true else onDone() }
+    backHandler(dirty) { confirmDiscard = true }
+    val save = {
+        model.save { saved ->
+            messages?.show(if (itemId == null) "Added ${saved.name}" else "Saved ${saved.name}")
+            onDone()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            AppTopBar(if (itemId == null) "New item" else "Edit item", onBack = requestClose) {
+                if (itemId != null) {
+                    IconButton(onClick = { confirmRemove = true }, enabled = !form.saving) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Remove item")
+                    }
+                }
+            }
+        },
+    ) { padding ->
+        if (!form.loaded) {
+            LoadingState(Modifier.padding(padding))
+            return@Scaffold
+        }
+        CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
+            FormColumn(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = pageGutter, vertical = Spacing.sm)) {
+                FormField("Name *", form.name, { v -> model.edit { it.copy(name = v) } }, error = form.errors["name"], capitalization = KeyboardCapitalization.Words)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    SelectableChip("Goods", !form.isService, { model.edit { it.copy(isService = false) } })
+                    SelectableChip("Service", form.isService, { model.edit { it.copy(isService = true) } })
+                }
+                PickerField(
+                    "Unit *",
+                    units.firstOrNull { it.id == form.unitId }?.let { "${it.name} (${it.symbol})" } ?: "",
+                    { pickUnit = true },
+                    error = form.errors["unit"],
+                )
+                FormField(
+                    if (form.isService) "SAC code" else "HSN code",
+                    form.hsnSac,
+                    { v -> model.edit { it.copy(hsnSac = v.filter(Char::isDigit).take(8)) } },
+                    error = form.errors["hsn"],
+                    keyboardType = KeyboardType.Number,
+                    supporting = "4 to 8 digits",
+                )
+                PickerField("GST rate", "${Fmt.percent(form.gstRate)}%", { pickRate = true })
+                FormField(
+                    "Sale price (before GST)",
+                    form.salePrice,
+                    { v -> model.edit { it.copy(salePrice = v) } },
+                    error = form.errors["sale"],
+                    keyboardType = KeyboardType.Decimal,
+                    prefix = "₹",
+                    supporting = "You can switch a line to GST-inclusive pricing on the invoice",
+                )
+                FormField(
+                    "Purchase price",
+                    form.purchasePrice,
+                    { v -> model.edit { it.copy(purchasePrice = v) } },
+                    error = form.errors["purchase"],
+                    keyboardType = KeyboardType.Decimal,
+                    prefix = "₹",
+                    imeAction = ImeAction.Done,
+                )
+                form.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Spacer(Modifier.height(Spacing.sm))
+                PrimaryButton("Save item", { save() }, Modifier.fillMaxWidth(), busy = form.saving, busyText = "Saving…")
+                Spacer(Modifier.height(Spacing.xl))
+            }
+        }
+    }
+    if (confirmRemove) {
+        AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text("Remove this item?") },
+            text = { Text("It will no longer appear in lists or pickers. Invoices that already use it are not changed. You can undo this right after.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemove = false
+                    model.archive { removed ->
+                        if (removed != null) {
+                            messages?.show("Removed ${removed.name}", actionLabel = "Undo") {
+                                container.repositories.catalog.saveItem(removed.copy(deletedAt = null, updatedAt = container.now()))
+                            }
+                        }
+                        onDone()
+                    }
+                }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Keep") } },
+        )
+    }
+    if (confirmDiscard) {
+        DiscardChangesDialog(
+            message = "Your changes to this item have not been saved.",
+            onDiscard = { confirmDiscard = false; onDone() },
+            onKeepEditing = { confirmDiscard = false },
+            onSave = { confirmDiscard = false; save() },
+            saveLabel = "Save item",
+        )
+    }
+    if (pickUnit) {
+        UnitSheet(units, form.unitId, { u -> model.edit { it.copy(unitId = u.id) }; pickUnit = false }, { pickUnit = false })
+    }
+    if (pickRate) {
+        GstRateSheet(slabs, form.gstRate, { r -> model.edit { it.copy(gstRate = r) }; pickRate = false }, { pickRate = false })
+    }
+}

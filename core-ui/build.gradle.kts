@@ -21,13 +21,25 @@ kotlin {
     }
 
     sourceSets {
+        all {
+            // Stock M3 components such as TopAppBar scroll behaviours and DatePicker are still
+            // marked experimental; the design system opts in once here.
+            languageSettings.optIn("androidx.compose.material3.ExperimentalMaterial3Api")
+        }
         commonMain.dependencies {
             api(project(":core-model"))
+            api(project(":core-domain"))
+            implementation(libs.kotlinx.datetime)
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            implementation(compose.animation)
+            implementation(libs.compose.material.icons.core)
             implementation(libs.kotlinx.coroutines.core)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }
