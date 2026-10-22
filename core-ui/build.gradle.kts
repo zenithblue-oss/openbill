@@ -41,6 +41,17 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        // Local QR generation for UPI payment codes on invoices (both targets are JVM).
+        androidMain.dependencies {
+            implementation(libs.zxing.core)
+        }
+        val desktopMain by getting {
+            // PDF fonts (Noto Sans, OFL) on the desktop classpath under fonts/.
+            resources.srcDir("pdf-assets")
+            dependencies {
+                implementation(libs.zxing.core)
+            }
+        }
     }
 }
 
@@ -52,6 +63,9 @@ android {
     defaultConfig {
         minSdk = libs.versions.min.sdk.get().toInt()
     }
+
+    // The same Noto Sans files as desktop, read from assets/fonts/ by the PDF painter.
+    sourceSets["main"].assets.srcDir("pdf-assets")
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

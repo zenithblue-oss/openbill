@@ -22,6 +22,13 @@ dependencies {
     implementation(project(":core-ui"))
     implementation(project(":core-data"))
     implementation(compose.desktop.currentOs)
+    implementation(libs.pdfbox)
+    testImplementation(kotlin("test"))
+}
+
+tasks.withType<Test>().configureEach {
+    // Sample PDFs from DesktopPdfSamplesTest go here when set (for visual review).
+    System.getenv("OPENBILL_PDF_SAMPLES")?.let { systemProperty("openbill.pdfSamples", it) }
 }
 
 compose.desktop {
@@ -32,7 +39,7 @@ compose.desktop {
             // Each format only builds on its own OS (jpackage); the host ignores others.
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.AppImage)
             packageName = "OpenBill"
-            packageVersion = "0.1.0"
+            packageVersion = "0.1.1"
             description = "Offline-first GST billing and accounting"
             vendor = "OpenBill contributors"
             copyright = "Copyright (c) OpenBill contributors"

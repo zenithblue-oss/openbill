@@ -22,6 +22,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import app.openbill.ui.theme.AppIcons
 import app.openbill.ui.theme.BrandLogo
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -63,7 +64,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoreScreen(container: AppContainer, session: Session, onEditBusiness: () -> Unit) {
+fun MoreScreen(container: AppContainer, session: Session, onEditBusiness: () -> Unit, onInvoiceTemplates: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     val messages = LocalAppMessages.current
@@ -106,6 +107,17 @@ fun MoreScreen(container: AppContainer, session: Session, onEditBusiness: () -> 
                         modifier = Modifier.clickable(role = Role.Button, onClick = onEditBusiness),
                     )
                 }
+
+                SectionHeader("Invoices")
+                val invoiceStyle by remember(firm.id) { container.invoiceStyles.style(firm.id) }.collectAsState()
+                ListItem(
+                    headlineContent = { Text("Invoice templates") },
+                    supportingContent = { Text("${invoiceStyle.template.title} · ${invoiceStyle.template.paper.label} · print options") },
+                    leadingContent = { Icon(AppIcons.Invoice, contentDescription = null) },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                    colors = listColors,
+                    modifier = Modifier.clickable(role = Role.Button, onClick = onInvoiceTemplates),
+                )
 
                 SectionHeader("Appearance")
                 Text("Theme", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = Spacing.xs))

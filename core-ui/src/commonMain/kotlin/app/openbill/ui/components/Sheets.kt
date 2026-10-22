@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -52,13 +54,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import app.openbill.ui.format.Fmt
+import app.openbill.ui.nav.LocalKeyRootFocus
 import app.openbill.ui.format.PickerDates
 import app.openbill.ui.theme.LocalReducedMotion
 import app.openbill.ui.theme.Motion
@@ -93,6 +104,7 @@ fun <T> PickerSheet(
         label(it).contains(q, ignoreCase = true) || (supporting(it)?.contains(q, ignoreCase = true) ?: false)
     }
     val searchFocus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     if (searchable && platformPrefersKeyboard) {
         LaunchedEffect(Unit) { runCatching { searchFocus.requestFocus() } }
     }
@@ -116,8 +128,20 @@ fun <T> PickerSheet(
                     },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    // Enter picks the first match; Down arrow moves into the list (desktop keyboard use).
+                    keyboardActions = KeyboardActions(onSearch = { filtered.firstOrNull()?.let(onSelect) }),
                     shape = MaterialTheme.shapes.extraLarge,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.xs).focusRequester(searchFocus),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.xs)
+                        .focusRequester(searchFocus)
+                        .onPreviewKeyEvent { e ->
+                            if (e.key == Key.DirectionDown && e.type == KeyEventType.KeyDown) {
+                                focusManager.moveFocus(FocusDirection.Down)
+                            } else {
+                                false
+                            }
+                        },
                 )
             }
             header?.invoke()
@@ -185,7 +209,9 @@ fun DateField(
             },
             dismissButton = { TextButton(onClick = { open = false }) { Text("Cancel") } },
         ) {
-            DatePicker(state = state)
+            // The calendar needs ~570dp; on short windows (phone landscape, large font) the dialog
+            // squeezed it so the grid overlapped its own buttons. Scrolling keeps it at full size.
+            DatePicker(state = state, modifier = Modifier.verticalScroll(rememberScrollState()))
         }
     }
 }
@@ -205,14 +231,36 @@ fun FullScreenEditor(
     content: @Composable () -> Unit,
 ) {
     val reduced = LocalReducedMotion.current
+    val keyRoot = LocalKeyRootFocus.current
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            shown = true
+        } else if (shown) {
+            shown = false
+            keyRoot?.let { runCatching { it.requestFocus() } }
+        }
+    }
     AnimatedVisibility(
         visible = visible,
         enter = if (reduced) EnterTransition.None else slideInVertically(motionTween(false, Motion.MEDIUM2, Motion.EmphasizedDecelerate)) { it / 4 } + fadeIn(motionTween(false, Motion.SHORT4)),
         exit = if (reduced) ExitTransition.None else slideOutVertically(motionTween(false, Motion.SHORT4, Motion.EmphasizedAccelerate)) { it / 4 } + fadeOut(motionTween(false, Motion.SHORT3)),
     ) {
-        // Swallow taps so nothing underneath reacts while the editor is open.
+        // Swallow taps so nothing underneath reacts while the editor is open (the tap catcher is
+        // not a Tab stop). With a keyboard, focus moves to the editor's first field and Tab stays
+        // inside: otherwise it stayed on the control that opened the editor (e.g. the Bill-to
+        // card), so typing a space re-triggered that control underneath.
+        val bodyFocus = remember { FocusRequester() }
+        if (platformPrefersKeyboard) {
+            LaunchedEffect(Unit) { runCatching { bodyFocus.requestFocus() } }
+        }
         Surface(
-            Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+            Modifier
+                .fillMaxSize()
+                .focusProperties { canFocus = false }
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .focusProperties { if (visible) onExit = { cancelFocusChange() } }
+                .focusGroup(),
             color = MaterialTheme.colorScheme.surface,
         ) {
             Scaffold(
@@ -225,7 +273,14 @@ fun FullScreenEditor(
                 },
             ) { padding ->
                 CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
-                    Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = pageGutter, vertical = Spacing.sm)) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = pageGutter, vertical = Spacing.sm)
+                            .focusRequester(bodyFocus)
+                            .focusGroup(),
+                    ) {
                         content()
                     }
                 }

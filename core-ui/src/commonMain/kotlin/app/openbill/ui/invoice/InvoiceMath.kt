@@ -47,7 +47,17 @@ data class TaxSummary(
     val grandTotal: Money,
     val isIntraState: Boolean,
     val lineResults: List<TaxLineResult>,
-)
+    /** Number of lines whose rate already includes GST; their gross and discount contain tax. */
+    val inclusiveLines: Int = 0,
+) {
+    /** Label for [gross]: a plain "Items value" would not add up to the taxable value otherwise. */
+    val grossLabel: String
+        get() = when {
+            inclusiveLines == 0 -> "Items value"
+            inclusiveLines == lineResults.size -> "Items value (incl. GST)"
+            else -> "Items value (some incl. GST)"
+        }
+}
 
 object InvoiceMath {
     private const val QTY_SCALE = 10_000L
@@ -81,6 +91,7 @@ object InvoiceMath {
             rounding,
         )
         return summaryOf(result.lines, lines.fold(Money.ZERO) { a, l -> a + l.gross }, lines.fold(Money.ZERO) { a, l -> a + l.discount }, result.roundOff, result.grandTotal, context.isIntraState)
+            .copy(inclusiveLines = lines.count { it.taxMode == TaxMode.INCLUSIVE })
     }
 
     /** Rebuilds the per-head breakdown for a stored voucher's lines. */
@@ -114,7 +125,7 @@ object InvoiceMath {
             roundOff,
             total,
             context.isIntraState,
-        )
+        ).copy(inclusiveLines = lines.count { it.taxMode == TaxMode.INCLUSIVE })
     }
 
     private fun summaryOf(

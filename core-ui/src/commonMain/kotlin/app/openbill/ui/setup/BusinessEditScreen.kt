@@ -35,6 +35,7 @@ import app.openbill.ui.components.LoadingState
 import app.openbill.ui.components.LocalAppMessages
 import app.openbill.ui.components.PrimaryButton
 import app.openbill.ui.components.pageGutter
+import app.openbill.ui.pdf.ImageKind
 import app.openbill.ui.theme.Spacing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -154,6 +155,8 @@ fun BusinessEditScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                FirmImagePicker(container, session.firm.id, ImageKind.LOGO, "Business logo", "PNG or JPG, shown on invoice PDFs. Saved right away.")
+                FirmImagePicker(container, session.firm.id, ImageKind.SIGNATURE, "Signature", "A scan of the authorised signature, ideally on white.")
                 BusinessFields(
                     form,
                     model::edit,

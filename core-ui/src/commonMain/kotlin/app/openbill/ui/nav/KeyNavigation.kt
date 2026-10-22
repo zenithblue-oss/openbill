@@ -78,3 +78,10 @@ class SearchFocus {
 }
 
 val LocalSearchFocus = staticCompositionLocalOf<SearchFocus?> { null }
+
+/**
+ * The focusable root that receives Escape and the Ctrl shortcuts (desktop only; null on touch).
+ * Overlays hand focus back to it when they close, since the field that had focus inside them
+ * is gone and Compose would otherwise leave nothing focused, so no key reached the shortcuts.
+ */
+val LocalKeyRootFocus = staticCompositionLocalOf<FocusRequester?> { null }

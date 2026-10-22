@@ -41,14 +41,17 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -58,6 +61,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.model.FirmSettings
@@ -69,10 +73,13 @@ import app.openbill.ui.components.LocalWidthClass
 import app.openbill.ui.invoice.InvoiceDetailScreen
 import app.openbill.ui.invoice.InvoiceEditorScreen
 import app.openbill.ui.invoice.InvoiceListScreen
+import app.openbill.ui.invoice.InvoicePdfScreen
 import app.openbill.ui.items.ItemEditScreen
 import app.openbill.ui.items.ItemListScreen
+import app.openbill.ui.more.InvoiceTemplatesScreen
 import app.openbill.ui.more.MoreScreen
 import app.openbill.ui.nav.BackDispatcher
+import app.openbill.ui.nav.LocalKeyRootFocus
 import app.openbill.ui.nav.LocalSearchFocus
 import app.openbill.ui.nav.Navigator
 import app.openbill.ui.nav.SearchFocus
@@ -166,15 +173,21 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
 
     val searchFocus = remember { SearchFocus() }
     val rootFocus = remember { FocusRequester() }
+    var rootHasFocus by remember { mutableStateOf(false) }
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
     if (keyBack != null) {
         // Give each screen a focused root so Escape and shortcuts work before anything is clicked.
         LaunchedEffect(route) { runCatching { rootFocus.requestFocus() } }
+        // The window drops Compose focus when it deactivates (e.g. behind the PDF save dialog);
+        // without this, Escape and Ctrl+N/K stayed dead until the next screen change.
+        LaunchedEffect(windowFocused) { if (windowFocused && !rootHasFocus) runCatching { rootFocus.requestFocus() } }
     }
     val keyModifier = if (keyBack == null) {
         Modifier
     } else {
         Modifier
             .focusRequester(rootFocus)
+            .onFocusChanged { rootHasFocus = it.hasFocus }
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val mod = e.isCtrlPressed || e.isMetaPressed
@@ -197,7 +210,11 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
             .focusable()
     }
 
-    CompositionLocalProvider(LocalAppMessages provides messages, LocalSearchFocus provides searchFocus) {
+    CompositionLocalProvider(
+        LocalAppMessages provides messages,
+        LocalSearchFocus provides searchFocus,
+        LocalKeyRootFocus provides (if (keyBack != null) rootFocus else null),
+    ) {
         Row(Modifier.fillMaxSize().then(keyModifier)) {
             if (widthClass.usesRail) {
                 AnimatedVisibility(
@@ -313,7 +330,11 @@ private fun RouteContent(
             )
             Tab.PARTIES -> PartyListScreen(container, s) { id -> nav.push(Route.PartyEdit(id)) }
             Tab.ITEMS -> ItemListScreen(container, s) { id -> nav.push(Route.ItemEdit(id)) }
-            Tab.MORE -> MoreScreen(container, s, onEditBusiness = { nav.push(Route.BusinessEdit) })
+            Tab.MORE -> MoreScreen(
+                container, s,
+                onEditBusiness = { nav.push(Route.BusinessEdit) },
+                onInvoiceTemplates = { nav.push(Route.InvoiceTemplates) },
+            )
         }
         is Route.PartyEdit -> PartyEditScreen(container, s, route.partyId, onDone = nav::pop, backHandler = backHandler)
         is Route.ItemEdit -> ItemEditScreen(container, s, route.itemId, onDone = nav::pop, backHandler = backHandler)
@@ -327,7 +348,10 @@ private fun RouteContent(
             container, s, route.voucherId,
             onBack = nav::pop,
             onEditDraft = { id -> nav.replace(Route.InvoiceEditor(id)) },
+            onViewPdf = { id -> nav.push(Route.InvoicePdf(id)) },
         )
+        is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler)
         Route.BusinessEdit -> BusinessEditScreen(container, s, onDone = nav::pop, backHandler = backHandler)
+        Route.InvoiceTemplates -> InvoiceTemplatesScreen(container, s, onBack = nav::pop, backHandler = backHandler)
     }
 }

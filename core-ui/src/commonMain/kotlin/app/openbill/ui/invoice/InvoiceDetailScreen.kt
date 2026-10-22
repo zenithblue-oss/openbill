@@ -62,6 +62,7 @@ import app.openbill.ui.components.StatusChip
 import app.openbill.ui.components.pageGutter
 import app.openbill.ui.format.AmountInWords
 import app.openbill.ui.format.Fmt
+import app.openbill.ui.pdf.InvoicePdf
 import app.openbill.ui.theme.Spacing
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -91,6 +92,7 @@ fun InvoiceDetailScreen(
     voucherId: String,
     onBack: () -> Unit,
     onEditDraft: (String) -> Unit,
+    onViewPdf: (String) -> Unit = {},
 ) {
     val voucher by remember(voucherId) { container.repositories.vouchers.observeVoucher(voucherId) }.collectAsState(initial = null)
     var party by remember { mutableStateOf<Party?>(null) }
@@ -111,7 +113,8 @@ fun InvoiceDetailScreen(
     fun share(v: Voucher) {
         busy = true
         scope.launch {
-            runCatching { container.platform.shareInvoicePdf(buildInvoiceDocument(container, session, v)) }
+            runCatching { InvoicePdf.share(container, session.firm.id, buildInvoiceDocument(container, session, v)) }
+                .onSuccess { msg -> msg?.let { messages?.show(it) } }
                 .onFailure { messages?.show("Could not create the PDF: ${it.message}") }
             busy = false
         }
@@ -185,7 +188,7 @@ fun InvoiceDetailScreen(
                 OutlinedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(Spacing.lg)) {
                         if (summary != null) {
-                            AmountRow("Items value", summary.gross)
+                            AmountRow(summary.grossLabel, summary.gross)
                             if (summary.discount.paise != 0L) AmountRow("Discount", summary.discount, negative = true)
                             AmountRow("Taxable value", summary.taxable)
                             if (summary.isIntraState) {
@@ -199,7 +202,7 @@ fun InvoiceDetailScreen(
                             AmountRow("Taxable value", v.taxable)
                             AmountRow("GST", v.tax)
                         }
-                        if (v.roundOff.paise != 0L) AmountRow("Round off", Fmt.inr(v.roundOff))
+                        if (v.roundOff.paise != 0L) AmountRow("Round off", Fmt.inrSigned(v.roundOff))
                         HorizontalDivider(Modifier.padding(vertical = Spacing.sm))
                         AmountRow("Total", v.total, emphasize = true)
                         Text(
@@ -215,7 +218,12 @@ fun InvoiceDetailScreen(
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
                 Spacer(Modifier.height(Spacing.sm))
-                PrimaryButton("Share PDF", { share(v) }, Modifier.fillMaxWidth(), busy = busy, busyText = "Preparing PDF…")
+                PrimaryButton("View PDF", { onViewPdf(v.id) }, Modifier.fillMaxWidth())
+                OutlinedButton(onClick = { share(v) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text(if (busy) "Preparing PDF…" else "Share PDF")
+                }
                 when (v.status) {
                     VoucherStatus.DRAFT -> OutlinedButton(onClick = { onEditDraft(v.id) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))

@@ -410,7 +410,7 @@ private fun TotalsBar(
             }
             if (open && s != null) {
                 Column(Modifier.padding(bottom = Spacing.xs)) {
-                    AmountRow("Items value", s.gross)
+                    AmountRow(s.grossLabel, s.gross)
                     if (s.discount.paise != 0L) AmountRow("Discount", s.discount, negative = true)
                     AmountRow("Taxable value", s.taxable)
                     if (s.isIntraState) {
@@ -420,7 +420,7 @@ private fun TotalsBar(
                         AmountRow("IGST", s.igst)
                     }
                     if (s.cess.paise != 0L) AmountRow("Cess", s.cess)
-                    if (s.roundOff.paise != 0L) AmountRow("Round off", Fmt.inr(s.roundOff))
+                    if (s.roundOff.paise != 0L) AmountRow("Round off", Fmt.inrSigned(s.roundOff))
                     HorizontalDivider(Modifier.padding(top = Spacing.xs))
                 }
             }

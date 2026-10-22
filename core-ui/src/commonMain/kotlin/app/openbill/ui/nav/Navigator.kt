@@ -19,6 +19,8 @@ sealed interface Route {
     data class InvoiceEditor(val voucherId: String?) : Route
     data class InvoiceDetail(val voucherId: String) : Route
     data object BusinessEdit : Route
+    data object InvoiceTemplates : Route
+    data class InvoicePdf(val voucherId: String) : Route
 
     /** Stable string form, used as the saved-state key and to survive process death. */
     val key: String
@@ -29,6 +31,8 @@ sealed interface Route {
             is InvoiceEditor -> "editor:${voucherId.orEmpty()}"
             is InvoiceDetail -> "detail:$voucherId"
             BusinessEdit -> "business:"
+            InvoiceTemplates -> "templates:"
+            is InvoicePdf -> "pdf:$voucherId"
         }
 
     companion object {
@@ -42,6 +46,8 @@ sealed interface Route {
                 "editor" -> InvoiceEditor(arg.ifEmpty { null })
                 "detail" -> arg.takeIf { it.isNotEmpty() }?.let { InvoiceDetail(it) }
                 "business" -> BusinessEdit
+                "templates" -> InvoiceTemplates
+                "pdf" -> arg.takeIf { it.isNotEmpty() }?.let { InvoicePdf(it) }
                 else -> null
             }
         }

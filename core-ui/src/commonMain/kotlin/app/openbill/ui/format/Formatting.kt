@@ -59,6 +59,9 @@ object Fmt {
     /** Signed amount for deductions: "−₹50.00" (true minus sign), or "₹0.00" when zero. */
     fun inrDeduction(money: Money): String = if (money.paise == 0L) inr(money) else "\u2212" + inr(money)
 
+    /** Signed adjustment such as round-off: "−₹0.36" (true minus sign) or "₹0.64". */
+    fun inrSigned(money: Money): String = if (money.paise < 0) "\u2212" + inr(-money) else inr(money)
+
     /** Quantity with its unit symbol: "2.5 KG", "12 NOS", or just "3" without a unit. */
     fun qtyUnit(quantity: Quantity, unit: String?): String =
         qty(quantity) + (unit?.takeIf { it.isNotBlank() }?.let { " $it" } ?: "")

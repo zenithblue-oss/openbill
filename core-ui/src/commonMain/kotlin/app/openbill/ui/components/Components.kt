@@ -233,7 +233,8 @@ fun PickerField(
     error: String? = null,
     supporting: String? = null,
     placeholder: String = "Tap to choose",
-    trailingIcon: ImageVector = Icons.Filled.ArrowDropDown,
+    /** Null hides the icon (e.g. for a locked field that cannot be changed). */
+    trailingIcon: ImageVector? = Icons.Filled.ArrowDropDown,
 ) {
     // The overlay is the single focus/tap target (Tab, Enter and Space open the picker); it
     // shares its interaction source with the field so the field shows the focused outline.
@@ -246,7 +247,7 @@ fun PickerField(
             singleLine = true,
             label = { Text(label) },
             placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            trailingIcon = { Icon(trailingIcon, contentDescription = null) },
+            trailingIcon = trailingIcon?.let { icon -> { Icon(icon, contentDescription = null) } },
             isError = error != null,
             supportingText = (error ?: supporting)?.let { { Text(it) } },
             interactionSource = interaction,

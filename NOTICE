@@ -24,4 +24,10 @@ the project will list every third-party dependency, together with its license
 and required attribution, in a generated notices file or in this NOTICE. No
 third-party attribution is claimed here that has not been verified.
 
+Bundled fonts: core-ui/pdf-assets/fonts/NotoSans-Regular.ttf and
+NotoSans-Bold.ttf are Noto Sans, Copyright 2022 The Noto Project Authors
+(https://github.com/notofonts/latin-greek-cyrillic), licensed under the SIL
+Open Font License, Version 1.1 (core-ui/pdf-assets/fonts/NotoSans-OFL.txt).
+They are embedded in generated invoice PDFs.
+
 Project repository: https://github.com/zenithblue-oss/openbill-android

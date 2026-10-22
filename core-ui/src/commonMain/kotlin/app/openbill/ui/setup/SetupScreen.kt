@@ -1,5 +1,7 @@
 package app.openbill.ui.setup
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -91,6 +93,7 @@ fun BusinessFields(
         error = form.errors["state"],
         supporting = stateLockedReason,
         placeholder = "Choose a state",
+        trailingIcon = if (stateLockedReason == null) Icons.Filled.ArrowDropDown else null,
     )
     FormField("Address *", form.addressLine1, { v -> edit { it.copy(addressLine1 = v) } }, error = form.errors["address"])
     FormField("City *", form.city, { v -> edit { it.copy(city = v) } }, error = form.errors["city"], capitalization = KeyboardCapitalization.Words)
