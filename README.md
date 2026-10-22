@@ -42,6 +42,8 @@ more than shipping every competitor feature in the first release.
 | Linux | Desktop and laptop | Planned | DEB, AppImage |
 | iOS | Phone and tablet | Not planned for 1.0 | - |
 | Web | Browser | Not planned; optional later | - |
+| [Server](docs/10-server.md) | Self-hosted, optional | Planned, after 1.0 | OCI image, JAR |
+| [CLI](docs/11-cli.md) | Terminal, scripting and reports | Planned; direct mode ships with 1.0 | Archives, DEB, MSI component |
 
 Windows and Linux are first-class targets, not afterthoughts. The domain, database, tax,
 search, reporting, and import/export layers are shared through Kotlin Multiplatform. The
@@ -103,6 +105,15 @@ first deliverable. The project name is **OpenBill**.
 - Tally-compatible XML export.
 - Full backup and restore in an open, documented archive format.
 
+### Command line
+
+- `openbill` CLI in direct mode on a local database or a backup file: `db`, `backup`,
+  masters, vouchers, search, stock, payments, CSV import/export, reports, GSTR-1, HSN, Tally
+  export, and audit commands, with stable `--json` output and exit codes (milestones C0-C3).
+- Remote mode and server administration follow the optional server, after 1.0.
+
+See [docs/11-cli.md](docs/11-cli.md).
+
 ### Search
 
 Search is a first-class workflow, not a filter bolted onto one screen.
@@ -149,6 +160,8 @@ that map to it. Features outside Phases 1-6 of the roadmap are after 1.0.
 | Paging | Paging 3 on Android; shared paging abstraction for desktop |
 | Async | Coroutines and Flow |
 | Networking | Ktor client; optional sync backend is not part of MVP |
+| Server (post-1.0) | Ktor server, SQLite default, PostgreSQL optional |
+| CLI | Clikt on the JVM; native image after a spike |
 | Serialization | kotlinx.serialization |
 | Preferences | DataStore KMP |
 | Background work | WorkManager on Android; coroutine scheduler on desktop |
@@ -166,24 +179,31 @@ release.
 
 ## Repository layout (target)
 
+Gradle project names are flat (`:androidApp`, `:desktopApp`, `:core-model`, ...; see
+`settings.gradle.kts`). The tree below is the planned shape; modules marked (planned) do
+not exist yet.
+
 ```text
 openbill/
-  app-android/              Android application shell
-  app-desktop/              Windows and Linux desktop shell
-  shared/
-    core-model/             Domain entities and value objects
-    core-database/          Room KMP database, DAOs, migrations, FTS
-    core-data/              Repositories and sync boundary
-    core-domain/            Use cases
-    core-tax/               GST tax and rounding engine
-    core-search/            Query parsing, ranking, highlights
-    core-ui/                Design system and shared screens
-    core-reporting/         Report models and exports
-    core-printing/          Print layout contracts
-    platform/               expect/actual boundaries
-  feature/
-    onboarding/  parties/  items/  inventory/  billing/  payments/
-    reports/     gst/      settings/ expenses/  search/   backup/
+  androidApp/               Android application shell
+  desktopApp/               Windows and Linux desktop shell
+  core-model/               Domain entities and value objects
+  core-tax/                 GST tax and rounding engine
+  core-domain/              Use cases and repository ports
+  core-database/            Room KMP database, DAOs, migrations, FTS
+  core-data/                Repositories, backup, import/export
+  core-ui/                  Design system and shared screens
+  core-search/              Query parsing, ranking, highlights (planned)
+  core-reporting/           Report models and exports (planned)
+  core-printing/            Print layout contracts (planned)
+  core-api-contract/        DTOs and OpenAPI source for API, CLI, sync (planned)
+  core-sync/                Operation log, outbox, sync client (planned, post-1.0)
+  platform/                 expect/actual boundaries (planned)
+  platform-android/  platform-desktop/  platform-jvm/   (planned)
+  cli/                      openbill command-line tool (planned)
+  server/                   OpenBill Server (planned, post-1.0)
+  feature-*/                onboarding, dashboard, parties, items, inventory,
+                            billing, payments, expenses, reports, gst, settings, search, backup (planned)
   docs/
   gradle/
 ```
@@ -204,6 +224,10 @@ feature screens unless a platform-specific interaction genuinely requires a diff
 - [Windows and Linux desktop strategy](docs/07-desktop.md)
 - [Glossary](docs/08-glossary.md)
 - [Tax assumptions](docs/09-tax-assumptions.md)
+- [Sync server](docs/10-server.md)
+- [CLI](docs/11-cli.md)
+- [Design system](docs/12-design-system.md)
+- [Brand identity](docs/13-brand.md)
 
 ## Contributing
 
