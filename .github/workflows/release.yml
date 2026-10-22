@@ -59,6 +59,7 @@ jobs:
             glob: |
               desktopApp/build/compose/binaries/main/msi/*.msi
               desktopApp/build/compose/binaries/main/exe/*.exe
+              desktopApp/build/portable/*.zip
           - os: ubuntu-latest
             task: :desktopApp:packageDeb :desktopApp:packageAppImage
             glob: |
@@ -77,6 +78,13 @@ jobs:
       - name: Package
         shell: bash
         run: ./gradlew --console=plain ${{ matrix.task }}
+      - name: Windows portable zip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./gradlew --console=plain :desktopApp:createDistributable
+          New-Item -ItemType Directory -Force desktopApp/build/portable | Out-Null
+          Compress-Archive -Path desktopApp/build/compose/binaries/main/app/OpenBill -DestinationPath "desktopApp/build/portable/OpenBill-$env:GITHUB_REF_NAME-windows-x64.zip"
       - name: Linux portable tarball
         if: runner.os == 'Linux'
         run: |
@@ -100,7 +108,11 @@ jobs:
           merge-multiple: true
       - name: Checksums
         run: |
-          cd dist
+          mkdir flat
+          find dist -type f -exec mv -n {} flat/ \;
+          # The signed APK is attached manually unless CI signing secrets exist
+          rm -f flat/*-unsigned.apk
+          cd flat
           ls -l
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
@@ -113,4 +125,4 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --title "OpenBill $GITHUB_REF_NAME" \
               --generate-notes --verify-tag || true
           fi
-          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          gh release upload "$GITHUB_REF_NAME" flat/* --clobber
