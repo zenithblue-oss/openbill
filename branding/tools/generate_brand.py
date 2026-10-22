@@ -55,8 +55,10 @@ mono = d(RECEIPT) + d(RING) + d(BAR)
 write("branding/logo-mono.svg", f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="8 0 48 64" width="192" height="256"><title>OpenBill mark, monochrome</title>'
       f'<path fill-rule="evenodd" d="{mono}" fill="#000"/></svg>\n')
 
-# ---- Android vector drawables (108dp canvas, mark 1.1x centred => 70x64 content, safe zone 66)
-a = centered(1.1, 108)
+# ---- Android vector drawables (108dp canvas, mark 0.88x centred). Every corner must sit inside
+# the 66dp safe-zone circle (radius 33 about the centre) or circular launcher masks clip it;
+# at 0.88 the farthest corners are ~31dp out.
+a = centered(0.88, 108)
 T = lambda c: d(xf(c, *a))
 def vd(paths): return ('<?xml version="1.0" encoding="utf-8"?>\n<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
     '    android:width="108dp"\n    android:height="108dp"\n    android:viewportWidth="108"\n    android:viewportHeight="108">\n' + paths + '</vector>\n')
