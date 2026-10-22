@@ -152,7 +152,10 @@ Ledger:
 - Test foreign-key enforcement and cascading behavior.
 - Test WAL checkpointing and graceful shutdown on desktop.
 
-Migration fixtures are immutable. Never edit an old fixture to make a new migration pass.
+Schema files live in `core-database/schemas`; `DatabaseMigrations` validates that the
+registered chain has no gaps, and `DatabaseSchemaTest` covers empty-to-current creation
+and schema validation. Migration fixtures are immutable. Never edit an old fixture to
+make a new migration pass.
 
 ## 6. Search tests
 
