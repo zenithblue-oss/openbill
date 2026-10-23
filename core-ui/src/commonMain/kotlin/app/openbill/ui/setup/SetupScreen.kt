@@ -121,6 +121,8 @@ fun SetupScreen(container: AppContainer) {
     val scope = rememberCoroutineScope()
     val model = remember { FirmSetupModel(container, scope) }
     val form by model.state.collectAsState()
+    val logo by model.logo.collectAsState()
+    val signature by model.signature.collectAsState()
     var pickState by remember { mutableStateOf(false) }
     var pickYear by remember { mutableStateOf(false) }
     val currentFy = remember { FirmSetupRules.fyStartYearFor(container.today()) }
@@ -141,6 +143,9 @@ fun SetupScreen(container: AppContainer) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 BusinessFields(form, model::edit, onPickState = { pickState = true }, onPickYear = { pickYear = true })
+                SectionHeader("Branding (optional)")
+                PendingFirmImagePicker(container, logo, { v -> model.logo.value = v }, "Business logo", "PNG or JPG, shown on invoice PDFs.")
+                PendingFirmImagePicker(container, signature, { v -> model.signature.value = v }, "Signature", "A scan of the authorised signature, ideally on white.")
                 form.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(Spacing.sm))
                 PrimaryButton("Start billing", model::save, Modifier.fillMaxWidth(), busy = form.saving, busyText = "Setting up…")

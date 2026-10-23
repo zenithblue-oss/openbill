@@ -34,9 +34,48 @@ import androidx.compose.ui.unit.dp
 import app.openbill.ui.AppContainer
 import app.openbill.ui.components.LocalAppMessages
 import app.openbill.ui.pdf.ImageKind
+import app.openbill.ui.pdf.LogoImage
 import app.openbill.ui.pdf.decodeImageBitmap
 import app.openbill.ui.theme.Spacing
 import kotlinx.coroutines.launch
+
+/** Same look as [FirmImagePicker] for first-run setup: the image is held in memory until the firm exists. */
+@Composable
+fun PendingFirmImagePicker(container: AppContainer, image: LogoImage?, onChange: (LogoImage?) -> Unit, title: String, hint: String) {
+    val scope = rememberCoroutineScope()
+    val messages = LocalAppMessages.current
+    var busy by remember { mutableStateOf(false) }
+    val bitmap = remember(image) { image?.let { runCatching { decodeImageBitmap(it.bytes) }.getOrNull() } }
+    Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(88.dp).clip(RoundedCornerShape(12.dp)).background(Color.White)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (bitmap != null) {
+                Image(bitmap, contentDescription = title, contentScale = ContentScale.Fit, modifier = Modifier.padding(6.dp))
+            } else {
+                Text("No ${title.lowercase()}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF5B6569), textAlign = TextAlign.Center)
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedButton(onClick = {
+                    busy = true
+                    scope.launch {
+                        runCatching { container.platform.pickImage(600) }
+                            .onSuccess { if (it != null) onChange(it) }
+                            .onFailure { messages?.show("Could not use that image: ${it.message ?: "unsupported file"}") }
+                        busy = false
+                    }
+                }, enabled = !busy) { Text(if (image == null) "Choose image" else "Replace") }
+                if (image != null) TextButton(onClick = { onChange(null) }, enabled = !busy) { Text("Remove") }
+            }
+        }
+    }
+}
 
 /**
  * Business logo or signature: preview with choose/replace and remove. The image is stored

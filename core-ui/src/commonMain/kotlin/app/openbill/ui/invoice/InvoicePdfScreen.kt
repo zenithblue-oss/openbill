@@ -73,6 +73,7 @@ import app.openbill.ui.pdf.InvoicePdf
 import app.openbill.ui.pdf.InvoiceTemplate
 import app.openbill.ui.pdf.PdfAction
 import app.openbill.ui.theme.Spacing
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -177,14 +178,23 @@ fun InvoicePdfScreen(
             ) {
                 val density = LocalDensity.current
                 val viewport = maxWidth
-                val renderPx = with(density) { minOf((viewport.toPx() * 1.5f), 1400f).toInt().coerceAtLeast(300) }
-                LaunchedEffect(doc, style, imageVersion, renderPx) {
+                // Re-render at (page width x zoom) once zoom settles; the old bitmaps stay until the new ones are ready.
+                var settledZoom by remember { mutableFloatStateOf(1f) }
+                LaunchedEffect(zoom) { delay(150); settledZoom = zoom }
+                val renderPx = with(density) {
+                    val px = ((viewport - Spacing.md * 2).toPx() * settledZoom).toInt()
+                    (((px + 255) / 256) * 256).coerceIn(512, 4096)
+                }
+                LaunchedEffect(doc, style, imageVersion) {
                     val d = doc ?: return@LaunchedEffect
                     error = null
+                    runCatching { layout = InvoicePdf.layout(container, firmId, d, style) }
+                        .onFailure { error = "Could not render the PDF: ${it.message}" }
+                }
+                LaunchedEffect(layout, renderPx) {
+                    val l = layout ?: return@LaunchedEffect
                     runCatching {
-                        val l = InvoicePdf.layout(container, firmId, d, style)
                         val images = l.pages.indices.mapNotNull { container.platform.renderPagePreview(l, it, renderPx) }
-                        layout = l
                         pages.clear()
                         pages.addAll(images)
                     }.onFailure { error = "Could not render the PDF: ${it.message}" }

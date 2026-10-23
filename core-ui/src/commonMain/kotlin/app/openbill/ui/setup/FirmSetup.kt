@@ -6,6 +6,8 @@ import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.ui.AppContainer
 import app.openbill.ui.forms.Validation
+import app.openbill.ui.pdf.ImageKind
+import app.openbill.ui.pdf.LogoImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -134,6 +136,10 @@ class FirmSetupModel(private val container: AppContainer, private val scope: Cor
     private val _state = MutableStateFlow(SetupForm(fyStartYear = FirmSetupRules.fyStartYearFor(container.today())))
     val state: StateFlow<SetupForm> = _state
 
+    /** Optional images held until the business id exists; written on save. */
+    val logo = MutableStateFlow<LogoImage?>(null)
+    val signature = MutableStateFlow<LogoImage?>(null)
+
     fun edit(transform: (SetupForm) -> SetupForm) {
         _state.update { old -> FirmSetupRules.applyEdit(old, transform) }
     }
@@ -176,6 +182,9 @@ class FirmSetupModel(private val container: AppContainer, private val scope: Cor
                     )
                     newFirmId
                 }
+                logo.value?.let { container.platform.saveFirmImage(firmId, ImageKind.LOGO, it) }
+                signature.value?.let { container.platform.saveFirmImage(firmId, ImageKind.SIGNATURE, it) }
+                if (logo.value != null || signature.value != null) container.invoiceStyles.imageVersion.value++
                 ensureDefaults(container, firmId)
             }.onFailure { e ->
                 _state.update { it.copy(saving = false, failure = e.message ?: "Could not save") }

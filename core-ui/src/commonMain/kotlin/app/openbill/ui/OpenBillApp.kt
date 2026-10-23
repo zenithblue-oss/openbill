@@ -321,14 +321,15 @@ private fun AppNavigationRail(selectedTab: Tab?, onSelect: (Tab) -> Unit, create
                     contentDescription = "OpenBill",
                     modifier = Modifier.padding(top = Spacing.sm).size(32.dp),
                 )
-                // Keeps its slot on More (no create action there) so the items never jump.
-                Spacer(Modifier.height(Spacing.lg))
-                Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = createAction != null,
-                        enter = if (reduced) EnterTransition.None else fadeIn(motionTween(false, Motion.SHORT4)) + scaleIn(motionTween(false, Motion.SHORT4, Motion.EmphasizedDecelerate), initialScale = 0.6f),
-                        exit = if (reduced) ExitTransition.None else fadeOut(motionTween(false, Motion.SHORT3)) + scaleOut(motionTween(false, Motion.SHORT3, Motion.EmphasizedAccelerate), targetScale = 0.6f),
-                    ) {
+                // Collapses completely when there is no create action (no reserved gap); the item
+                // group is centred in the remaining space and glides as the FAB animates.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = createAction != null,
+                    enter = if (reduced) EnterTransition.None else fadeIn(motionTween(false, Motion.SHORT4)) + expandVertically(motionTween(false, Motion.MEDIUM1, Motion.EmphasizedDecelerate)),
+                    exit = if (reduced) ExitTransition.None else fadeOut(motionTween(false, Motion.SHORT3)) + shrinkVertically(motionTween(false, Motion.SHORT4, Motion.EmphasizedAccelerate)),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(Spacing.lg))
                         // Remember the last action so the exit animation still has a label.
                         val last = remember { arrayOfNulls<CreateAction>(1) }
                         if (createAction != null) last[0] = createAction
