@@ -1,16 +1,103 @@
 # OpenBill
 
-Open-source billing, invoicing, inventory, and payments software for Indian MSMEs.
+Open-source, offline-first GST billing and invoicing for Indian MSMEs. Android, Windows,
+and Linux from one Kotlin codebase.
 
-**Android, Windows, and Linux from one Kotlin codebase.**
+[![Latest release](https://img.shields.io/github/v/release/zenithblue-oss/openbill?include_prereleases&label=release)](https://github.com/zenithblue-oss/openbill/releases/latest)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Android%20%7C%20Windows%20%7C%20Linux-informational)
+![Status](https://img.shields.io/badge/status-alpha-orange)
 
-> Status: Phase 2 data layer in progress. The Kotlin Multiplatform scaffold, Android
-> and desktop shells, fixed-point money types, GST engine, GSTIN validation, versioned
-> rate schedule, Room schema, DAOs, transaction runner, migration harness, repository
-> ports, in-memory fakes, Room-backed repositories, voucher posting/cancellation,
-> stock movement derivation, payment allocation, the party ledger, append-only audit
-> events, and the draft recycle bin are in place. The specifications remain authoritative
-> for scope and behavior.
+> **Alpha.** Invoicing and PDF output work today. Payments, reports, inventory screens,
+> backup, and the CLI are still ahead. See [Progress](#progress) and [What's left](#whats-left).
+
+## Download
+
+Latest: [v0.1.1-alpha](https://github.com/zenithblue-oss/openbill/releases/latest) (all
+files are listed with `SHA256SUMS`).
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Android 8.0+ | signed `.apk` | Allow installs from this source, then open the APK |
+| Windows | `.exe` installer, `.msi`, portable `.zip` | Unzip the portable build and run `OpenBill.exe` |
+| Linux | `.deb`, portable `.tar.gz` | `sudo apt install ./openbill_*.deb`, or extract and run `./OpenBill/bin/OpenBill` |
+
+Builds are unsigned for Windows/Linux and the app is alpha: back up anything you care about.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/android/invoice-list-light.webp" width="190" alt="Invoice list (light)"></td>
+    <td><img src="docs/screenshots/android/invoice-editor-dark.webp" width="190" alt="Invoice editor with totals (dark)"></td>
+    <td><img src="docs/screenshots/android/invoice-detail-dark.webp" width="190" alt="Invoice detail with IGST (dark)"></td>
+    <td><img src="docs/screenshots/android/pdf-viewer-modern-dark.webp" width="190" alt="PDF viewer, Modern template"></td>
+  </tr>
+  <tr>
+    <td align="center">Invoice list</td><td align="center">Editor and totals</td><td align="center">Invoice detail</td><td align="center">PDF viewer</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/android/template-gallery-dark.webp" width="190" alt="Template gallery"></td>
+    <td><img src="docs/screenshots/android/more-appearance-dark.webp" width="190" alt="Appearance settings (dark)"></td>
+    <td><img src="docs/screenshots/android/more-appearance-light.webp" width="190" alt="Appearance settings (light)"></td>
+    <td><img src="docs/screenshots/pdf/gst-detailed.png" width="190" alt="GST Detailed invoice PDF"></td>
+  </tr>
+  <tr>
+    <td align="center">Template gallery</td><td align="center">Appearance (dark)</td><td align="center">Appearance (light)</td><td align="center">GST Detailed PDF</td>
+  </tr>
+</table>
+
+More rendered PDFs: [Simple](docs/screenshots/pdf/simple.png), [Modern](docs/screenshots/pdf/modern.png).
+
+<!-- TODO: desktop screenshots (Windows/Linux) pending; add to docs/screenshots/desktop/ and a table row here. -->
+
+## Features available now
+
+- GST sales invoices with CGST/SGST (intra-state) or IGST (inter-state) picked from place of supply.
+- Line discounts (amount or %), GST-inclusive or exclusive rates, automatic round-off.
+- Drafts, post (assigns a number), and cancel with an audit trail.
+- Parties (customers and suppliers, GSTIN validation, state from GSTIN) and items (goods and services, HSN/SAC, GST rate).
+- 12 PDF templates in A4, A5, and 58/80 mm thermal sizes; business logo and signature; UPI QR; copy labels (original/duplicate/triplicate).
+- PDF viewer with share, print, and save.
+- Material 3 with dynamic color and dark mode; keyboard shortcuts on desktop.
+- Offline by design: no account, no ads, no trackers.
+- Tax engine supports additional charges (entry screen pending).
+
+Onboarding is coming in the next release.
+
+## Progress
+
+Method: every row in [docs/01-feature-inventory.md](docs/01-feature-inventory.md) was checked
+against what is usable in the app today. A feature counts 1 when it works end to end, 0.5 when
+only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
+
+**1.0 scope: 42% (57.5 of 136 P0 features)** `████████░░░░░░░░░░░░`
+**Full parity: 25% (about 69 of 277 P0+P1+P2 features)** `█████░░░░░░░░░░░░░░░`
+
+| Area | Status | Done |
+| --- | --- | --- |
+| Billing and vouchers | Invoices, drafts, post/cancel done; other voucher types pending | 59% (13 / 22) |
+| Parties and items | Create, edit, search, GSTIN done | 69% (16 / 31 P0) |
+| Inventory | Stock ledger engine only, no screens | 25% (est.) |
+| Payments and accounting | Allocation and ledger engines only | 29% (4 / 14) |
+| Reports and GST | Tax engine done; no reports or GSTR-1 yet | 8% (1.5 / 19) |
+| Printing and output | Templates, PDF, share/print/save done | 77% (11.5 / 15) |
+| Data and backup | Open SQLite store; backup/import pending | 10% (1 / 10) |
+| Desktop apps | Windows and Linux builds run the shared UI | Alpha |
+| CLI | Not started | 0% |
+| Server | Not started (post-1.0) | 0% |
+
+## What's left
+
+Phases are defined in [ROADMAP.md](ROADMAP.md); details in [docs/04-implementation-plan.md](docs/04-implementation-plan.md).
+
+- Next release: onboarding and firm setup, additional-charges entry.
+- Payments and money: payment in/out screens, allocation, expenses, ledgers, outstanding.
+- Reports and GST: sales/purchase/day book, GST and HSN summary, GSTR-1 CSV.
+- Inventory: stock screens, adjustments, godowns, low-stock alerts.
+- Other vouchers: quotations, proforma, credit/debit notes, purchase bills.
+- Data: full backup/restore, CSV import/export, Tally export.
+- CLI (direct mode) for 1.0; optional server after 1.0.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
 the source code of myBillBook or any other commercial billing product. See
@@ -50,8 +137,7 @@ search, reporting, and import/export layers are shared through Kotlin Multiplatf
 UI is shared with Compose Multiplatform. Platform-specific code is limited to printing,
 file pickers, share sheets, secure storage, notifications, and packaging.
 
-The repository keeps the name `openbill-android` for now because the Android app is the
-first deliverable. The project name is **OpenBill**.
+The repository is `zenithblue-oss/openbill` (https://github.com/zenithblue-oss/openbill). The project name is **OpenBill**.
 
 ## MVP scope
 

@@ -140,7 +140,8 @@ Do not use them in:
 - Advertisements or store listings that imply affiliation.
 - Any statement that OpenBill is a fork, partnership, or official alternative.
 
-The repository name `openbill-android` is a historical project name. The product name is
+The repository was formerly named `openbill-android` and is now `openbill`
+(https://github.com/zenithblue-oss/openbill). The product name is
 OpenBill.
 
 ## 8. Licensing
