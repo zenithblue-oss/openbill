@@ -55,18 +55,20 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            arch: x64
             task: :desktopApp:packageMsi :desktopApp:packageExe
-            glob: |
-              desktopApp/build/compose/binaries/main/msi/*.msi
-              desktopApp/build/compose/binaries/main/exe/*.exe
-              desktopApp/build/portable/*.zip
+          - os: windows-11-arm
+            arch: arm64
+            task: :desktopApp:packageMsi :desktopApp:packageExe
           - os: ubuntu-latest
-            task: :desktopApp:packageDeb :desktopApp:packageAppImage
-            glob: |
-              desktopApp/build/compose/binaries/main/deb/*.deb
-              desktopApp/build/compose/binaries/main/appimage/*.AppImage
-              desktopApp/build/portable/*.tar.gz
+            arch: x64
+            task: :desktopApp:packageDeb
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            task: :desktopApp:packageDeb
     runs-on: ${{ matrix.os }}
+    # ARM64 Windows support in the Compose/Skia toolchain is newer; don't block the release on it
+    continue-on-error: ${{ matrix.os == 'windows-11-arm' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -77,25 +79,29 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Package
         shell: bash
-        run: ./gradlew --console=plain ${{ matrix.task }}
-      - name: Windows portable zip
+        run: ./gradlew --console=plain ${{ matrix.task }} :desktopApp:createDistributable
+      - name: Collect Windows packages
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          ./gradlew --console=plain :desktopApp:createDistributable
-          New-Item -ItemType Directory -Force desktopApp/build/portable | Out-Null
-          Compress-Archive -Path desktopApp/build/compose/binaries/main/app/OpenBill -DestinationPath "desktopApp/build/portable/OpenBill-$env:GITHUB_REF_NAME-windows-x64.zip"
-      - name: Linux portable tarball
+          $out = "desktopApp/build/release"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $base = "OpenBill-$env:GITHUB_REF_NAME-windows-${{ matrix.arch }}"
+          Get-ChildItem desktopApp/build/compose/binaries/main/msi/*.msi | Copy-Item -Destination "$out/$base.msi"
+          Get-ChildItem desktopApp/build/compose/binaries/main/exe/*.exe | Copy-Item -Destination "$out/$base-setup.exe"
+          Compress-Archive -Path desktopApp/build/compose/binaries/main/app/OpenBill -DestinationPath "$out/$base-portable.zip"
+      - name: Collect Linux packages
         if: runner.os == 'Linux'
         run: |
-          ./gradlew --console=plain :desktopApp:createDistributable
-          mkdir -p desktopApp/build/portable
+          out=desktopApp/build/release
+          mkdir -p "$out"
+          cp desktopApp/build/compose/binaries/main/deb/*.deb "$out/"
           tar -C desktopApp/build/compose/binaries/main/app -czf \
-            "desktopApp/build/portable/OpenBill-${GITHUB_REF_NAME}-linux-x64.tar.gz" OpenBill
+            "$out/OpenBill-${GITHUB_REF_NAME}-linux-${{ matrix.arch }}.tar.gz" OpenBill
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ runner.os }}
-          path: ${{ matrix.glob }}
+          name: desktop-${{ runner.os }}-${{ matrix.arch }}
+          path: desktopApp/build/release/*
           if-no-files-found: error
 
   publish:
