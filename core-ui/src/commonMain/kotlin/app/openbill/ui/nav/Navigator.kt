@@ -22,6 +22,9 @@ sealed interface Route {
     data object InvoiceTemplates : Route
     data class InvoicePdf(val voucherId: String) : Route
 
+    /** The introduction, replayed from More. */
+    data object Introduction : Route
+
     /** Stable string form, used as the saved-state key and to survive process death. */
     val key: String
         get() = when (this) {
@@ -33,6 +36,7 @@ sealed interface Route {
             BusinessEdit -> "business:"
             InvoiceTemplates -> "templates:"
             is InvoicePdf -> "pdf:$voucherId"
+            Introduction -> "intro:"
         }
 
     companion object {
@@ -48,6 +52,7 @@ sealed interface Route {
                 "business" -> BusinessEdit
                 "templates" -> InvoiceTemplates
                 "pdf" -> arg.takeIf { it.isNotEmpty() }?.let { InvoicePdf(it) }
+                "intro" -> Introduction
                 else -> null
             }
         }

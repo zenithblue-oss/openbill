@@ -16,6 +16,7 @@ import app.openbill.ui.pdf.InvoiceStyleController
 import app.openbill.ui.pdf.LogoImage
 import app.openbill.ui.pdf.PdfAction
 import app.openbill.ui.settings.AppearanceController
+import app.openbill.ui.settings.OnboardingController
 import app.openbill.ui.settings.SettingsStore
 import app.openbill.ui.theme.defaultSettingsStore
 import kotlin.time.Clock
@@ -73,6 +74,9 @@ class AppContainer(
 
     /** Theme preferences, read once and persisted on change. */
     val appearance: AppearanceController by lazy { AppearanceController(platform.settingsStore) }
+
+    /** Whether the first-run introduction was finished or skipped (device setting). */
+    val onboarding: OnboardingController by lazy { OnboardingController(platform.settingsStore) }
 
     /** Per-firm invoice template, accent and print options (device settings, not the database). */
     val invoiceStyles: InvoiceStyleController by lazy { InvoiceStyleController(platform.settingsStore) }

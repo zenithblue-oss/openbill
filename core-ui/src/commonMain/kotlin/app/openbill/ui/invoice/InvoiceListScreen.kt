@@ -51,6 +51,7 @@ import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.model.Money
 import app.openbill.ui.AppContainer
+import app.openbill.ui.components.LocalWidthClass
 import app.openbill.ui.Session
 import app.openbill.ui.components.AnimatedMoney
 import app.openbill.ui.components.AppSearchBar
@@ -146,7 +147,8 @@ fun InvoiceListScreen(
         topBar = { CollapsingTopBar("Invoices", scrollBehavior) },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            // With a navigation rail, its header FAB is the screen's one create action.
+            if (!LocalWidthClass.current.usesRail) ExtendedFloatingActionButton(
                 onClick = onNew,
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },

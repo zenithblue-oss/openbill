@@ -56,6 +56,7 @@ import app.openbill.core.domain.model.PartyType
 import app.openbill.core.model.Money
 import app.openbill.core.tax.IndianState
 import app.openbill.ui.AppContainer
+import app.openbill.ui.components.LocalWidthClass
 import app.openbill.ui.BackHandlerSlot
 import app.openbill.ui.Session
 import app.openbill.ui.components.AppSearchBar
@@ -134,7 +135,8 @@ fun PartyListScreen(
         topBar = { CollapsingTopBar("Parties", scrollBehavior) },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            // With a navigation rail, its header FAB is the screen's one create action.
+            if (!LocalWidthClass.current.usesRail) ExtendedFloatingActionButton(
                 onClick = { onOpen(null) },
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },

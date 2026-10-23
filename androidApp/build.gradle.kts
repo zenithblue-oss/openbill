@@ -55,8 +55,8 @@ android {
         applicationId = "app.openbill.android"
         minSdk = libs.versions.min.sdk.get().toInt()
         targetSdk = libs.versions.target.sdk.get().toInt()
-        versionCode = 2
-        versionName = "0.1.1-alpha"
+        versionCode = 3
+        versionName = "0.1.2-alpha"
     }
 
     signingConfigs {

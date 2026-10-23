@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -64,7 +65,13 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoreScreen(container: AppContainer, session: Session, onEditBusiness: () -> Unit, onInvoiceTemplates: () -> Unit = {}) {
+fun MoreScreen(
+    container: AppContainer,
+    session: Session,
+    onEditBusiness: () -> Unit,
+    onInvoiceTemplates: () -> Unit = {},
+    onViewIntroduction: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     val messages = LocalAppMessages.current
@@ -156,6 +163,18 @@ fun MoreScreen(container: AppContainer, session: Session, onEditBusiness: () -> 
                     ),
                 )
 
+                ListItem(
+                    headlineContent = { Text("Reduce motion") },
+                    supportingContent = { Text("Fewer animations: screens change without sliding and the introduction shows still pictures.") },
+                    trailingContent = { Switch(checked = appearance.reduceMotion, onCheckedChange = null) },
+                    colors = listColors,
+                    modifier = Modifier.toggleable(
+                        value = appearance.reduceMotion,
+                        role = Role.Switch,
+                        onValueChange = { container.appearance.setReduceMotion(it) },
+                    ),
+                )
+
                 if (container.platform.isDebugBuild) {
                     SectionHeader("Developer")
                     ListItem(
@@ -184,6 +203,14 @@ fun MoreScreen(container: AppContainer, session: Session, onEditBusiness: () -> 
                     },
                     leadingContent = { Image(rememberVectorPainter(BrandLogo.Mark), contentDescription = null, modifier = Modifier.size(40.dp)) },
                     colors = listColors,
+                )
+                ListItem(
+                    headlineContent = { Text("View introduction") },
+                    supportingContent = { Text("A short tour of what OpenBill does") },
+                    leadingContent = { Icon(Icons.Outlined.PlayArrow, contentDescription = null) },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                    colors = listColors,
+                    modifier = Modifier.clickable(role = Role.Button, onClick = onViewIntroduction),
                 )
                 Spacer(Modifier.height(Spacing.xl))
             }

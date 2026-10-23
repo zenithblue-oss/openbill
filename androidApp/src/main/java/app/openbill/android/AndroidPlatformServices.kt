@@ -30,7 +30,6 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.lang.ref.WeakReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -57,17 +56,19 @@ class AndroidPlatformServices(
     }
 
     private val painter by lazy { AndroidPdfPainter(context) }
-    private var hooks: WeakReference<ActivityHooks>? = null
+    // Strong reference: nothing else holds the hooks object, so a weak one is collected and every
+    // activity-result flow (photo picker, Save as, Print) fails. detach() clears it with the activity.
+    private var hooks: ActivityHooks? = null
 
     fun attach(h: ActivityHooks) {
-        hooks = WeakReference(h)
+        hooks = h
     }
 
     fun detach(activity: ComponentActivity) {
-        if (hooks?.get()?.activity === activity) hooks = null
+        if (hooks?.activity === activity) hooks = null
     }
 
-    private fun requireHooks() = hooks?.get() ?: error("The app window is not ready")
+    private fun requireHooks() = hooks ?: error("The app window is not ready")
 
     override val pdfFontMetrics: FontMetrics get() = painter.metrics
 
@@ -116,7 +117,16 @@ class AndroidPlatformServices(
                 val activity = requireHooks().activity
                 val manager = activity.getSystemService(Context.PRINT_SERVICE) as PrintManager
                 val name = "${document.title} ${document.number}"
-                manager.print(name, FilePrintAdapter(file, name, layout.pages.size), PrintAttributes.Builder().build())
+                // Default the dialog to the document's own paper size (A4, A5 or a roll) instead of the
+                // locale default (Letter), so the preview is not shrunk or letterboxed.
+                val first = layout.pages.first()
+                val mils = { pt: Float -> (pt * 1000f / 72f).toInt() }
+                val media = PrintAttributes.MediaSize("openbill", "Invoice", mils(first.width), mils(first.height))
+                val attrs = PrintAttributes.Builder()
+                    .setMediaSize(media)
+                    .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                    .build()
+                manager.print(name, FilePrintAdapter(file, name, layout.pages.size), attrs)
                 return null
             }
             PdfAction.SAVE -> {

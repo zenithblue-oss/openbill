@@ -1,6 +1,7 @@
 package app.openbill.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -24,6 +25,64 @@ object AppIcons {
             strokeLineJoin = StrokeJoin.Round,
             pathBuilder = block,
         ).build()
+
+    /** Filled glyph (even-odd, so inner details are cut out), optionally with a 2 dp outline stroke. */
+    private fun filled(name: String, outline: (PathBuilder.() -> Unit)?, block: PathBuilder.() -> Unit): ImageVector =
+        ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
+            path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd, pathBuilder = block)
+            if (outline != null) {
+                path(
+                    fill = null,
+                    stroke = SolidColor(Color.Black),
+                    strokeLineWidth = 2f,
+                    strokeLineCap = StrokeCap.Round,
+                    strokeLineJoin = StrokeJoin.Round,
+                    pathBuilder = outline,
+                )
+            }
+        }.build()
+
+    private val receiptOutline: PathBuilder.() -> Unit = {
+        moveTo(6f, 3f); lineTo(18f, 3f); lineTo(18f, 21f); lineTo(15f, 19f); lineTo(12f, 21f)
+        lineTo(9f, 19f); lineTo(6f, 21f); close()
+    }
+
+    /** Selected-state variants for navigation (M3: filled when active, outlined otherwise). */
+    val InvoiceSelected = filled("invoice-selected", receiptOutline) {
+        receiptOutline()
+        // Text lines cut out of the filled bill.
+        moveTo(8.5f, 7f); lineTo(15.5f, 7f); lineTo(15.5f, 9f); lineTo(8.5f, 9f); close()
+        moveTo(8.5f, 11f); lineTo(15.5f, 11f); lineTo(15.5f, 13f); lineTo(8.5f, 13f); close()
+    }
+    val PartiesSelected = filled(
+        "parties-selected",
+        {
+            moveTo(12f, 4f); arcToRelative(3.5f, 3.5f, 0f, true, true, 0f, 7f)
+            arcToRelative(3.5f, 3.5f, 0f, true, true, 0f, -7f)
+            moveTo(5f, 20f); curveTo(5f, 15f, 19f, 15f, 19f, 20f); close()
+        },
+    ) {
+        moveTo(12f, 4f); arcToRelative(3.5f, 3.5f, 0f, true, true, 0f, 7f)
+        arcToRelative(3.5f, 3.5f, 0f, true, true, 0f, -7f)
+        moveTo(5f, 20f); curveTo(5f, 15f, 19f, 15f, 19f, 20f); close()
+    }
+    val ItemsSelected = filled("items-selected", null) {
+        // Three faces of the box with hairline gaps between them.
+        moveTo(12f, 2f); lineTo(21f, 6.5f); lineTo(12f, 11f); lineTo(3f, 6.5f); close()
+        moveTo(3f, 8.2f); lineTo(11.2f, 12.3f); lineTo(11.2f, 22f); lineTo(3f, 17.9f); close()
+        moveTo(21f, 8.2f); lineTo(12.8f, 12.3f); lineTo(12.8f, 22f); lineTo(21f, 17.9f); close()
+    }
+    val MoreSelected = ImageVector.Builder("more-selected", 24.dp, 24.dp, 24f, 24f).path(
+        fill = null,
+        stroke = SolidColor(Color.Black),
+        strokeLineWidth = 2.6f,
+        strokeLineCap = StrokeCap.Round,
+        pathBuilder = {
+            moveTo(5f, 7f); lineTo(19f, 7f)
+            moveTo(5f, 12f); lineTo(19f, 12f)
+            moveTo(5f, 17f); lineTo(19f, 17f)
+        },
+    ).build()
 
     val Invoice = icon("invoice") {
         moveTo(6f, 3f); lineTo(18f, 3f); lineTo(18f, 21f); lineTo(15f, 19f); lineTo(12f, 21f)

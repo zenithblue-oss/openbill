@@ -162,7 +162,21 @@ figure that was not real.
 **Reduced motion.** When Android's animator duration scale is 0 (Developer options or
 Accessibility "Remove animations"), `LocalReducedMotion` is true and every spec above becomes
 `snap()` / `EnterTransition.None`. The value is observed live. Compose also honours the
-system scale for built-in component animations. Desktop has no system signal yet.
+system scale for built-in component animations. Desktop has no system signal, so More >
+Appearance has a **Reduce motion** switch (it also adds to the Android signal).
+
+**Introduction (onboarding).** The first-run introduction (`ui/onboarding/`) is the one place
+with motion-graphics scenes and the only exception to the 300 ms cap and the no-illustrations
+rule. Six pages in a `HorizontalPager`; each scene is drawn on a Canvas in a 320-unit art box
+and driven by a single clock (ms since the page became current), so it restarts every time a
+page becomes current and animates in the draw phase without recomposition. Techniques: path
+trim (`PathMeasure.getSegment`), back-out and spring easing for pops, odometer digits,
+parallax layers offset by `currentPage + currentPageOffsetFraction`, a background gradient that
+morphs between page tints, and short idle loops. Entrances finish within about 2.5 s and never
+block input (Skip, Back, Next and swiping work at all times). Under reduced motion every scene
+shows its final frame, idle loops stop, and page changes are a 250 ms fade. Shown only while no
+business exists and it was not finished or skipped (`onboarding.completed`); More > View
+introduction replays it.
 
 No skeletons or shimmer: local reads finish in well under a frame budget, so a spinner is
 shown only for the rare slow load.
@@ -174,7 +188,7 @@ shown only for the rare slow load.
 | Top-level list title | `MediumTopAppBar` + `exitUntilCollapsedScrollBehavior` (`CollapsingTopBar`) | Invoices, Parties, Items, More |
 | First run | `LargeTopAppBar` | Setup only |
 | Detail and form title | `TopAppBar` (`AppTopBar`) with back | Destructive action as an icon with a label for screen readers |
-| Primary navigation | `NavigationBar` (compact) / `NavigationRail` (medium, expanded) | Only on the four home tabs; hidden on editors so unsaved-change guards cannot be bypassed |
+| Primary navigation | `NavigationBar` (compact) / `NavigationRail` (medium, expanded) | Only on the four home tabs; hidden on editors so unsaved-change guards cannot be bypassed. Rail: 80 dp on `surface`, brand mark in the header, destinations centred as a group, filled icon when selected; on expanded windows the header holds the New invoice FAB and the list drops its floating FAB |
 | Primary create action | `ExtendedFloatingActionButton` | One per list; collapses on scroll |
 | Search | `DockedSearchBar` with `SearchBarDefaults.InputField` (`AppSearchBar`) | Scrolls with the list header so landscape keeps room for rows |
 | Filters | `FilterChip` (`SelectableChip`) | Show counts where cheap ("Drafts (1)") |

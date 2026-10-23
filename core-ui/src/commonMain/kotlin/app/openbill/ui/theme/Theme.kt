@@ -19,7 +19,7 @@ fun OpenBillTheme(settings: AppearanceSettings = AppearanceSettings(), content: 
     SystemBarsAppearance(darkTheme = dark)
     CompositionLocalProvider(
         LocalExtendedColors provides if (dark) DarkExtendedColors else LightExtendedColors,
-        LocalReducedMotion provides rememberReducedMotion(),
+        LocalReducedMotion provides (rememberReducedMotion() || settings.reduceMotion),
     ) {
         MaterialTheme(
             colorScheme = colors,

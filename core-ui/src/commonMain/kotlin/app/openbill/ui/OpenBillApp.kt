@@ -15,6 +15,26 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.animation.scaleOut
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import app.openbill.ui.theme.BrandLogo
+import app.openbill.ui.theme.Spacing
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -86,6 +106,10 @@ import app.openbill.ui.nav.SearchFocus
 import app.openbill.ui.nav.Route
 import app.openbill.ui.nav.Tab
 import app.openbill.ui.nav.WidthClass
+import app.openbill.ui.onboarding.LaunchStage
+import app.openbill.ui.onboarding.OnboardingMode
+import app.openbill.ui.onboarding.OnboardingScreen
+import app.openbill.ui.onboarding.launchStage
 import app.openbill.ui.parties.PartyEditScreen
 import app.openbill.ui.parties.PartyListScreen
 import app.openbill.ui.setup.BusinessEditScreen
@@ -117,17 +141,23 @@ fun OpenBillApp(container: AppContainer, backHandler: BackHandlerSlot? = null) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(LocalWidthClass provides WidthClass.of(maxWidth.value)) {
                     val firms by remember { container.repositories.firms.observeFirms() }.collectAsState(initial = null)
+                    val onboardingDone by container.onboarding.completed.collectAsState()
                     val list = firms
-                    val phase = when {
-                        list == null -> 0
-                        list.isEmpty() -> 1
-                        else -> 2
-                    }
-                    Crossfade(phase, animationSpec = motionTween(Motion.MEDIUM1), label = "phase") { p ->
+                    val stage = launchStage(
+                        firmsLoaded = list != null,
+                        hasFirm = !list.isNullOrEmpty(),
+                        onboardingCompleted = onboardingDone,
+                    )
+                    Crossfade(stage, animationSpec = motionTween(Motion.MEDIUM2), label = "phase") { p ->
                         when (p) {
-                            0 -> LoadingState()
-                            1 -> SetupScreen(container)
-                            else -> list?.firstOrNull()?.let { FirmShell(container, it, slot, if (keyboardShell) keyBack else null) }
+                            LaunchStage.LOADING -> LoadingState()
+                            LaunchStage.ONBOARDING -> OnboardingScreen(
+                                mode = OnboardingMode.FIRST_RUN,
+                                onFinish = container.onboarding::markCompleted,
+                                backHandler = slot,
+                            )
+                            LaunchStage.SETUP -> SetupScreen(container)
+                            LaunchStage.APP -> list?.firstOrNull()?.let { FirmShell(container, it, slot, if (keyboardShell) keyBack else null) }
                                 ?: LoadingState()
                         }
                     }
@@ -222,16 +252,13 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
                     enter = if (reduced) EnterTransition.None else fadeIn(motionTween(false, Motion.SHORT4)),
                     exit = if (reduced) ExitTransition.None else fadeOut(motionTween(false, Motion.SHORT3)),
                 ) {
-                    NavigationRail(Modifier.fillMaxHeight()) {
-                        Tab.entries.forEach { tab ->
-                            NavigationRailItem(
-                                selected = selectedTab == tab,
-                                onClick = { nav.selectTab(tab) },
-                                icon = { Icon(tab.icon, contentDescription = null) },
-                                label = { Text(tab.label) },
-                            )
-                        }
-                    }
+                    AppNavigationRail(
+                        selectedTab = selectedTab,
+                        onSelect = nav::selectTab,
+                        // The rail header holds the tab's one create action; list screens drop
+                        // their floating FAB whenever the rail is shown.
+                        createAction = selectedTab?.createAction(nav),
+                    )
                 }
             }
             Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -262,7 +289,7 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
                                 NavigationBarItem(
                                     selected = selectedTab == tab,
                                     onClick = { nav.selectTab(tab) },
-                                    icon = { Icon(tab.icon, contentDescription = null) },
+                                    icon = { Icon(if (selectedTab == tab) tab.selectedIcon else tab.icon, contentDescription = null) },
                                     label = { Text(tab.label) },
                                 )
                             }
@@ -273,6 +300,88 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
         }
     }
 }
+
+/**
+ * Material 3 navigation rail: 80 dp wide on the surface colour, brand mark (and on expanded
+ * windows the New invoice FAB) in the header, destinations centred vertically as a group, with
+ * filled icons for the selected destination inside the active-indicator pill. Insets cover the
+ * status and navigation bars and a landscape display cutout on the start side.
+ */
+@Composable
+private fun AppNavigationRail(selectedTab: Tab?, onSelect: (Tab) -> Unit, createAction: CreateAction?) {
+    val reduced = LocalReducedMotion.current
+    NavigationRail(
+        modifier = Modifier.fillMaxHeight(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start),
+        header = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Image(
+                    rememberVectorPainter(BrandLogo.Mark),
+                    contentDescription = "OpenBill",
+                    modifier = Modifier.padding(top = Spacing.sm).size(32.dp),
+                )
+                // Keeps its slot on More (no create action there) so the items never jump.
+                Spacer(Modifier.height(Spacing.lg))
+                Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = createAction != null,
+                        enter = if (reduced) EnterTransition.None else fadeIn(motionTween(false, Motion.SHORT4)) + scaleIn(motionTween(false, Motion.SHORT4, Motion.EmphasizedDecelerate), initialScale = 0.6f),
+                        exit = if (reduced) ExitTransition.None else fadeOut(motionTween(false, Motion.SHORT3)) + scaleOut(motionTween(false, Motion.SHORT3, Motion.EmphasizedAccelerate), targetScale = 0.6f),
+                    ) {
+                        // Remember the last action so the exit animation still has a label.
+                        val last = remember { arrayOfNulls<CreateAction>(1) }
+                        if (createAction != null) last[0] = createAction
+                        val action = last[0] ?: return@AnimatedVisibility
+                        TooltipBox(
+                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Right),
+                            tooltip = { PlainTooltip { Text(action.tooltip) } },
+                            state = rememberTooltipState(),
+                        ) {
+                            FloatingActionButton(
+                                onClick = action.onClick,
+                                elevation = FloatingActionButtonDefaults.bottomAppBarFabElevation(),
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = action.label)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    ) {
+        Spacer(Modifier.weight(1f))
+        Tab.entries.forEach { tab ->
+            val selected = selectedTab == tab
+            NavigationRailItem(
+                selected = selected,
+                onClick = { onSelect(tab) },
+                icon = { Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null) },
+                label = { Text(tab.label) },
+                modifier = Modifier.padding(vertical = Spacing.xs),
+            )
+        }
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+/** The primary create action of a home tab, shown in the rail header. */
+private class CreateAction(val label: String, val tooltip: String, val onClick: () -> Unit)
+
+private fun Tab.createAction(nav: Navigator): CreateAction? = when (this) {
+    Tab.INVOICES -> CreateAction("New invoice", "New invoice (Ctrl+N)") { nav.push(Route.InvoiceEditor(null)) }
+    Tab.PARTIES -> CreateAction("New party", "New party") { nav.push(Route.PartyEdit(null)) }
+    Tab.ITEMS -> CreateAction("New item", "New item") { nav.push(Route.ItemEdit(null)) }
+    Tab.MORE -> null
+}
+
+private val Tab.selectedIcon: ImageVector
+    get() = when (this) {
+        Tab.INVOICES -> AppIcons.InvoiceSelected
+        Tab.PARTIES -> AppIcons.PartiesSelected
+        Tab.ITEMS -> AppIcons.ItemsSelected
+        Tab.MORE -> AppIcons.MoreSelected
+    }
 
 private val Tab.icon: ImageVector
     get() = when (this) {
@@ -334,6 +443,7 @@ private fun RouteContent(
                 container, s,
                 onEditBusiness = { nav.push(Route.BusinessEdit) },
                 onInvoiceTemplates = { nav.push(Route.InvoiceTemplates) },
+                onViewIntroduction = { nav.push(Route.Introduction) },
             )
         }
         is Route.PartyEdit -> PartyEditScreen(container, s, route.partyId, onDone = nav::pop, backHandler = backHandler)
@@ -353,5 +463,13 @@ private fun RouteContent(
         is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler)
         Route.BusinessEdit -> BusinessEditScreen(container, s, onDone = nav::pop, backHandler = backHandler)
         Route.InvoiceTemplates -> InvoiceTemplatesScreen(container, s, onBack = nav::pop, backHandler = backHandler)
+        Route.Introduction -> OnboardingScreen(
+            mode = OnboardingMode.REPLAY,
+            onFinish = {
+                container.onboarding.markCompleted()
+                nav.pop()
+            },
+            backHandler = backHandler,
+        )
     }
 }

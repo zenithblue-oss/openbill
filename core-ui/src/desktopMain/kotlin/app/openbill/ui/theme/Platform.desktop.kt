@@ -30,6 +30,13 @@ private class PreferencesSettingsStore(private val prefs: Preferences) : Setting
     }
 }
 
+/**
+ * `-Dopenbill.prefsNode=<path>` points preferences at a separate node, so a test profile (used
+ * together with `-Dopenbill.dataDir`) starts with fresh settings, including the introduction.
+ */
 actual fun defaultSettingsStore(): SettingsStore =
-    runCatching<SettingsStore> { PreferencesSettingsStore(Preferences.userRoot().node("app/openbill/ui")) }
+    runCatching<SettingsStore> {
+        val node = System.getProperty("openbill.prefsNode")?.trim()?.trim('/')?.takeIf { it.isNotEmpty() } ?: "app/openbill/ui"
+        PreferencesSettingsStore(Preferences.userRoot().node(node))
+    }
         .getOrElse { InMemorySettingsStore() }
