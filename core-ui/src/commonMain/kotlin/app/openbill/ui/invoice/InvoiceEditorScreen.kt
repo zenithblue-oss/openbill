@@ -181,7 +181,7 @@ fun InvoiceEditorScreen(
             }
             CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
                 FormColumn(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = pageGutter, vertical = Spacing.sm)) {
-                    PartyCard(state.party, state.errors["party"], if (purchaseSide) "Supplier *" else "Bill to *") { pickParty = true }
+                    PartyCard(state.party, state.errors["party"], if (purchaseSide) "Supplier *" else "Bill to *", if (purchaseSide) "Supplier you are buying from" else "Customer this invoice is for") { pickParty = true }
                     if (purchaseSide) {
                         FormField(
                             if (state.type == VoucherType.PURCHASE) "Supplier bill number" else "Debit note against",
@@ -357,7 +357,7 @@ fun InvoiceEditorScreen(
     }
     if (pickParty) {
         PickerSheet(
-            title = "Bill to",
+            title = if (purchaseSide) "Supplier" else "Bill to",
             options = parties,
             label = { it.name },
             supporting = { it.summaryLine() },
@@ -415,7 +415,7 @@ fun InvoiceEditorScreen(
 
 /** The chosen party with its GSTIN and state, or a prompt to choose one. */
 @Composable
-private fun PartyCard(party: Party?, error: String?, label: String, onClick: () -> Unit) {
+private fun PartyCard(party: Party?, error: String?, label: String, hint: String, onClick: () -> Unit) {
     val borderColor = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
     OutlinedCard(
         onClick = onClick,
@@ -434,7 +434,7 @@ private fun PartyCard(party: Party?, error: String?, label: String, onClick: () 
                         party.stateCode?.let { Text(Fmt.stateName(it)) }
                     }
                 } else {
-                    Text(error ?: "Customer or supplier this invoice is for")
+                    Text(error ?: hint)
                 }
             },
             leadingContent = { Icon(Icons.Outlined.Person, contentDescription = null) },
