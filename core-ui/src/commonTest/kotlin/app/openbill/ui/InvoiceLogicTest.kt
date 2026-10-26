@@ -5,6 +5,8 @@ import app.openbill.core.model.Quantity
 import app.openbill.core.model.Rate
 import app.openbill.core.model.RoundingMode
 import app.openbill.core.tax.TaxMode
+import app.openbill.core.tax.ChargeTaxBasis
+import app.openbill.ui.invoice.DraftCharge
 import app.openbill.ui.invoice.DraftLine
 import app.openbill.ui.invoice.InvoiceMath
 import app.openbill.ui.invoice.LineForm
@@ -120,5 +122,66 @@ class InvoiceLogicTest {
         assertNotNull(line)
         assertNull(line.discountPercent)
         assertEquals("25.00", LineRules.fromDraft(line).discount)
+    }
+
+    private fun charge(amount: String, basis: ChargeTaxBasis, gst: Int = 0, inclusive: Boolean = false) =
+        DraftCharge("c", "Freight", Money.parse(amount), basis, Rate.ofPercent(gst), inclusive)
+
+    @Test
+    fun nonTaxableChargeAddsToTotalWithoutTax() {
+        val s = InvoiceMath.summarize(listOf(line("1", "1000", 18)), "27", "27", true, RoundingMode.HALF_UP, listOf(charge("50", ChargeTaxBasis.NON_TAXABLE)))
+        assertEquals(Money.parse("180"), s.totalTax)
+        assertEquals(Money.parse("1230"), s.grandTotal)
+    }
+
+    @Test
+    fun explicitRateChargeAddsTaxAndPersistsReconciled() {
+        val lines = listOf(line("1", "1000", 5))
+        val charges = listOf(charge("100", ChargeTaxBasis.EXPLICIT_RATE, 18))
+        val s = InvoiceMath.summarize(lines, "27", "27", true, RoundingMode.HALF_UP, charges)
+        assertEquals(Money.parse("68"), s.totalTax) // 50 + 18
+        assertEquals(Money.parse("1168"), s.grandTotal)
+        assertEquals(Money.parse("9"), s.cgst - Money.parse("25"))
+        val stored = InvoiceMath.toVoucherCharges(charges, s) { it.key }
+        assertEquals(Money.parse("118"), stored[0].total)
+        val rebuilt = InvoiceMath.summarizeStored(InvoiceMath.toVoucherLines(lines, s) { it.key }, "27", "27", s.roundOff, s.grandTotal, RoundingMode.HALF_UP, stored)
+        assertEquals(s.cgst, rebuilt.cgst)
+        assertEquals(s.totalTax, rebuilt.totalTax)
+    }
+
+    @Test
+    fun principalSupplyChargeFollowsLineRate() {
+        val s = InvoiceMath.summarize(listOf(line("1", "1000", 12)), "27", "29", true, RoundingMode.HALF_UP, listOf(charge("100", ChargeTaxBasis.PRINCIPAL_SUPPLY)))
+        assertEquals(Money.parse("132"), s.igst) // 120 + 12
+        assertEquals(Money.parse("1232"), s.grandTotal)
+    }
+
+    @Test
+    fun serialTrackedLinesNeedOneSerialPerUnitAndBatchLinesABatch() {
+        val base = LineForm(description = "Phone", quantity = "2", rate = "100", trackSerial = true)
+        assertTrue(LineRules.validate(base.copy(serials = "A1"), { "k" }).second.containsKey("serials"))
+        val (line, errors) = LineRules.validate(base.copy(serials = "A1, A2"), { "k" })
+        assertTrue(errors.isEmpty())
+        assertEquals(listOf("A1", "A2"), line!!.serialNumbers)
+        val batch = LineForm(description = "Syrup", quantity = "1", rate = "10", trackBatch = true)
+        assertTrue(LineRules.validate(batch, { "k" }).second.containsKey("batch"))
+        assertEquals("B7", LineRules.validate(batch.copy(batchNumber = "B7"), { "k" }).first!!.batchNumber)
+    }
+
+    @Test
+    fun inventoryRoutesSurviveTheirKeys() {
+        val routes = listOf(
+            app.openbill.ui.nav.Route.InvoiceEditor(null, app.openbill.core.domain.model.VoucherType.PURCHASE),
+            app.openbill.ui.nav.Route.InvoiceEditor(null, app.openbill.core.domain.model.VoucherType.DEBIT_NOTE, returnOf = "v1"),
+            app.openbill.ui.nav.Route.InvoiceEditor("d1"),
+            app.openbill.ui.nav.Route.StockSummary(lowOnly = true),
+            app.openbill.ui.nav.Route.ItemStock("i1"),
+            app.openbill.ui.nav.Route.StockEntry("i1", transfer = true),
+            app.openbill.ui.nav.Route.StockEntry(null, transfer = false),
+            app.openbill.ui.nav.Route.BarcodeLabels(listOf("a", "b")),
+            app.openbill.ui.nav.Route.Purchases,
+            app.openbill.ui.nav.Route.Godowns,
+        )
+        routes.forEach { assertEquals(it, app.openbill.ui.nav.Route.fromKey(it.key)) }
     }
 }

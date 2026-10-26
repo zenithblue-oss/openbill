@@ -34,20 +34,36 @@ data class LineForm(
     val discount: String = "",
     val gstRate: Rate = Rate.ofPercent(0),
     val inclusive: Boolean = false,
+    val trackBatch: Boolean = false,
+    val trackSerial: Boolean = false,
+    val batchNumber: String = "",
+    val expiryDate: LocalDate? = null,
+    val serials: String = "",
 )
 
 object LineRules {
-    fun fromItem(item: Item, unitSymbol: String?): LineForm = LineForm(
-        itemId = item.id,
-        description = item.name,
-        hsnSac = item.hsnSac,
-        unit = unitSymbol,
-        quantity = "1",
-        rate = if (item.salePrice.paise == 0L) "" else item.salePrice.format(),
-        gstRate = item.taxRate,
-    )
+    fun fromItem(item: Item, unitSymbol: String?, purchase: Boolean = false): LineForm {
+        val price = if (purchase) item.purchasePrice else item.salePrice
+        val stock = item.trackInventory && !item.isService
+        return LineForm(
+            itemId = item.id,
+            description = item.name,
+            hsnSac = item.hsnSac,
+            unit = unitSymbol,
+            quantity = "1",
+            rate = if (price.paise == 0L) "" else price.format(),
+            gstRate = item.taxRate,
+            trackBatch = stock && item.trackBatch,
+            trackSerial = stock && item.trackSerial,
+        )
+    }
 
-    fun fromDraft(line: DraftLine): LineForm = LineForm(
+    fun fromDraft(line: DraftLine, item: Item? = null): LineForm = LineForm(
+        trackBatch = item?.let { it.trackInventory && it.trackBatch } ?: (line.batchNumber != null),
+        trackSerial = item?.let { it.trackInventory && it.trackSerial } ?: line.serialNumbers.isNotEmpty(),
+        batchNumber = line.batchNumber.orEmpty(),
+        expiryDate = line.expiryDate,
+        serials = line.serialNumbers.joinToString("\n"),
         key = line.key,
         itemId = line.itemId,
         description = line.description,
@@ -100,6 +116,15 @@ object LineRules {
         val rate = Parse.money(form.rate)
         if (rate == null || rate.paise < 0) errors["rate"] = "Enter a valid rate"
         Validation.hsnError(form.hsnSac.orEmpty())?.let { errors["hsn"] = it }
+        if (form.trackBatch && form.batchNumber.isBlank()) errors["batch"] = "Enter the batch number"
+        val serials = serialList(form.serials)
+        if (form.trackSerial && qty != null) {
+            when {
+                qty.scaledUnits % 10_000L != 0L -> errors["quantity"] = "Serial-tracked items need a whole quantity"
+                serials.size.toLong() != qty.scaledUnits / 10_000L -> errors["serials"] = "Enter ${qty.format()} serial numbers (${serials.size} entered)"
+                serials.distinct().size != serials.size -> errors["serials"] = "A serial number is repeated"
+            }
+        }
         if (errors.isNotEmpty()) return null to errors
         val gross = InvoiceMath.gross(qty!!, rate!!)
         val discount = discountAmount(form.discount, gross)
@@ -121,18 +146,30 @@ object LineRules {
             gstRate = form.gstRate,
             taxMode = if (form.inclusive) TaxMode.INCLUSIVE else TaxMode.EXCLUSIVE,
             discountPercent = form.discount.trim().takeIf { it.endsWith("%") }?.let { Parse.percent(it) },
+            batchNumber = form.batchNumber.trim().takeIf { form.trackBatch && it.isNotEmpty() },
+            expiryDate = form.expiryDate.takeIf { form.trackBatch },
+            serialNumbers = if (form.trackSerial) serials else emptyList(),
         ) to emptyMap()
     }
+
+    fun serialList(text: String): List<String> = text.split('\n', ',', ';').map { it.trim() }.filter { it.isNotEmpty() }
 }
 
 data class InvoiceEditorState(
     val loaded: Boolean = false,
     val voucherId: String? = null,
+    val type: VoucherType = VoucherType.SALE,
+    /** Supplier's bill number (purchases) or the party's document number. */
+    val referenceNumber: String = "",
+    /** The bill or invoice a return (debit/credit note) reverses. */
+    val referenceVoucherId: String? = null,
+    val godownId: String? = null,
     val party: Party? = null,
     val placeOfSupply: String,
     val dateText: String,
     val notes: String = "",
     val lines: List<DraftLine> = emptyList(),
+    val charges: List<DraftCharge> = emptyList(),
     val summary: TaxSummary? = null,
     val calcError: String? = null,
     val errors: Map<String, String> = emptyMap(),
@@ -149,11 +186,16 @@ class InvoiceEditorModel(
     private val session: Session,
     private val voucherId: String?,
     private val scope: CoroutineScope,
+    newType: VoucherType = VoucherType.SALE,
+    /** A posted purchase bill or sale to prefill a return (debit/credit note) from. */
+    private val returnOf: String? = null,
 ) {
     private val firm = session.firm
     private val _state = MutableStateFlow(
         InvoiceEditorState(
-            loaded = voucherId == null,
+            loaded = voucherId == null && returnOf == null,
+            type = newType,
+            godownId = session.settings.defaultGodownId,
             placeOfSupply = firm.stateCode,
             dateText = container.today().toString(),
         ).recalculated(),
@@ -163,16 +205,36 @@ class InvoiceEditorModel(
 
     init {
         if (voucherId != null) scope.launch { load(voucherId) }
+        else if (returnOf != null) scope.launch { load(returnOf, asReturn = true) }
     }
 
-    private suspend fun load(id: String) {
+    private suspend fun load(id: String, asReturn: Boolean = false) {
         val repos = container.repositories
-        val v = repos.vouchers.findVoucher(id)
+        val found = repos.vouchers.findVoucher(id)
+        val v = if (asReturn && found != null) {
+            if (found.status != VoucherStatus.POSTED) {
+                _state.update { it.copy(loaded = true, failure = "Only posted documents can be returned") }
+                return
+            }
+            found.copy(
+                type = if (found.type == VoucherType.PURCHASE) VoucherType.DEBIT_NOTE else VoucherType.CREDIT_NOTE,
+                referenceVoucherId = found.id,
+                referenceNumber = found.number,
+                status = VoucherStatus.DRAFT,
+                number = null,
+                date = container.today(),
+                lines = found.lines.map { it.copy(id = container.newId()) },
+                charges = emptyList(),
+                notes = null,
+            )
+        } else {
+            found
+        }
         if (v == null || v.status != VoucherStatus.DRAFT) {
-            _state.update { it.copy(loaded = true, failure = "Only draft invoices can be edited") }
+            _state.update { it.copy(loaded = true, failure = "Only drafts can be edited") }
             return
         }
-        existing = v
+        if (!asReturn) existing = v
         val party = v.partyId?.let { repos.parties.findParty(it) }
         val units = repos.catalog.observeUnits(firm.id).first().associateBy { it.id }
         val lines = v.lines.map { line ->
@@ -181,17 +243,22 @@ class InvoiceEditorModel(
         }
         _state.value = InvoiceEditorState(
             loaded = true,
-            voucherId = v.id,
+            voucherId = if (asReturn) null else v.id,
+            type = v.type,
+            referenceNumber = v.referenceNumber.orEmpty(),
+            referenceVoucherId = v.referenceVoucherId,
+            godownId = v.lines.firstNotNullOfOrNull { it.godownId } ?: session.settings.defaultGodownId,
             party = party,
             placeOfSupply = v.placeOfSupplyStateCode,
             dateText = v.date.toString(),
             notes = v.notes.orEmpty(),
             lines = lines,
+            charges = v.charges.sortedBy { it.sortOrder }.map(InvoiceMath::fromVoucherCharge),
         ).recalculated()
     }
 
     private fun InvoiceEditorState.recalculated(): InvoiceEditorState = runCatching {
-        InvoiceMath.summarize(lines, firm.stateCode, placeOfSupply, session.settings.roundToRupee, session.settings.roundingMode)
+        InvoiceMath.summarize(lines, firm.stateCode, placeOfSupply, session.settings.roundToRupee, session.settings.roundingMode, charges)
     }.fold(
         onSuccess = { copy(summary = it, calcError = null) },
         onFailure = { copy(summary = null, calcError = it.message ?: "Cannot compute totals") },
@@ -209,6 +276,8 @@ class InvoiceEditorModel(
     fun setPlaceOfSupply(code: String) = mutate { it.copy(placeOfSupply = code) }
     fun setDate(text: String) = mutate { it.copy(dateText = text, errors = it.errors - "date") }
     fun setNotes(text: String) = mutate { it.copy(notes = text) }
+    fun setReferenceNumber(text: String) = mutate { it.copy(referenceNumber = text) }
+    fun setGodown(id: String) = mutate { it.copy(godownId = id) }
 
     fun upsertLine(line: DraftLine) = mutate { s ->
         val idx = s.lines.indexOfFirst { it.key == line.key }
@@ -217,6 +286,13 @@ class InvoiceEditorModel(
     }
 
     fun removeLine(key: String) = mutate { s -> s.copy(lines = s.lines.filterNot { it.key == key }) }
+
+    fun upsertCharge(charge: DraftCharge) = mutate { s ->
+        val idx = s.charges.indexOfFirst { it.key == charge.key }
+        s.copy(charges = if (idx >= 0) s.charges.toMutableList().also { it[idx] = charge } else s.charges + charge)
+    }
+
+    fun removeCharge(key: String) = mutate { s -> s.copy(charges = s.charges.filterNot { it.key == key }) }
 
     fun newKey(): String = container.newId()
 
@@ -259,15 +335,19 @@ class InvoiceEditorModel(
                 id = id,
                 firmId = firm.id,
                 financialYearId = fy.id,
-                type = VoucherType.SALE,
+                type = s.type,
                 date = date,
+                referenceVoucherId = s.referenceVoucherId,
+                referenceNumber = s.referenceNumber.trim().ifBlank { null },
                 partyId = s.party?.id,
                 status = VoucherStatus.DRAFT,
                 placeOfSupplyStateCode = s.placeOfSupply,
-                lines = InvoiceMath.toVoucherLines(s.lines, summary) { it.key },
+                lines = InvoiceMath.toVoucherLines(s.lines, summary, s.godownId) { it.key },
+                charges = InvoiceMath.toVoucherCharges(s.charges, summary) { it.key },
                 subtotal = summary.gross,
                 discount = summary.discount,
-                taxable = summary.taxable,
+                // Header taxable value and tax include charges, so total = taxable + tax + roundOff.
+                taxable = summary.taxable + summary.chargesTaxable,
                 tax = summary.totalTax,
                 roundOff = summary.roundOff,
                 total = summary.grandTotal,

@@ -1,5 +1,11 @@
 package app.openbill.ui.invoice
 
+import kotlinx.coroutines.launch
+
+import app.openbill.ui.barcode.BarcodeScanButton
+
+import app.openbill.core.domain.model.VoucherType
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
@@ -103,10 +109,18 @@ fun InvoiceEditorScreen(
     onClose: () -> Unit,
     onFinished: (voucherId: String, posted: Boolean) -> Unit,
     backHandler: BackHandlerSlot = { _, _ -> },
+    newType: VoucherType = VoucherType.SALE,
+    returnOf: String? = null,
 ) {
     val scope = rememberCoroutineScope()
-    val model = remember(voucherId) { InvoiceEditorModel(container, session, voucherId, scope) }
+    val model = remember(voucherId) { InvoiceEditorModel(container, session, voucherId, scope, newType, returnOf) }
     val state by model.state.collectAsState()
+    val doc = docLabels(state.type)
+    val purchaseSide = state.type == VoucherType.PURCHASE || state.type == VoucherType.DEBIT_NOTE
+    val godowns by remember { container.repositories.catalog.observeGodowns(session.firm.id) }.collectAsState(initial = emptyList())
+    var pickGodown by remember { mutableStateOf(false) }
+    var scanText by remember { mutableStateOf("") }
+    var scanError by remember { mutableStateOf<String?>(null) }
     val parties by remember { container.repositories.parties.observeParties(session.firm.id) }.collectAsState(initial = emptyList())
     val items by remember { container.repositories.catalog.observeItems(session.firm.id) }.collectAsState(initial = emptyList())
     val units by remember { container.repositories.catalog.observeUnits(session.firm.id) }.collectAsState(initial = emptyList())
@@ -118,6 +132,7 @@ fun InvoiceEditorScreen(
     var pickPos by remember { mutableStateOf(false) }
     var quickAddName by remember { mutableStateOf<String?>(null) }
     var lineForm by remember { mutableStateOf<LineForm?>(null) }
+    var chargeForm by remember { mutableStateOf<ChargeForm?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
     var totalsOpen by rememberSaveable { mutableStateOf(false) }
     val requestClose = { if (state.dirty && !state.saving) confirmDiscard = true else onClose() }
@@ -128,14 +143,14 @@ fun InvoiceEditorScreen(
         if (state.rejectedSaves > 0) scroll.animateScrollTo(0)
     }
     val finished: (String, Boolean) -> Unit = { id, posted ->
-        messages?.show(if (posted) "Invoice posted" else "Draft saved")
+        messages?.show(if (posted) "${doc.title} posted" else "Draft saved")
         onFinished(id, posted)
     }
     val wide = LocalWidthClass.current != WidthClass.COMPACT
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(
-            topBar = { AppTopBar(if (voucherId == null) "New invoice" else "Edit draft", onBack = requestClose) },
+            topBar = { AppTopBar(if (voucherId == null) "New ${doc.noun}" else "Edit draft", onBack = requestClose) },
             bottomBar = {
                 if (state.loaded) {
                     TotalsBar(
@@ -155,7 +170,23 @@ fun InvoiceEditorScreen(
             }
             CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
                 FormColumn(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = pageGutter, vertical = Spacing.sm)) {
-                    PartyCard(state.party, state.errors["party"]) { pickParty = true }
+                    PartyCard(state.party, state.errors["party"], if (purchaseSide) "Supplier *" else "Bill to *") { pickParty = true }
+                    if (purchaseSide) {
+                        FormField(
+                            if (state.type == VoucherType.PURCHASE) "Supplier bill number" else "Debit note against",
+                            state.referenceNumber,
+                            model::setReferenceNumber,
+                            supporting = if (state.type == VoucherType.PURCHASE) "As printed on the supplier's invoice" else null,
+                        )
+                    }
+                    if (godowns.size > 1) {
+                        PickerField(
+                            "Godown",
+                            godowns.firstOrNull { it.id == state.godownId }?.name.orEmpty(),
+                            { pickGodown = true },
+                            supporting = if (purchaseSide && state.type == VoucherType.PURCHASE) "Stock is received here" else "Stock moves from here",
+                        )
+                    }
 
                     val date = Parse.date(state.dateText)
                     val supplyNote = if (state.placeOfSupply == session.firm.stateCode) "Intra-state: CGST + SGST" else "Inter-state: IGST"
@@ -181,7 +212,7 @@ fun InvoiceEditorScreen(
                         }
                         state.lines.forEachIndexed { index, line ->
                             val result = state.summary?.lineResults?.getOrNull(index)
-                            DraftLineCard(line, result?.totalAmount) { lineForm = LineRules.fromDraft(line) }
+                            DraftLineCard(line, result?.totalAmount) { lineForm = LineRules.fromDraft(line, items.firstOrNull { it.id == line.itemId }) }
                         }
                     }
                     state.errors["lines"]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -194,12 +225,41 @@ fun InvoiceEditorScreen(
                         }
                         OutlinedButton(onClick = { lineForm = LineForm() }) { Text("Custom line") }
                     }
+                    // Barcode entry: HID scanners type the code and press Enter here; on Android the
+                    // camera button scans with ZXing.
+                    val lookup: (String) -> Unit = { code ->
+                        scope.launch {
+                            val item = container.repositories.catalog.findItemByBarcode(session.firm.id, code)
+                            if (item == null) {
+                                scanError = "No item has barcode \"${code.trim()}\". Add it to an item first."
+                            } else {
+                                scanError = null
+                                scanText = ""
+                                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide)
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FormField(
+                            "Scan or type barcode",
+                            scanText,
+                            { scanText = it; scanError = null },
+                            Modifier.weight(1f),
+                            error = scanError,
+                            imeAction = ImeAction.Done,
+                            onImeAction = { if (scanText.isNotBlank()) lookup(scanText) },
+                        )
+                        BarcodeScanButton(onScanned = lookup)
+                    }
+
+                    ChargesSection(state, onAdd = { chargeForm = ChargeForm() }, onEdit = { chargeForm = ChargeRules.fromDraft(it) })
 
                     SectionHeader("Notes")
-                    FormField("Notes / terms (printed on invoice)", state.notes, model::setNotes, singleLine = false)
+                    FormField("Notes / terms (printed on ${doc.noun})", state.notes, model::setNotes, singleLine = false)
                     state.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Text(
-                        "The invoice number is assigned when you post.",
+                        "The ${doc.noun} number is assigned when you post." +
+                            if (state.type != VoucherType.SALE || godowns.isNotEmpty()) " Posting updates stock." else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -227,6 +287,23 @@ fun InvoiceEditorScreen(
             },
             onDismiss = { lineForm = null },
         )
+        ChargeEditor(
+            form = chargeForm,
+            slabs = remember { gstSlabsOn(container.today()) },
+            onSave = { f ->
+                val (charge, errors) = ChargeRules.validate(f, model::newKey)
+                if (charge != null) {
+                    model.upsertCharge(charge)
+                    chargeForm = null
+                }
+                errors
+            },
+            onDelete = { key ->
+                model.removeCharge(key)
+                chargeForm = null
+            },
+            onDismiss = { chargeForm = null },
+        )
         QuickAddPartyEditor(
             container = container,
             session = session,
@@ -242,11 +319,12 @@ fun InvoiceEditorScreen(
     }
     // Registered after the screen's own handler so an open overlay closes first.
     backHandler(lineForm != null) { lineForm = null }
+    backHandler(chargeForm != null) { chargeForm = null }
     backHandler(quickAddName != null) { quickAddName = null }
 
     if (confirmDiscard) {
         DiscardChangesDialog(
-            message = "Your changes to this invoice have not been saved.",
+            message = "Your changes to this ${doc.noun} have not been saved.",
             onDiscard = { confirmDiscard = false; onClose() },
             onKeepEditing = { confirmDiscard = false },
             onSave = { confirmDiscard = false; model.save(post = false, onDone = finished) },
@@ -290,9 +368,20 @@ fun InvoiceEditorScreen(
             emptyText = "No items yet. Add them from the Items tab, or use a custom line.",
             onSelect = { item ->
                 pickItem = false
-                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId])
+                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide)
             },
             onDismiss = { pickItem = false },
+        )
+    }
+    if (pickGodown) {
+        PickerSheet(
+            title = "Godown",
+            options = godowns,
+            label = { it.name },
+            selected = { it.id == state.godownId },
+            key = { it.id },
+            onSelect = { model.setGodown(it.id); pickGodown = false },
+            onDismiss = { pickGodown = false },
         )
     }
     if (pickPos) {
@@ -302,7 +391,7 @@ fun InvoiceEditorScreen(
 
 /** The chosen party with its GSTIN and state, or a prompt to choose one. */
 @Composable
-private fun PartyCard(party: Party?, error: String?, onClick: () -> Unit) {
+private fun PartyCard(party: Party?, error: String?, label: String, onClick: () -> Unit) {
     val borderColor = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
     OutlinedCard(
         onClick = onClick,
@@ -310,7 +399,7 @@ private fun PartyCard(party: Party?, error: String?, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         ListItem(
-            overlineContent = { Text("Bill to *") },
+            overlineContent = { Text(label) },
             headlineContent = {
                 Text(party?.name ?: "Choose a party", maxLines = 2, overflow = TextOverflow.Ellipsis)
             },
@@ -412,7 +501,10 @@ private fun TotalsBar(
                 Column(Modifier.padding(bottom = Spacing.xs)) {
                     AmountRow(s.grossLabel, s.gross)
                     if (s.discount.paise != 0L) AmountRow("Discount", s.discount, negative = true)
-                    AmountRow("Taxable value", s.taxable)
+                    AmountRow(if (s.chargeResults.isEmpty()) "Taxable value" else "Items taxable value", s.taxable)
+                    state.charges.forEachIndexed { i, c ->
+                        s.chargeResults.getOrNull(i)?.let { AmountRow(c.name, it.result.totalAmount - it.result.totalTax) }
+                    }
                     if (s.isIntraState) {
                         AmountRow("CGST", s.cgst)
                         AmountRow("SGST", s.sgst)
@@ -503,6 +595,23 @@ private fun LineEditor(
                 onImeAction = { errors = onSave(edit) },
             )
             PickerField("GST rate", "${Fmt.percent(current.gstRate)}%", { pickRate = true })
+            if (current.trackBatch) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    FormField("Batch number *", current.batchNumber, { edit = edit.copy(batchNumber = it) }, Modifier.weight(1f), error = errors["batch"])
+                    DateField("Expiry", current.expiryDate, { edit = edit.copy(expiryDate = it) }, Modifier.weight(1f))
+                }
+            }
+            if (current.trackSerial) {
+                FormField(
+                    "Serial / IMEI numbers *",
+                    current.serials,
+                    { edit = edit.copy(serials = it) },
+                    error = errors["serials"],
+                    singleLine = false,
+                    supporting = "One per unit, on separate lines or comma-separated (${LineRules.serialList(current.serials).size} entered)",
+                )
+                BarcodeScanButton(onScanned = { code -> edit = edit.copy(serials = (edit.serials.trim() + "\n" + code).trim()) })
+            }
             ListItem(
                 headlineContent = { Text("Rate includes GST") },
                 supportingContent = { Text("Turn on when the rate above already has GST in it") },
@@ -530,4 +639,14 @@ private fun LineEditor(
     if (pickRate) {
         GstRateSheet(slabs, current.gstRate, { r -> edit = edit.copy(gstRate = r); pickRate = false }, { pickRate = false })
     }
+}
+
+/** Wording for each document the editor can make. */
+internal data class DocLabels(val title: String, val noun: String)
+
+internal fun docLabels(type: VoucherType): DocLabels = when (type) {
+    VoucherType.PURCHASE -> DocLabels("Purchase bill", "purchase bill")
+    VoucherType.DEBIT_NOTE -> DocLabels("Purchase return", "purchase return")
+    VoucherType.CREDIT_NOTE -> DocLabels("Sales return", "sales return")
+    else -> DocLabels("Invoice", "invoice")
 }

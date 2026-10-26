@@ -57,6 +57,7 @@ import app.openbill.ui.components.AnimatedMoney
 import app.openbill.ui.components.AppSearchBar
 import app.openbill.ui.components.AppSnackbarHost
 import app.openbill.ui.components.CenteredContent
+import app.openbill.ui.components.AppTopBar
 import app.openbill.ui.components.CollapsingTopBar
 import app.openbill.ui.components.EmptyState
 import app.openbill.ui.components.LoadingState
@@ -83,14 +84,16 @@ object InvoiceSearch {
         partiesById: Map<String, Party>,
         query: String,
         status: VoucherStatus?,
+        types: Set<VoucherType> = setOf(VoucherType.SALE),
     ): List<Voucher> {
         val q = query.trim()
         return vouchers.filter { v ->
-            v.type == VoucherType.SALE &&
+            v.type in types &&
                 (status == null || v.status == status) &&
                 (
                     q.isEmpty() ||
                         (v.number?.contains(q, ignoreCase = true) ?: false) ||
+                        (v.referenceNumber?.contains(q, ignoreCase = true) ?: false) ||
                         (v.partyId?.let { partiesById[it]?.name }?.contains(q, ignoreCase = true) ?: false)
                     )
         }
@@ -123,7 +126,12 @@ fun InvoiceListScreen(
     onNew: () -> Unit,
     onOpen: (Voucher) -> Unit,
     onAddParty: () -> Unit,
+    /** Purchase bills and purchase returns instead of sales invoices. */
+    purchases: Boolean = false,
+    onBack: (() -> Unit)? = null,
+    onStock: ((lowOnly: Boolean) -> Unit)? = null,
 ) {
+    val types = if (purchases) setOf(VoucherType.PURCHASE, VoucherType.DEBIT_NOTE) else setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE)
     val firmId = session.firm.id
     val vouchers by remember(firmId) { container.repositories.vouchers.observeVouchers(firmId, ALL_FROM, ALL_TO) }
         .collectAsState(initial = null)
@@ -144,15 +152,18 @@ fun InvoiceListScreen(
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = { CollapsingTopBar("Invoices", scrollBehavior) },
+        topBar = {
+            if (onBack != null) AppTopBar(if (purchases) "Purchases" else "Invoices", onBack = onBack)
+            else CollapsingTopBar(if (purchases) "Purchases" else "Invoices", scrollBehavior)
+        },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
             // With a navigation rail, its header FAB is the screen's one create action.
-            if (!LocalWidthClass.current.usesRail) ExtendedFloatingActionButton(
+            if (!LocalWidthClass.current.usesRail || purchases) ExtendedFloatingActionButton(
                 onClick = onNew,
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("New invoice") },
+                text = { Text(if (purchases) "New purchase" else "New invoice") },
             )
         },
     ) { padding ->
@@ -162,7 +173,16 @@ fun InvoiceListScreen(
                 LoadingState()
                 return@CenteredContent
             }
-            val sales = all.filter { it.type == VoucherType.SALE }
+            val sales = all.filter { it.type in types }
+            if (sales.isEmpty() && purchases) {
+                EmptyState(
+                    Icons.Outlined.Create,
+                    "No purchases yet",
+                    "Record a supplier's bill to add its items to stock and claim input GST.",
+                    Modifier.align(Alignment.Center),
+                )
+                return@CenteredContent
+            }
             if (sales.isEmpty()) {
                 EmptyState(
                     Icons.Outlined.Create,
@@ -178,11 +198,12 @@ fun InvoiceListScreen(
                 }
                 return@CenteredContent
             }
-            val shown = InvoiceSearch.filter(sales, partiesById, query, filter.status)
+            val shown = InvoiceSearch.filter(sales, partiesById, query, filter.status, types)
             val summary = remember(sales) { SalesSummary.of(sales, container.today()) }
             // Header rows scroll with the list so the list stays usable in landscape and at large font sizes.
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
-                item(key = "summary") { SummaryCard(session.firm.name, summary) }
+                if (!purchases) item(key = "summary") { SummaryCard(session.firm.name, summary) }
+                if (onStock != null) item(key = "stock") { app.openbill.ui.inventory.StockDashboardCard(container, session, onStock) }
                 item(key = "search") { AppSearchBar(query, { query = it }, "Search number or party") }
                 item(key = "filters") {
                     Row(
@@ -206,7 +227,16 @@ fun InvoiceListScreen(
                         leadingContent = { Monogram(partyName) },
                         headlineContent = { Text(partyName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = {
-                            Text("${v.number ?: "Not numbered"} · ${Fmt.dateLong(v.date)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                listOfNotNull(
+                                    docLabels(v.type).title.takeIf { v.type != VoucherType.SALE && v.type != VoucherType.PURCHASE },
+                                    v.number ?: "Not numbered",
+                                    v.referenceNumber?.takeIf { v.type == VoucherType.PURCHASE }?.let { "Bill $it" },
+                                    Fmt.dateLong(v.date),
+                                ).joinToString(" · "),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         },
                         trailingContent = {
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {

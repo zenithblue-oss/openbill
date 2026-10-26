@@ -93,6 +93,7 @@ fun InvoiceDetailScreen(
     onBack: () -> Unit,
     onEditDraft: (String) -> Unit,
     onViewPdf: (String) -> Unit = {},
+    onReturn: (String) -> Unit = {},
 ) {
     val voucher by remember(voucherId) { container.repositories.vouchers.observeVoucher(voucherId) }.collectAsState(initial = null)
     var party by remember { mutableStateOf<Party?>(null) }
@@ -123,7 +124,7 @@ fun InvoiceDetailScreen(
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            AppTopBar(voucher?.number ?: "Draft invoice", onBack = onBack, scrollBehavior = scrollBehavior) {
+            AppTopBar(voucher?.number ?: "Draft " + docLabels(voucher?.type ?: app.openbill.core.domain.model.VoucherType.SALE).noun, onBack = onBack, scrollBehavior = scrollBehavior) {
                 voucher?.let { v ->
                     IconButton(onClick = { share(v) }, enabled = !busy) { Icon(Icons.Filled.Share, contentDescription = "Share PDF") }
                 }
@@ -138,7 +139,7 @@ fun InvoiceDetailScreen(
         }
         val summary = remember(v) {
             runCatching {
-                InvoiceMath.summarizeStored(v.lines, session.firm.stateCode, v.placeOfSupplyStateCode, v.roundOff, v.total, session.settings.roundingMode)
+                InvoiceMath.summarizeStored(v.lines, session.firm.stateCode, v.placeOfSupplyStateCode, v.roundOff, v.total, session.settings.roundingMode, v.charges)
             }.getOrNull()
         }
         CenteredContent(Modifier.padding(padding)) {
@@ -190,7 +191,8 @@ fun InvoiceDetailScreen(
                         if (summary != null) {
                             AmountRow(summary.grossLabel, summary.gross)
                             if (summary.discount.paise != 0L) AmountRow("Discount", summary.discount, negative = true)
-                            AmountRow("Taxable value", summary.taxable)
+                            AmountRow(if (v.charges.isEmpty()) "Taxable value" else "Items taxable value", summary.taxable)
+                            v.charges.sortedBy { it.sortOrder }.forEach { AmountRow(it.name, it.taxableValue) }
                             if (summary.isIntraState) {
                                 AmountRow("CGST", summary.cgst)
                                 AmountRow("SGST", summary.sgst)
@@ -234,8 +236,13 @@ fun InvoiceDetailScreen(
                         onClick = { cancelOpen = true },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Cancel invoice") }
+                    ) { Text("Cancel ${docLabels(v.type).noun}") }
                     VoucherStatus.CANCELLED -> {}
+                }
+                if (v.status == VoucherStatus.POSTED && (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE || v.type == app.openbill.core.domain.model.VoucherType.SALE)) {
+                    OutlinedButton(onClick = { onReturn(v.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE) "Return to supplier (debit note)" else "Sales return (credit note)")
+                    }
                 }
                 Spacer(Modifier.height(Spacing.xl))
             }
