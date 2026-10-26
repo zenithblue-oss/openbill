@@ -1,0 +1,1 @@
+Animated onboarding, Material 3 navigation rail, reduce-motion setting. Fix: logo and signature picker and Save as in release builds.

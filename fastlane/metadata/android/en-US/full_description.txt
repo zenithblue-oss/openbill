@@ -1,0 +1,17 @@
+OpenBill is free, open-source GST billing and invoicing for Indian small businesses. Everything stays on your device: no account, no internet permission, no ads, no trackers.
+
+Features
+• GST invoices with live totals: CGST/SGST or IGST by place of supply
+• Percentage or amount discounts, round-off, and additional charges such as freight
+• Drafts, automatic numbering, and cancelling with a reason
+• Parties and items with search and a recycle bin
+• Offline GSTIN check-digit validation that fills in the state
+• 12 original A4, A5 and thermal receipt templates with live previews
+• Your logo, signature, accent colour, bank details, and a UPI QR code made on-device
+• Built-in PDF viewer; share invoices as PDF
+• Material 3 design with light, dark and dynamic colour themes
+
+Privacy
+OpenBill requests no permissions. Your data never leaves the phone unless you share a PDF yourself.
+
+Alpha software: please confirm GST treatment with your CA before relying on it for real books.

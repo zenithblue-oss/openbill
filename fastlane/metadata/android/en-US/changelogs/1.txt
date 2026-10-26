@@ -1,0 +1,1 @@
+First public alpha: business setup with GSTIN validation, parties and items, GST invoices with drafts and numbering, A4 PDF sharing, Material 3 themes.

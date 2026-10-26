@@ -77,7 +77,14 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             signingConfig = signingConfigs.findByName("release")
+            vcsInfo.include = false
         }
+    }
+
+    // F-Droid: no Google dependency-info signing blob, no VCS stamp (reproducible builds).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     buildFeatures {

@@ -24,6 +24,11 @@ files are listed with `SHA256SUMS`).
 
 Builds are unsigned for Windows/Linux and the app is alpha: back up anything you care about.
 
+## Coming to F-Droid
+
+An F-Droid listing is being prepared (metadata in `fastlane/` and `docs/fdroid/`).
+Once accepted, a badge will appear here: `https://f-droid.org/packages/app.openbill.android/`.
+
 ## Screenshots
 
 <table>
