@@ -58,6 +58,7 @@ import app.openbill.ui.components.LocalAppMessages
 import app.openbill.ui.components.SectionHeader
 import app.openbill.ui.components.pageGutter
 import app.openbill.ui.format.Fmt
+import app.openbill.ui.settings.KEY_SILENT_PRINT
 import app.openbill.ui.settings.ThemeMode
 import app.openbill.ui.theme.Spacing
 import app.openbill.ui.theme.platformSupportsDynamicColor
@@ -150,6 +151,14 @@ fun MoreScreen(
                     colors = listColors,
                     modifier = Modifier.clickable(role = Role.Button, onClick = onInvoiceTemplates),
                 )
+                if (container.platform.supportsSilentPrint) {
+                    val store = container.platform.settingsStore
+                    var silent by remember { mutableStateOf(store.getString(KEY_SILENT_PRINT) == "true") }
+                    app.openbill.ui.inventory.SwitchRow("Print without dialog", "Print and bulk print go straight to the default printer", silent, {
+                        silent = it
+                        store.putString(KEY_SILENT_PRINT, it.toString())
+                    })
+                }
 
                 SectionHeader("Reports and compliance")
                 listOf(

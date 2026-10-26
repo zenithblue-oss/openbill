@@ -11,6 +11,7 @@ import app.openbill.ui.pdf.LogoImage
 import app.openbill.ui.pdf.PdfAction
 import app.openbill.ui.pdf.PdfBoxPainter
 import app.openbill.ui.pdf.PdfFonts
+import app.openbill.ui.settings.KEY_SILENT_PRINT
 import java.awt.Desktop
 import java.awt.EventQueue
 import java.awt.FileDialog
@@ -21,6 +22,8 @@ import java.awt.print.PrinterJob
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.CompletableFuture
+import javax.print.PrintService
+import javax.print.PrintServiceLookup
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -86,9 +89,10 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
                 val job = PrinterJob.getPrinterJob()
                 job.jobName = title
                 job.setPageable(PDFPageable(doc))
-                if (job.printDialog()) {
+                val silent = silentPrinter()?.also { job.printService = it }
+                if (silent != null || job.printDialog()) {
                     job.print()
-                    "Sent to the printer"
+                    "Sent to ${job.printService?.name ?: "the printer"}"
                 } else {
                     null
                 }
@@ -111,11 +115,17 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
     }
 
     override val supportsBulkPdf: Boolean get() = true
+    override val supportsSilentPrint: Boolean get() = true
+
+    /** The default printer when silent print is on; null means show the print dialog. */
+    private fun silentPrinter(): PrintService? =
+        if (settingsStore.getString(KEY_SILENT_PRINT) != "true") null
+        else PrintServiceLookup.lookupDefaultPrintService() ?: error("no default printer is set")
 
     override suspend fun bulkPdf(pdfs: List<Pair<String, suspend () -> InvoiceLayout>>, print: Boolean, onProgress: (Int) -> Unit): String? {
         // One dialog up front (folder or printer); then a sequential loop with per-invoice failures.
         val dir = if (print) null else withContext(Dispatchers.IO) { chooseFolder() } ?: return null
-        val printer = if (print) withContext(Dispatchers.IO) { PrinterJob.getPrinterJob().takeIf { it.printDialog() }?.printService } ?: return null else null
+        val printer = if (print) withContext(Dispatchers.IO) { silentPrinter() ?: PrinterJob.getPrinterJob().takeIf { it.printDialog() }?.printService } ?: return null else null
         val failed = mutableListOf<String>()
         pdfs.forEachIndexed { i, (stem, render) ->
             currentCoroutineContext().ensureActive()

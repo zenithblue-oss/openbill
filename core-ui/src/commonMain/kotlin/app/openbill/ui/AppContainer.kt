@@ -86,6 +86,9 @@ interface PlatformServices {
     suspend fun bulkPdf(pdfs: List<Pair<String, suspend () -> InvoiceLayout>>, print: Boolean, onProgress: (Int) -> Unit): String? = null
     val supportsBulkPdf: Boolean get() = false
 
+    /** Desktop: Print can skip the dialog and use the default printer ([KEY_SILENT_PRINT]). */
+    val supportsSilentPrint: Boolean get() = false
+
     /**
      * Files attached to a voucher ([ownerId]), stored under the data directory and included in
      * backups. [addAttachment] asks for an image or PDF; it and [openAttachment] return a message.
