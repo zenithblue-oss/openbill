@@ -152,7 +152,21 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         if (dir != null) File(dir, "${pdfs.firstOrNull()?.first}.pdf").takeIf { it.isFile }?.let(::revealInFolder)
         val done = pdfs.size - failed.size
         val head = if (print) "Sent $done to the printer" else "Saved $done PDFs to ${dir!!.name}"
-        return if (failed.isEmpty()) head else "$head; failed: ${failed.joinToString()}"
+        val msg = if (failed.isEmpty()) head else "$head; failed: ${failed.joinToString()}"
+        notifyOs(msg) // the caller's snackbar shows msg too, covering desktops without a tray
+        return msg
+    }
+
+    private var trayIcon: java.awt.TrayIcon? = null
+
+    /** OS notification through the system tray, when the desktop has one. */
+    private fun notifyOs(text: String) = runCatching {
+        if (!java.awt.SystemTray.isSupported()) return@runCatching
+        val icon = trayIcon ?: java.awt.TrayIcon(
+            Frame.getFrames().firstNotNullOfOrNull { it.iconImage } ?: BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB),
+            "OpenBill",
+        ).apply { isImageAutoSize = true; java.awt.SystemTray.getSystemTray().add(this) }.also { trayIcon = it }
+        icon.displayMessage("OpenBill", text, java.awt.TrayIcon.MessageType.INFO)
     }
 
     private fun chooseFolder(): File? {
