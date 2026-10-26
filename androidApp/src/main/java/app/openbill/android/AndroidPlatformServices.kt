@@ -72,35 +72,41 @@ class AndroidPlatformServices(
 
     override val pdfFontMetrics: FontMetrics get() = painter.metrics
 
-    private suspend fun writeCachedPdf(document: InvoiceDocument, layout: InvoiceLayout): File = withContext(Dispatchers.IO) {
+    private suspend fun writeCachedPdf(stem: String, layout: InvoiceLayout): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         // Keep only the latest few exports in the cache.
         dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(10)?.forEach { it.delete() }
-        val out = File(dir, "${document.fileStem}.pdf")
+        val out = File(dir, "$stem.pdf")
         FileOutputStream(out).use { painter.writePdf(layout, it) }
         out
     }
 
     private fun uriFor(file: File): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
-    override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? {
+    override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? =
+        pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action)
+
+    override suspend fun pdfAction(fileName: String, layout: InvoiceLayout, action: PdfAction): String? =
+        pdfAction(fileName, fileName, layout, action)
+
+    private suspend fun pdfAction(stem: String, title: String, layout: InvoiceLayout, action: PdfAction): String? {
         when (action) {
             PdfAction.SHARE -> {
-                val uri = uriFor(writeCachedPdf(document, layout))
+                val uri = uriFor(writeCachedPdf(stem, layout))
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "application/pdf"
                     putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "${document.title} ${document.number}")
+                    putExtra(Intent.EXTRA_SUBJECT, title)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                val chooser = Intent.createChooser(send, "Share invoice ${document.number}").apply {
+                val chooser = Intent.createChooser(send, "Share $title").apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 context.startActivity(chooser)
                 return null
             }
             PdfAction.OPEN -> {
-                val uri = uriFor(writeCachedPdf(document, layout))
+                val uri = uriFor(writeCachedPdf(stem, layout))
                 val view = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, "application/pdf")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -113,10 +119,10 @@ class AndroidPlatformServices(
                 }
             }
             PdfAction.PRINT -> {
-                val file = writeCachedPdf(document, layout)
+                val file = writeCachedPdf(stem, layout)
                 val activity = requireHooks().activity
                 val manager = activity.getSystemService(Context.PRINT_SERVICE) as PrintManager
-                val name = "${document.title} ${document.number}"
+                val name = title
                 // Default the dialog to the document's own paper size (A4, A5 or a roll) instead of the
                 // locale default (Letter), so the preview is not shrunk or letterboxed.
                 val first = layout.pages.first()
@@ -130,7 +136,7 @@ class AndroidPlatformServices(
                 return null
             }
             PdfAction.SAVE -> {
-                val uri = requireHooks().createPdf("${document.fileStem}.pdf") ?: return null
+                val uri = requireHooks().createPdf("$stem.pdf") ?: return null
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "wt")?.use { painter.writePdf(layout, it) }
                         ?: error("Could not open the chosen location")

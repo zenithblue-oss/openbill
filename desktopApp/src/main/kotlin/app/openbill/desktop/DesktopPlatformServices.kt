@@ -32,11 +32,17 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
 
     override val pdfFontMetrics: FontMetrics get() = PdfFonts.metrics
 
-    override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? = when (action) {
+    override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? =
+        pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action)
+
+    override suspend fun pdfAction(fileName: String, layout: InvoiceLayout, action: PdfAction): String? =
+        pdfAction(fileName, fileName, layout, action)
+
+    private suspend fun pdfAction(stem: String, title: String, layout: InvoiceLayout, action: PdfAction): String? = when (action) {
         // Desktop has no share sheet: "Share" saves the file and reveals it for attaching.
         PdfAction.SHARE, PdfAction.SAVE -> {
             val bytes = withContext(Dispatchers.Default) { PdfBoxPainter.toPdf(layout) }
-            val target = withContext(Dispatchers.IO) { chooseSaveFile(document.fileStem + ".pdf") }
+            val target = withContext(Dispatchers.IO) { chooseSaveFile("$stem.pdf") }
             if (target == null) {
                 null // user cancelled
             } else {
@@ -57,7 +63,7 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         PdfAction.PRINT -> withContext(Dispatchers.IO) {
             PdfBoxPainter.document(layout, subsetFonts = false).use { doc ->
                 val job = PrinterJob.getPrinterJob()
-                job.jobName = "${document.title} ${document.number}"
+                job.jobName = title
                 job.setPageable(PDFPageable(doc))
                 if (job.printDialog()) {
                     job.print()
@@ -70,7 +76,7 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         PdfAction.OPEN -> withContext(Dispatchers.IO) {
             val dir = File(System.getProperty("java.io.tmpdir"), "openbill-pdf").apply { mkdirs() }
             dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(20)?.forEach { it.delete() }
-            val file = File(dir, document.fileStem + ".pdf")
+            val file = File(dir, "$stem.pdf")
             file.writeBytes(PdfBoxPainter.toPdf(layout))
             val opened = runCatching {
                 if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
@@ -144,7 +150,7 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
                 // Owned by the app window so focus returns to it when the dialog closes; with no
                 // owner the window was left without keyboard focus (Esc/Ctrl shortcuts dead).
                 val owner = Frame.getFrames().firstOrNull { it.isVisible }
-                val dialog = FileDialog(owner, "Save invoice PDF", FileDialog.SAVE)
+                val dialog = FileDialog(owner, "Save PDF", FileDialog.SAVE)
                 dialog.file = suggested
                 val docs = File(System.getProperty("user.home"), "Documents")
                 dialog.directory = (if (docs.isDirectory) docs else File(System.getProperty("user.home"))).absolutePath

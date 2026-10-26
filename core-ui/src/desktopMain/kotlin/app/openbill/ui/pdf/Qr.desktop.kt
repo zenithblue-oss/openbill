@@ -3,6 +3,7 @@ package app.openbill.ui.pdf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.google.zxing.EncodeHintType
+import com.google.zxing.oned.Code128Writer
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.Encoder
 import org.jetbrains.skia.Image
@@ -18,3 +19,6 @@ actual fun encodeQr(text: String): QrMatrix? = runCatching {
 actual fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? = runCatching {
     Image.makeFromEncoded(bytes).toComposeImageBitmap()
 }.getOrNull()
+
+actual fun encodeCode128(text: String): BooleanArray? =
+    if (text.isEmpty()) null else runCatching { Code128Writer().encode(text) }.getOrNull()

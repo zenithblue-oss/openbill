@@ -178,6 +178,24 @@ class Pen(val metrics: FontMetrics) {
     }
 }
 
+/**
+ * Draws 1-D barcode [bars] (true = dark module) as merged dark runs stretched over [w] x [h].
+ * Quiet zones are not added: leave about ten modules of white on each side.
+ */
+fun Pen.barcode(bars: BooleanArray, x: Float, y: Float, w: Float, h: Float, color: Argb = Ink.BLACK) {
+    val module = w / bars.size
+    var i = 0
+    while (i < bars.size) {
+        if (!bars[i]) {
+            i++
+            continue
+        }
+        val start = i
+        while (i < bars.size && bars[i]) i++
+        rect(x + start * module, y, (i - start) * module, h, fill = color)
+    }
+}
+
 /** Square QR module matrix (true = dark). */
 class QrMatrix(val size: Int, private val bits: BooleanArray) {
     init {
@@ -189,3 +207,6 @@ class QrMatrix(val size: Int, private val bits: BooleanArray) {
 
 /** Locally generated QR code (no network). Returns null if the text cannot be encoded. */
 expect fun encodeQr(text: String): QrMatrix?
+
+/** Code 128 modules (true = dark), without quiet zones. Null if [text] is empty or not encodable. */
+expect fun encodeCode128(text: String): BooleanArray?

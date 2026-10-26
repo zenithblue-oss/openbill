@@ -38,6 +38,9 @@ interface PlatformServices {
      */
     suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String?
 
+    /** [invoicePdfAction] for other documents (such as barcode labels); [fileName] has no ".pdf". */
+    suspend fun pdfAction(fileName: String, layout: InvoiceLayout, action: PdfAction): String?
+
     /** Text measurement with the bundled PDF fonts (Noto Sans), matching the PDF painter. */
     val pdfFontMetrics: FontMetrics
 

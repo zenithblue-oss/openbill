@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.google.zxing.EncodeHintType
+import com.google.zxing.oned.Code128Writer
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.qrcode.encoder.Encoder
 
@@ -18,3 +19,6 @@ actual fun encodeQr(text: String): QrMatrix? = runCatching {
 actual fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? = runCatching {
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 }.getOrNull()
+
+actual fun encodeCode128(text: String): BooleanArray? =
+    if (text.isEmpty()) null else runCatching { Code128Writer().encode(text) }.getOrNull()
