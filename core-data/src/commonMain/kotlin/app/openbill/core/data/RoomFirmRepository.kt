@@ -1,11 +1,13 @@
 package app.openbill.core.data
 
+import app.openbill.core.database.AuditEventEntity
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.domain.model.FinancialYear
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.repository.FirmRepository
+import app.openbill.core.model.Ulid
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -55,9 +57,13 @@ class RoomFirmRepository(
     override suspend fun saveSettings(settings: FirmSettings) {
         transactions.write {
             val existing = this@RoomFirmRepository.settings.findByFirm(settings.firmId)
-            this@RoomFirmRepository.settings.upsert(
-                settings.toEntity(existing, Clock.System.now()),
-            )
+            val now = Clock.System.now()
+            this@RoomFirmRepository.settings.upsert(settings.toEntity(existing, now))
+            val oldLock = existing?.lockDate
+            val newLock = settings.lockDate?.toString()
+            if (oldLock != newLock) {
+                audit(settings.firmId, "firm", settings.firmId, "books.lock_changed", AuditDetails.json("from" to oldLock, "to" to newLock), now)
+            }
         }
     }
 
@@ -70,12 +76,36 @@ class RoomFirmRepository(
     override suspend fun saveFinancialYear(financialYear: FinancialYear) {
         transactions.write {
             val existing = financialYears.findById(financialYear.id)
-            val entity = financialYear.toEntity(existing, Clock.System.now())
+            val now = Clock.System.now()
+            val entity = financialYear.toEntity(existing, now)
             if (existing == null) {
                 financialYears.insert(entity)
             } else {
                 financialYears.update(entity)
+                if ((existing.closedAt == null) != (entity.closedAt == null)) {
+                    val action = if (entity.closedAt != null) "financial_year.closed" else "financial_year.reopened"
+                    audit(
+                        financialYear.firmId, "financial_year", financialYear.id, action,
+                        AuditDetails.json("startDate" to entity.startDate, "endDate" to entity.endDate), now,
+                    )
+                }
             }
         }
+    }
+
+    private suspend fun audit(firmId: String, type: String, id: String, action: String, details: String, at: Instant) {
+        database.auditDao().insert(
+            AuditEventEntity(
+                id = Ulid.create(at.toEpochMilliseconds()).toString(),
+                firmId = firmId,
+                entityType = type,
+                entityId = id,
+                voucherId = null,
+                action = action,
+                detailsJson = details,
+                actor = null,
+                createdAt = at.toEpochMilliseconds(),
+            ),
+        )
     }
 }

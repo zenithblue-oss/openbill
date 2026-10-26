@@ -48,7 +48,7 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(7, OPENBILL_DATABASE_VERSION)
+        assertEquals(8, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
@@ -56,8 +56,9 @@ class DatabaseSchemaTest {
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/5.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/6.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/7.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/8.json").exists())
 
-        helper.createDatabase(7).use { connection ->
+        helper.createDatabase(8).use { connection ->
             val tables = mutableListOf<String>()
             connection.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -317,7 +318,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(6, migrations.size)
+        assertEquals(7, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -328,7 +329,8 @@ class DatabaseSchemaTest {
         assertEquals(5, migrations[3].endVersion)
         assertEquals(6, migrations[4].endVersion)
         assertEquals(7, migrations[5].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(7).isEmpty())
+        assertEquals(8, migrations[6].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(8).isEmpty())
     }
 
     @Test
@@ -368,6 +370,27 @@ class DatabaseSchemaTest {
                 assertTrue(it.isNull(0))
             }
             connection.execSQL("UPDATE journal_entries SET clearedOn = '2026-05-12' WHERE id = 'j-1'")
+        }
+    }
+
+    @Test
+    fun schemaV7MigratesToV8AndLeavesBooksUnlocked() {
+        helper.createDatabase(7).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO firm_settings (firmId, financialYearStartMonth, invoicePrefix, taxEnabled, " +
+                    "roundToRupee, roundingMode, negativeStockAllowed, createdAt, updatedAt) " +
+                    "VALUES ('firm-1', 4, 'INV', 1, 1, 'half_up', 0, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(8, DatabaseMigrations.migrationsFor(7)).use { connection ->
+            connection.prepare("SELECT lockDate FROM firm_settings WHERE firmId = 'firm-1'").use {
+                assertTrue(it.step())
+                assertTrue(it.isNull(0))
+            }
         }
     }
 

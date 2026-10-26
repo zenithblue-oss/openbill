@@ -45,6 +45,8 @@ data class FirmSettings(
     val roundToRupee: Boolean = true,
     val roundingMode: RoundingMode = RoundingMode.HALF_UP,
     val negativeStockAllowed: Boolean = false,
+    /** Books lock: vouchers dated on or before this date cannot be posted, cancelled or restored. */
+    val lockDate: LocalDate? = null,
 ) {
     init {
         require(firmId.isNotBlank()) { "FirmSettings firmId cannot be blank" }
@@ -66,5 +68,19 @@ data class FinancialYear(
         require(id.isNotBlank()) { "FinancialYear id cannot be blank" }
         require(firmId.isNotBlank()) { "FinancialYear firmId cannot be blank" }
         require(startDate <= endDate) { "Financial year start date must not be after end date" }
+    }
+}
+
+/**
+ * Last date of the locked period: the later of the firm's lock date and the end of its latest
+ * closed financial year; null when nothing is locked.
+ */
+fun booksLockedThrough(lockDate: LocalDate?, latestClosedYearEnd: LocalDate?): LocalDate? =
+    listOfNotNull(lockDate, latestClosedYearEnd).maxOrNull()
+
+/** Throws when [date] falls in the locked period ending [lockedThrough]. */
+fun requireBooksOpen(date: LocalDate, lockedThrough: LocalDate?) {
+    require(lockedThrough == null || date > lockedThrough) {
+        "Books are locked up to $lockedThrough; vouchers dated $date cannot be changed"
     }
 }

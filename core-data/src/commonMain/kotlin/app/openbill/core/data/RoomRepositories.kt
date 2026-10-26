@@ -16,5 +16,6 @@ fun OpenBillDatabase.roomRepositories(
         stock = RoomStockRepository(this),
         ledger = ledger,
         payments = RoomPaymentRepository(this, transactions),
+        audit = RoomAuditRepository(this),
     )
 }

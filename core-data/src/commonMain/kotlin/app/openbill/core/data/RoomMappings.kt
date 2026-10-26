@@ -137,6 +137,7 @@ internal fun FirmSettingsEntity.toDomain(): FirmSettings = FirmSettings(
     roundToRupee = roundToRupee,
     roundingMode = decodeEnum<RoundingMode>(roundingMode, "rounding mode"),
     negativeStockAllowed = negativeStockAllowed,
+    lockDate = lockDate?.let(LocalDate::parse),
 )
 
 internal fun FirmSettings.toEntity(
@@ -151,6 +152,7 @@ internal fun FirmSettings.toEntity(
     roundToRupee = roundToRupee,
     roundingMode = roundingMode.name.lowercase(),
     negativeStockAllowed = negativeStockAllowed,
+    lockDate = lockDate?.toString(),
     createdAt = existing?.createdAt ?: now.toEpochMillis(),
     updatedAt = now.toEpochMillis(),
 )

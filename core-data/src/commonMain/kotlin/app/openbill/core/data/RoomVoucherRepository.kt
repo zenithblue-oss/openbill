@@ -17,6 +17,8 @@ import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherNumbering
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.domain.model.booksLockedThrough
+import app.openbill.core.domain.model.requireBooksOpen
 import app.openbill.core.domain.model.isPayment
 import app.openbill.core.domain.model.isPaymentAccount
 import app.openbill.core.domain.model.postsLedger
@@ -148,6 +150,7 @@ class RoomVoucherRepository(
             "Only drafts can be posted"
         }
         require(entity.number == null) { "Draft voucher must not have a number" }
+        requireOpen(entity.firmId, entity.date)
 
         val lines = vouchers.linesFor(voucherId)
         val charges = vouchers.chargesFor(voucherId)
@@ -193,6 +196,7 @@ class RoomVoucherRepository(
             "Only posted vouchers can be cancelled"
         }
         require(reason.isNotBlank()) { "Cancellation reason cannot be blank" }
+        requireOpen(entity.firmId, entity.date)
 
         val lines = vouchers.linesFor(voucherId)
         val charges = vouchers.chargesFor(voucherId)
@@ -238,6 +242,7 @@ class RoomVoucherRepository(
             "Only cancelled vouchers can be restored"
         }
         require(entity.sync.deletedAt == null) { "Deleted vouchers cannot be restored" }
+        requireOpen(entity.firmId, entity.date)
         val recordedReason = entity.cancellationReason
         require(!recordedReason.isNullOrBlank()) {
             "Cancelled voucher has no cancellation reason"
@@ -565,6 +570,15 @@ class RoomVoucherRepository(
         VoucherType.STOCK_TRANSFER -> "TRF"
         VoucherType.DELIVERY_CHALLAN -> "DC"
         VoucherType.CONTRA -> "CTR"
+    }
+
+    /** Books lock: posting, cancelling and restoring are refused inside the locked period. */
+    private suspend fun requireOpen(firmId: String, date: String) {
+        val locked = booksLockedThrough(
+            settings.findByFirm(firmId)?.lockDate?.let(LocalDate::parse),
+            database.financialYearDao().latestClosedEndDate(firmId)?.let(LocalDate::parse),
+        )
+        requireBooksOpen(LocalDate.parse(date), locked)
     }
 
     private fun auditEvent(

@@ -35,4 +35,8 @@ interface FinancialYearDao {
             "ORDER BY startDate DESC LIMIT 1",
     )
     suspend fun findContaining(date: String): FinancialYearEntity?
+
+    /** End date of the latest closed financial year of the firm, or null. */
+    @Query("SELECT MAX(endDate) FROM financial_years WHERE firmId = :firmId AND closedAt IS NOT NULL")
+    suspend fun latestClosedEndDate(firmId: String): String?
 }

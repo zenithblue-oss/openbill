@@ -29,6 +29,8 @@ data class FirmSettingsEntity(
     val negativeStockAllowed: Boolean,
     val createdAt: Long,
     val updatedAt: Long,
+    /** Books lock: vouchers dated on or before this ISO date cannot be posted or cancelled. */
+    @ColumnInfo(defaultValue = "NULL") val lockDate: String? = null,
 )
 
 @Entity(

@@ -8,4 +8,5 @@ data class Repositories(
     val stock: StockRepository,
     val ledger: LedgerRepository,
     val payments: PaymentRepository,
+    val audit: AuditRepository = app.openbill.core.domain.fake.InMemoryAuditRepository(),
 )
