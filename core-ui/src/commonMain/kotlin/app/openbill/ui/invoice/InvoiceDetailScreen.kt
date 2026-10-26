@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
 import app.openbill.ui.AppContainer
+import app.openbill.core.domain.usecase.duplicateAsDraft
 import app.openbill.ui.Session
 import app.openbill.ui.components.AmountRow
 import app.openbill.ui.components.AppSnackbarHost
@@ -253,6 +254,30 @@ fun InvoiceDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Cancel ${docLabels(v.type).noun}") }
                     VoucherStatus.CANCELLED -> {}
+                }
+                OutlinedButton(onClick = {
+                    scope.launch {
+                        runCatching {
+                            val today = container.today()
+                            val fy = session.financialYearFor(today) ?: error("No financial year covers $today")
+                            val copy = v.duplicateAsDraft(container.newId(), today, fy.id, { container.newId() }, container.now())
+                            container.repositories.vouchers.saveDraft(copy)
+                            copy.id
+                        }.onSuccess(onEditDraft).onFailure { messages?.show(it.message ?: "Could not duplicate") }
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Duplicate as new draft") }
+                if (v.status == VoucherStatus.DRAFT) {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                runCatching { container.repositories.vouchers.softDeleteDraft(v.id, container.now()) }
+                                    .onSuccess { messages?.show("Draft moved to the recycle bin (More)"); onBack() }
+                                    .onFailure { messages?.show(it.message ?: "Could not delete") }
+                            }
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Delete draft") }
                 }
                 if (v.status == VoucherStatus.POSTED && v.type.isIssueOnly()) {
                     val inv = converted

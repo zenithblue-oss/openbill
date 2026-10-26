@@ -3,6 +3,13 @@ package app.openbill.ui.more
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.collectAsState
+import app.openbill.ui.format.Fmt
+import app.openbill.ui.invoice.docLabels
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -31,7 +38,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 
-/** CSV import of parties and items (dry-run preview first, all rows or none) and CSV export. */
+/** CSV import of parties and items (dry-run preview first, all rows or none), CSV export, and the recycle bin. */
 @Composable
 fun CsvSection(container: AppContainer, session: Session, listColors: ListItemColors) {
     val scope = rememberCoroutineScope()
@@ -88,6 +95,37 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
             }
         },
     )
+
+    val bin by remember(firmId) { repos.vouchers.observeRecycleBin(firmId) }.collectAsState(initial = emptyList())
+    var binOpen by remember { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text("Recycle bin (${bin.size})") },
+        supportingContent = { Text("Deleted drafts; restore them to keep working") },
+        leadingContent = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+        colors = listColors,
+        modifier = Modifier.clickable(enabled = bin.isNotEmpty(), role = Role.Button) { binOpen = true },
+    )
+    if (binOpen) {
+        AlertDialog(
+            onDismissRequest = { binOpen = false },
+            title = { Text("Recycle bin") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (bin.isEmpty()) Text("Empty")
+                    bin.forEach { v ->
+                        ListItem(
+                            headlineContent = { Text("${docLabels(v.type).title} draft · ${Fmt.inr(v.total)}") },
+                            supportingContent = { Text("Dated ${Fmt.date(v.date)}") },
+                            trailingContent = {
+                                TextButton(onClick = { run { repos.vouchers.restoreDraft(v.id, container.now()); "Draft restored" } }) { Text("Restore") }
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { binOpen = false }) { Text("Close") } },
+        )
+    }
 
     preview?.let { (entity, result) ->
         val ok = result.errors.isEmpty() && result.valid.isNotEmpty()
