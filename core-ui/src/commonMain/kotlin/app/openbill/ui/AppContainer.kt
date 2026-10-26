@@ -86,6 +86,15 @@ interface PlatformServices {
     suspend fun bulkPdf(pdfs: List<Pair<String, suspend () -> InvoiceLayout>>, print: Boolean, onProgress: (Int) -> Unit): String? = null
     val supportsBulkPdf: Boolean get() = false
 
+    /**
+     * Raw ESC/POS printing: [thermalPrinters] lists targets (Android: paired Bluetooth devices,
+     * asking for the permission first; desktop: print services and serial ports) and
+     * [thermalPrint] sends receipt bytes to one. Both return a message or the list for the user.
+     */
+    val supportsThermalPrint: Boolean get() = false
+    suspend fun thermalPrinters(): List<String> = emptyList()
+    suspend fun thermalPrint(printer: String, bytes: ByteArray): String? = null
+
     /** Desktop: Print can skip the dialog and use the default printer ([KEY_SILENT_PRINT]). */
     val supportsSilentPrint: Boolean get() = false
 

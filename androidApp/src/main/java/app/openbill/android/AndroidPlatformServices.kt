@@ -1,11 +1,17 @@
 package app.openbill.android
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
@@ -31,6 +37,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -43,6 +50,8 @@ class ActivityHooks(
     val createFile: suspend (suggestedName: String) -> Uri?,
     /** Open dialog for a document of the given MIME types. */
     val openFile: suspend (mimeTypes: Array<String>) -> Uri?,
+    /** Runtime permission prompt; true when granted. */
+    val requestPermission: suspend (permission: String) -> Boolean,
 )
 
 class AndroidPlatformServices(
@@ -74,6 +83,37 @@ class AndroidPlatformServices(
     }
 
     private fun requireHooks() = hooks ?: error("The app window is not ready")
+
+    override val supportsThermalPrint: Boolean get() = context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH)
+
+    private suspend fun bluetooth(): BluetoothAdapter {
+        if (Build.VERSION.SDK_INT >= 31 && !requireHooks().requestPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
+            error("Allow Nearby devices to print over Bluetooth")
+        }
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: error("This device has no Bluetooth")
+        if (!adapter.isEnabled) error("Turn on Bluetooth first")
+        return adapter
+    }
+
+    /** Paired devices as "Name · address"; the user picks the printer (classes vary by vendor). */
+    @SuppressLint("MissingPermission") // BLUETOOTH_CONNECT is requested in bluetooth()
+    override suspend fun thermalPrinters(): List<String> =
+        bluetooth().bondedDevices.orEmpty().map { "${it.name ?: "Unnamed"} · ${it.address}" }.sorted()
+
+    @SuppressLint("MissingPermission")
+    override suspend fun thermalPrint(printer: String, bytes: ByteArray): String? {
+        val device = bluetooth().getRemoteDevice(printer.substringAfterLast(" · "))
+        withContext(Dispatchers.IO) {
+            // Serial Port Profile, which Bluetooth ESC/POS printers expose.
+            device.createRfcommSocketToServiceRecord(UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")).use { socket ->
+                socket.connect()
+                socket.outputStream.write(bytes)
+                socket.outputStream.flush()
+                Thread.sleep(500) // some printers drop the tail of the job when the link closes at once
+            }
+        }
+        return "Sent to ${printer.substringBeforeLast(" · ")}"
+    }
 
     override val pdfFontMetrics: FontMetrics get() = painter.metrics
 

@@ -117,6 +117,25 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
     override val supportsBulkPdf: Boolean get() = true
     override val supportsSilentPrint: Boolean get() = true
 
+    override val supportsThermalPrint: Boolean get() = true
+
+    // shortcut: serial ports are listed on Linux only (/dev); Windows thermal printers go through their print service.
+    override suspend fun thermalPrinters(): List<String> = withContext(Dispatchers.IO) {
+        PrintServiceLookup.lookupPrintServices(null, null).map { it.name } +
+            File("/dev").listFiles { f -> Regex("ttyUSB\\d+|ttyACM\\d+|rfcomm\\d+").matches(f.name) }.orEmpty().map { it.path }.sorted() +
+            File("/dev/usb").listFiles { f -> f.name.startsWith("lp") }.orEmpty().map { it.path }.sorted()
+    }
+
+    override suspend fun thermalPrint(printer: String, bytes: ByteArray): String? = withContext(Dispatchers.IO) {
+        if (printer.startsWith("/dev/")) {
+            File(printer).outputStream().use { it.write(bytes) }
+        } else {
+            val service = PrintServiceLookup.lookupPrintServices(null, null).firstOrNull { it.name == printer } ?: error("$printer is not available")
+            service.createPrintJob().print(javax.print.SimpleDoc(bytes, javax.print.DocFlavor.BYTE_ARRAY.AUTOSENSE, null), null)
+        }
+        "Sent to $printer"
+    }
+
     /** The default printer when silent print is on; null means show the print dialog. */
     private fun silentPrinter(): PrintService? =
         if (settingsStore.getString(KEY_SILENT_PRINT) != "true") null

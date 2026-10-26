@@ -72,6 +72,8 @@ import app.openbill.ui.pdf.InvoiceLayout
 import app.openbill.ui.pdf.InvoicePdf
 import app.openbill.ui.pdf.InvoiceTemplate
 import app.openbill.ui.pdf.PdfAction
+import app.openbill.ui.pdf.EscPos
+import app.openbill.ui.pdf.Paper
 import app.openbill.ui.theme.Spacing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -109,6 +111,7 @@ fun InvoicePdfScreen(
     var pickTemplate by remember { mutableStateOf(false) }
     var pickCopies by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(1f) }
+    var printers by remember { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
     backHandler(pickTemplate || pickCopies) { pickTemplate = false; pickCopies = false }
@@ -129,6 +132,31 @@ fun InvoicePdfScreen(
         }
     }
 
+    if (printers.isNotEmpty()) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { printers = emptyList() },
+            title = { Text("Print receipt (${if (style.template.paper == Paper.THERMAL_58) "58" else "80"} mm)") },
+            text = {
+                Column {
+                    printers.forEach { p ->
+                        TextButton(onClick = {
+                            printers = emptyList()
+                            val d = doc ?: return@TextButton
+                            busy = true
+                            scope.launch {
+                                runCatching { container.platform.thermalPrint(p, EscPos.receipt(d, style.template.paper)) }
+                                    .onSuccess { msg -> msg?.let { messages?.show(it) } }
+                                    .onFailure { messages?.show("Could not print: ${it.message}") }
+                                busy = false
+                            }
+                        }) { Text(p) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { printers = emptyList() }) { Text("Cancel") } },
+        )
+    }
+
     Scaffold(
         topBar = {
             AppTopBar("${voucher?.number ?: "Draft"} PDF", onBack = onBack) {
@@ -140,6 +168,16 @@ fun InvoicePdfScreen(
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         listOf(PdfAction.IMAGE, PdfAction.PRINT, PdfAction.SAVE, PdfAction.OPEN).forEach { a ->
                             DropdownMenuItem(text = { Text(a.label) }, onClick = { menu = false; run(a) }, enabled = !busy)
+                        }
+                        if (container.platform.supportsThermalPrint) {
+                            DropdownMenuItem(text = { Text("Thermal printer") }, enabled = !busy, onClick = {
+                                menu = false
+                                scope.launch {
+                                    runCatching { container.platform.thermalPrinters() }
+                                        .onSuccess { if (it.isEmpty()) messages?.show("No printer found. Pair the printer or connect it first.") else printers = it }
+                                        .onFailure { messages?.show(it.message ?: "No printer access") }
+                                }
+                            })
                         }
                     }
                 }

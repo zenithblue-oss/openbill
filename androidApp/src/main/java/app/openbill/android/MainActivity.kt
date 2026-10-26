@@ -52,6 +52,12 @@ class MainActivity : ComponentActivity() {
         pendingOpenFile = null
     }
 
+    private var pendingPermission: CompletableDeferred<Boolean>? = null
+    private val requestPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        pendingPermission?.complete(granted)
+        pendingPermission = null
+    }
+
     private var pendingBackupCreate: CompletableDeferred<Uri?>? = null
     private var pendingBackupOpen: CompletableDeferred<Uri?>? = null
     private val createBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -97,6 +103,16 @@ class MainActivity : ComponentActivity() {
                     val d = CompletableDeferred<Uri?>().also { pendingOpenFile = it }
                     openFile.launch(types)
                     d.await()
+                },
+                requestPermission = { permission ->
+                    if (checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                        true
+                    } else {
+                        pendingPermission?.complete(false)
+                        val d = CompletableDeferred<Boolean>().also { pendingPermission = it }
+                        requestPermission.launch(permission)
+                        d.await()
+                    }
                 },
             ),
         )
