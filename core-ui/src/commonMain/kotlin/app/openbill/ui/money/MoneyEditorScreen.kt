@@ -241,7 +241,7 @@ fun MoneyEditorScreen(
                         PickerField("Account *", moneyAccounts.firstOrNull { it.id == t.accountId }?.name.orEmpty(), { pick = "tender:$i" })
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             PaymentMethod.entries.forEach { m ->
-                                SelectableChip(m.name.lowercase().replaceFirstChar { it.uppercase() }.replace("Upi", "UPI"), t.method == m, { extra[i] = t.copy(method = m) })
+                                SelectableChip(m.name.lowercase().replaceFirstChar { it.uppercase() }.replace("Upi", "UPI"), t.method == m, { extra[i] = t.copy(method = m, accountId = (if (m == PaymentMethod.CASH) moneyAccounts.firstOrNull { it.type == AccountType.CASH } else moneyAccounts.firstOrNull { it.type == AccountType.BANK })?.id ?: t.accountId) })
                             }
                         }
                         if (t.method != PaymentMethod.CASH) FormField(refLabel(t.method) + " *", t.ref, { v -> extra[i] = t.copy(ref = v) })
