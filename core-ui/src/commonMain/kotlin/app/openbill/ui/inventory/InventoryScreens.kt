@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import app.openbill.core.domain.model.Batch
 import app.openbill.core.domain.model.Godown
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.SerialStatus
@@ -93,6 +94,17 @@ import kotlinx.datetime.LocalDate
 object Inventory {
     private val ALL_FROM = LocalDate(2000, 1, 1)
     private val ALL_TO = LocalDate(2099, 12, 31)
+
+    /**
+     * Batches with stock in [godownId] (any godown when null) for picking on an outward line,
+     * first-expiring first (FEFO); batches without an expiry date come last.
+     */
+    fun fefo(batches: List<Batch>, movements: List<StockMovement>, godownId: String?): List<Pair<Batch, Quantity>> {
+        val balance = movements.filter { it.batchId != null }.groupBy { it.batchId!! }.mapValues { (_, l) -> l.sumOf { it.quantity.scaledUnits } }
+        return batches.filter { godownId == null || it.godownId == godownId }
+            .mapNotNull { b -> balance[b.id]?.takeIf { it > 0 }?.let { b to Quantity.ofScaledUnits(it) } }
+            .sortedWith(compareBy({ it.first.expiryDate == null }, { it.first.expiryDate }, { it.first.batchNumber }))
+    }
 
     /** A new Code128-friendly barcode: "OB" plus 11 digits from the clock and a counter. */
     fun generateBarcode(millis: Long, salt: Int = 0): String =

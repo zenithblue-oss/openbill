@@ -5,6 +5,13 @@ import kotlinx.coroutines.launch
 import app.openbill.ui.barcode.BarcodeScanButton
 
 import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.domain.model.Batch
+import app.openbill.core.model.Quantity
+import app.openbill.ui.inventory.Inventory
+import app.openbill.ui.components.SelectableChip
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -277,8 +284,17 @@ fun InvoiceEditorScreen(
         }
 
         // Full-screen line editor drawn over the form; Done is in its top bar, never under the keyboard.
+        // Outward lines pick an existing batch, first-expiring first, instead of typing one.
+        val batchItemId = lineForm?.takeIf { it.trackBatch && (state.type == VoucherType.SALE || state.type == VoucherType.DEBIT_NOTE) }?.itemId
+        val batches by produceState(emptyList<Pair<Batch, Quantity>>(), batchItemId, state.godownId) {
+            value = if (batchItemId == null) emptyList() else runCatching {
+                val repos = container.repositories
+                Inventory.fefo(repos.stock.observeBatches(batchItemId).first(), repos.stock.observeItemMovements(session.firm.id, batchItemId).first(), state.godownId)
+            }.getOrDefault(emptyList())
+        }
         LineEditor(
             form = lineForm,
+            batches = batches,
             slabs = remember { gstSlabsOn(container.today()) },
             preview = { line -> runCatching { model.previewTotal(line) }.getOrNull() },
             onSave = { form2 ->
@@ -544,6 +560,7 @@ private fun TotalsBar(
 @Composable
 private fun LineEditor(
     form: LineForm?,
+    batches: List<Pair<Batch, Quantity>>,
     slabs: List<Rate>,
     preview: (LineForm) -> Money?,
     onSave: (LineForm) -> Map<String, String>,
@@ -603,7 +620,20 @@ private fun LineEditor(
                 onImeAction = { errors = onSave(edit) },
             )
             PickerField("GST rate", "${Fmt.percent(current.gstRate)}%", { pickRate = true })
-            if (current.trackBatch) {
+            LaunchedEffect(batches) {
+                val first = batches.firstOrNull()?.first
+                if (first != null && edit.batchNumber.isBlank()) edit = edit.copy(batchNumber = first.batchNumber, expiryDate = first.expiryDate)
+            }
+            if (current.trackBatch && batches.isNotEmpty()) {
+                Text("Batch (first to expire first)", style = MaterialTheme.typography.labelLarge)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    batches.forEach { (b, qty) ->
+                        val label = listOfNotNull(b.batchNumber, b.expiryDate?.let { "exp ${Fmt.date(it)}" }, "${Fmt.qty(qty)} left").joinToString(" · ")
+                        SelectableChip(label, current.batchNumber == b.batchNumber, { edit = edit.copy(batchNumber = b.batchNumber, expiryDate = b.expiryDate) })
+                    }
+                }
+                errors["batch"]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            } else if (current.trackBatch) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     FormField("Batch number *", current.batchNumber, { edit = edit.copy(batchNumber = it) }, Modifier.weight(1f), error = errors["batch"])
                     DateField("Expiry", current.expiryDate, { edit = edit.copy(expiryDate = it) }, Modifier.weight(1f))
