@@ -47,6 +47,9 @@ import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherLine
 import app.openbill.core.domain.model.VoucherStatus
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.datetime.LocalDate
 import app.openbill.ui.AppContainer
 import app.openbill.ui.Session
 import app.openbill.ui.components.AmountRow
@@ -101,6 +104,13 @@ fun InvoiceDetailScreen(
     val outstanding by remember(voucherId) { container.repositories.payments.observeInvoiceOutstanding(voucherId) }
         .collectAsState(initial = null)
     val voucher by remember(voucherId) { container.repositories.vouchers.observeVoucher(voucherId) }.collectAsState(initial = null)
+    // shortcut: scans vouchers dated on/after this one; conversions are never back-dated.
+    val converted by remember(voucher?.id) {
+        val v = voucher
+        if (v == null || !v.type.isIssueOnly()) flowOf(null)
+        else container.repositories.vouchers.observeVouchers(session.firm.id, v.date, LocalDate(2100, 1, 1))
+            .map { all -> all.firstOrNull { it.referenceVoucherId == v.id && it.status != VoucherStatus.CANCELLED } }
+    }.collectAsState(initial = null)
     var party by remember { mutableStateOf<Party?>(null) }
     var units by remember { mutableStateOf(emptyMap<String, String>()) }
     var cancelOpen by remember { mutableStateOf(false) }
@@ -160,7 +170,7 @@ fun InvoiceDetailScreen(
                                 style = MaterialTheme.typography.titleLarge,
                                 modifier = Modifier.weight(1f).padding(end = Spacing.sm),
                             )
-                            StatusChip(v.status)
+                            StatusChip(v.status, issued = v.type.isIssueOnly())
                         }
                         Text(
                             party?.gstin?.let { "GSTIN $it" } ?: "Unregistered (no GSTIN)",
@@ -245,7 +255,9 @@ fun InvoiceDetailScreen(
                     VoucherStatus.CANCELLED -> {}
                 }
                 if (v.status == VoucherStatus.POSTED && v.type.isIssueOnly()) {
-                    PrimaryButton("Convert to invoice", { onConvert(v.id) }, Modifier.fillMaxWidth())
+                    val inv = converted
+                    if (inv == null) PrimaryButton("Convert to invoice", { onConvert(v.id) }, Modifier.fillMaxWidth())
+                    else Text("Converted \u2192 ${inv.number ?: "draft invoice"}", style = MaterialTheme.typography.bodyMedium)
                 }
                 val due = outstanding
                 if (v.status == VoucherStatus.POSTED && due != null && due > app.openbill.core.model.Money.ZERO &&

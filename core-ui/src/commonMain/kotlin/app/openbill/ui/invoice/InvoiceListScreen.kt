@@ -252,7 +252,7 @@ fun InvoiceListScreen(
                         trailingContent = {
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                                 Text(Fmt.inr(v.total), style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
-                                StatusChip(v.status)
+                                StatusChip(v.status, issued = v.type.isIssueOnly())
                             }
                         },
                         modifier = Modifier

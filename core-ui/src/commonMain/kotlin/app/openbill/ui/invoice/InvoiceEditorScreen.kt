@@ -183,7 +183,7 @@ fun InvoiceEditorScreen(
                             supporting = if (state.type == VoucherType.PURCHASE) "As printed on the supplier's invoice" else null,
                         )
                     }
-                    if (godowns.size > 1) {
+                    if (godowns.size > 1 && !state.type.isIssueOnly()) {
                         PickerField(
                             "Godown",
                             godowns.firstOrNull { it.id == state.godownId }?.name.orEmpty(),

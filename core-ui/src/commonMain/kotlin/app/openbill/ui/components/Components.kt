@@ -442,12 +442,12 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier, trailing: (@Compo
 
 /** Status pill: colour plus icon plus word, so colour is never the only signal. */
 @Composable
-fun StatusChip(status: VoucherStatus, modifier: Modifier = Modifier) {
+fun StatusChip(status: VoucherStatus, modifier: Modifier = Modifier, issued: Boolean = false) {
     val ext = LocalExtendedColors.current
     val scheme = MaterialTheme.colorScheme
     val (label, icon, colors) = when (status) {
         VoucherStatus.DRAFT -> Triple("Draft", Icons.Filled.Edit, scheme.secondaryContainer to scheme.onSecondaryContainer)
-        VoucherStatus.POSTED -> Triple("Posted", Icons.Filled.CheckCircle, ext.successContainer to ext.onSuccessContainer)
+        VoucherStatus.POSTED -> Triple(if (issued) "Issued" else "Posted", Icons.Filled.CheckCircle, ext.successContainer to ext.onSuccessContainer)
         VoucherStatus.CANCELLED -> Triple("Cancelled", Icons.Filled.Close, scheme.errorContainer to scheme.onErrorContainer)
     }
     Surface(color = colors.first, contentColor = colors.second, shape = MaterialTheme.shapes.small, modifier = modifier) {

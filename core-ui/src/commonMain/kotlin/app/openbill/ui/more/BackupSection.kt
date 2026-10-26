@@ -3,7 +3,7 @@ package app.openbill.ui.more
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -68,7 +68,7 @@ fun BackupSection(listColors: ListItemColors) {
     ListItem(
         headlineContent = { Text("Create backup") },
         supportingContent = { Text("Save all businesses, invoices and logos to a single file") },
-        leadingContent = { Icon(Icons.Outlined.Share, contentDescription = null) },
+        leadingContent = { Icon(Icons.Outlined.Create, contentDescription = null) },
         colors = listColors,
         modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { run { service.createBackup() } },
     )

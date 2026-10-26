@@ -53,6 +53,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -144,6 +145,7 @@ import app.openbill.ui.theme.OpenBillTheme
 import app.openbill.ui.theme.motionTween
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.yield
 
 /** Platform back handling hook (Android system back; no-op on desktop). */
 typealias BackHandlerSlot = @Composable (enabled: Boolean, onBack: () -> Unit) -> Unit
@@ -217,6 +219,13 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
     val scope = rememberCoroutineScope()
     val messages = remember { AppMessages(SnackbarHostState(), scope) }
     val route = nav.current
+    // A message may outlive the navigation that raised it (e.g. "posted"), but not the next one.
+    var carried by remember { mutableStateOf<SnackbarData?>(null) }
+    LaunchedEffect(route) {
+        carried?.dismiss()
+        yield()
+        carried = messages.hostState.currentSnackbarData
+    }
     backHandler(nav.canGoBack || route != Route.Home(Tab.INVOICES)) {
         if (nav.canGoBack) nav.pop() else nav.selectTab(Tab.INVOICES)
     }
@@ -334,7 +343,6 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
  */
 @Composable
 private fun AppNavigationRail(selectedTab: Tab?, onSelect: (Tab) -> Unit, createAction: CreateAction?) {
-    val reduced = LocalReducedMotion.current
     NavigationRail(
         modifier = Modifier.fillMaxHeight(),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -346,32 +354,23 @@ private fun AppNavigationRail(selectedTab: Tab?, onSelect: (Tab) -> Unit, create
                     contentDescription = "OpenBill",
                     modifier = Modifier.padding(top = Spacing.sm).size(32.dp),
                 )
-                // Collapses completely when there is no create action (no reserved gap); the item
-                // group is centred in the remaining space and glides as the FAB animates.
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = createAction != null,
-                    enter = if (reduced) EnterTransition.None else fadeIn(motionTween(false, Motion.SHORT4)) + expandVertically(motionTween(false, Motion.MEDIUM1, Motion.EmphasizedDecelerate)),
-                    exit = if (reduced) ExitTransition.None else fadeOut(motionTween(false, Motion.SHORT3)) + shrinkVertically(motionTween(false, Motion.SHORT4, Motion.EmphasizedAccelerate)),
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Spacer(Modifier.height(Spacing.lg))
-                        // Remember the last action so the exit animation still has a label.
-                        val last = remember { arrayOfNulls<CreateAction>(1) }
-                        if (createAction != null) last[0] = createAction
-                        val action = last[0] ?: return@AnimatedVisibility
-                        TooltipBox(
-                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Right),
-                            tooltip = { PlainTooltip { Text(action.tooltip) } },
-                            state = rememberTooltipState(),
+                // Always reserve the FAB's slot so the item group does not shift between tabs.
+                Spacer(Modifier.height(Spacing.lg))
+                if (createAction != null) {
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Right),
+                        tooltip = { PlainTooltip { Text(createAction.tooltip) } },
+                        state = rememberTooltipState(),
+                    ) {
+                        FloatingActionButton(
+                            onClick = createAction.onClick,
+                            elevation = FloatingActionButtonDefaults.bottomAppBarFabElevation(),
                         ) {
-                            FloatingActionButton(
-                                onClick = action.onClick,
-                                elevation = FloatingActionButtonDefaults.bottomAppBarFabElevation(),
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = action.label)
-                            }
+                            Icon(Icons.Filled.Add, contentDescription = createAction.label)
                         }
                     }
+                } else {
+                    Spacer(Modifier.height(56.dp))
                 }
             }
         },
