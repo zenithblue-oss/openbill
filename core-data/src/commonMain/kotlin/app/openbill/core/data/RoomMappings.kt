@@ -375,6 +375,7 @@ internal fun VoucherEntity.toDomain(
     partyId = partyId,
     referenceVoucherId = referenceVoucherId,
     referenceNumber = referenceNumber,
+    ledgerAccountId = ledgerAccountId,
     status = decodeEnum<VoucherStatus>(status, "voucher status"),
     placeOfSupplyStateCode = placeOfSupplyStateCode,
     lines = lines.map { it.toDomain() },
@@ -410,6 +411,7 @@ internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = Voucher
     partyId = partyId,
     referenceVoucherId = referenceVoucherId,
     referenceNumber = referenceNumber,
+    ledgerAccountId = ledgerAccountId,
     status = status.name.lowercase(),
     placeOfSupplyStateCode = placeOfSupplyStateCode,
     subtotal = subtotal.paise,
@@ -615,6 +617,7 @@ internal fun JournalEntryEntity.toDomain(): JournalEntry = JournalEntry(
     credit = Money.of(credit),
     narration = narration,
     createdAt = createdAt.toInstant(),
+    clearedOn = clearedOn?.let(LocalDate::parse),
 )
 
 internal fun JournalEntry.toEntity(): JournalEntryEntity = JournalEntryEntity(
@@ -627,6 +630,7 @@ internal fun JournalEntry.toEntity(): JournalEntryEntity = JournalEntryEntity(
     credit = credit.paise,
     narration = narration,
     createdAt = createdAt.toEpochMillis(),
+    clearedOn = clearedOn?.toString(),
 )
 
 internal fun PaymentDetailsEntity.toDomain(): PaymentDetails = PaymentDetails(

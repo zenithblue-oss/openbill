@@ -10,6 +10,9 @@ import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.model.isPayment
 import app.openbill.core.domain.model.isPaymentAccount
 import app.openbill.core.domain.model.postsLedger
+import app.openbill.core.domain.model.requireLedgerAccount
+import app.openbill.core.domain.model.requiresParty
+import app.openbill.core.domain.model.usesPaymentAccount
 import app.openbill.core.domain.repository.CatalogRepository
 import app.openbill.core.domain.repository.FirmRepository
 import app.openbill.core.domain.repository.VoucherRepository
@@ -216,9 +219,11 @@ class InMemoryVoucherRepository(
     private suspend fun prepareLedgerPosted(voucher: Voucher, at: Instant): List<JournalEntry> {
         val ledger = this.ledger ?: return emptyList()
         if (!voucher.type.postsLedger()) return emptyList()
-        val partyId = voucher.partyId
-        require(partyId != null) { "Voucher must have a party to post to the ledger" }
+        if (voucher.type.requiresParty()) {
+            require(voucher.partyId != null) { "Voucher must have a party to post to the ledger" }
+        }
         val paymentAccountId = paymentAccountId(voucher, ledger)
+        requireLedgerAccount(voucher, voucher.ledgerAccountId?.let { ledger.findAccountById(it) }, paymentAccountId)
         val accounts = ledger.ensureSystemAccounts(voucher.firmId, at)
         return ledgerDerivation.derivePosted(voucher, accounts, paymentAccountId, at)
     }
@@ -237,7 +242,7 @@ class InMemoryVoucherRepository(
         voucher: Voucher,
         ledger: InMemoryLedgerRepository,
     ): String? {
-        if (!voucher.type.isPayment()) return null
+        if (!voucher.type.usesPaymentAccount()) return null
         val details = payments?.findPaymentDetails(voucher.id)
             ?: throw IllegalArgumentException("Payment details are required before posting")
         val account = ledger.findAccountById(details.accountId)
@@ -311,5 +316,7 @@ class InMemoryVoucherRepository(
         VoucherType.EXPENSE -> "EXP"
         VoucherType.STOCK_ADJUSTMENT -> "ADJ"
         VoucherType.STOCK_TRANSFER -> "TRF"
+        VoucherType.DELIVERY_CHALLAN -> "DC"
+        VoucherType.CONTRA -> "CTR"
     }
 }

@@ -110,6 +110,8 @@ data class JournalEntry(
     val credit: Money,
     val narration: String? = null,
     val createdAt: Instant,
+    /** Bank reconciliation: the statement date this entry cleared on; null while uncleared. */
+    val clearedOn: LocalDate? = null,
 ) {
     init {
         require(id.isNotBlank()) { "JournalEntry id cannot be blank" }
@@ -184,10 +186,60 @@ fun VoucherType.postsLedger(): Boolean = when (this) {
     VoucherType.DEBIT_NOTE,
     VoucherType.PAYMENT_IN,
     VoucherType.PAYMENT_OUT,
+    VoucherType.EXPENSE,
+    VoucherType.CONTRA,
     -> true
 
     else -> false
 }
+
+/** Vouchers whose cash/bank side is stored in `payment_details`. */
+fun VoucherType.usesPaymentAccount(): Boolean =
+    isPayment() || this == VoucherType.EXPENSE || this == VoucherType.CONTRA
+
+/** Ledger vouchers that move a party's receivable or payable. */
+fun VoucherType.requiresParty(): Boolean = postsLedger() && this != VoucherType.EXPENSE && this != VoucherType.CONTRA
+
+/**
+ * Checks the voucher's [Voucher.ledgerAccountId]: an expense category (EXPENSE account) for
+ * expenses, a different cash/bank account for contra; unused otherwise.
+ */
+fun requireLedgerAccount(voucher: Voucher, account: Account?, paymentAccountId: String?) {
+    when (voucher.type) {
+        VoucherType.EXPENSE -> {
+            require(account != null) { "Expense needs a category" }
+            require(account.type == AccountType.EXPENSE && account.code == null) {
+                "Expense category must be a user expense account"
+            }
+        }
+        VoucherType.CONTRA -> {
+            require(account != null) { "Transfer needs a destination account" }
+            require(account.type.isPaymentAccount) { "Transfer destination must be a cash or bank account" }
+            require(account.id != paymentAccountId) { "Transfer accounts must differ" }
+        }
+        else -> return
+    }
+    require(account.firmId == voucher.firmId) { "Account belongs to a different firm" }
+    require(account.deletedAt == null) { "Account is deleted" }
+}
+
+/** A receivable/payable movement of a party, for outstanding and ageing. */
+data class PartyMovement(
+    val partyId: String,
+    val voucherId: String,
+    val voucherType: VoucherType,
+    val voucherNumber: String?,
+    val date: LocalDate,
+    val net: Money,
+)
+
+/** A journal line of one account with its voucher, for account statements. */
+data class AccountTransaction(
+    val entry: JournalEntry,
+    val voucherType: VoucherType,
+    val voucherNumber: String?,
+    val partyId: String?,
+)
 
 fun VoucherType.isPayment(): Boolean =
     this == VoucherType.PAYMENT_IN || this == VoucherType.PAYMENT_OUT

@@ -33,8 +33,59 @@ data class PartyLedgerRow(
     val createdAt: Long,
 )
 
+data class AccountBalanceRow(
+    val accountId: String,
+    val debit: Long,
+    val credit: Long,
+)
+
+data class PartyMovementRow(
+    val partyId: String,
+    val voucherId: String,
+    val voucherType: String,
+    val voucherNumber: String?,
+    val date: String,
+    val debit: Long,
+    val credit: Long,
+)
+
+data class AccountEntryRow(
+    @androidx.room.Embedded val entry: JournalEntryEntity,
+    val voucherType: String,
+    val voucherNumber: String?,
+    val partyId: String?,
+)
+
 @Dao
 interface LedgerDao {
+    @Query(
+        "SELECT accountId, COALESCE(SUM(debit), 0) AS debit, COALESCE(SUM(credit), 0) AS credit " +
+            "FROM journal_entries WHERE firmId = :firmId GROUP BY accountId",
+    )
+    fun observeAccountTotals(firmId: String): Flow<List<AccountBalanceRow>>
+
+    @Query(
+        "SELECT j.*, v.type AS voucherType, v.number AS voucherNumber, v.partyId AS partyId " +
+            "FROM journal_entries j INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "WHERE j.accountId = :accountId ORDER BY j.date, j.createdAt, j.id",
+    )
+    fun observeAccountEntries(accountId: String): Flow<List<AccountEntryRow>>
+
+    @Query("UPDATE journal_entries SET clearedOn = :clearedOn WHERE id = :id")
+    suspend fun setCleared(id: String, clearedOn: String?): Int
+
+    @Query(
+        "SELECT v.partyId AS partyId, j.voucherId AS voucherId, v.type AS voucherType, " +
+            "v.number AS voucherNumber, j.date AS date, j.debit AS debit, j.credit AS credit " +
+            "FROM journal_entries j " +
+            "INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "INNER JOIN accounts a ON a.id = j.accountId " +
+            "WHERE j.firmId = :firmId AND v.partyId IS NOT NULL " +
+            "AND v.status = 'posted' AND v.deletedAt IS NULL " +
+            "AND a.code IN ('AR', 'AP') ORDER BY j.date, j.createdAt, j.id",
+    )
+    fun observePartyMovements(firmId: String): Flow<List<PartyMovementRow>>
+
     @Insert
     suspend fun insertAccount(account: AccountEntity)
 

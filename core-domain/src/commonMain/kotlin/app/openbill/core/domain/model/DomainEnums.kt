@@ -29,6 +29,10 @@ enum class VoucherType {
     EXPENSE,
     STOCK_ADJUSTMENT,
     STOCK_TRANSFER,
+    /** Goods sent without a sale; no ledger or stock posting. */
+    DELIVERY_CHALLAN,
+    /** Transfer between two cash/bank accounts. */
+    CONTRA,
 }
 
 enum class VoucherStatus {

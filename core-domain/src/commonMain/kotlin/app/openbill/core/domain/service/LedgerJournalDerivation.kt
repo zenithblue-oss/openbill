@@ -56,6 +56,33 @@ class LedgerJournalDerivation(
                 )
             }
 
+            VoucherType.EXPENSE -> {
+                val paidFrom = requireMoneyAccount(voucher, paymentAccountId)
+                val category = requireNotNull(voucher.ledgerAccountId) { "Expense needs a category" }
+                require(voucher.roundOff == Money.ZERO) { "Expenses cannot have round-off" }
+                require(voucher.taxable + voucher.tax == voucher.total) {
+                    "Expense total must equal taxable value plus GST"
+                }
+                listOfNotNull(
+                    entry(voucher, category, debit = voucher.taxable, at = at),
+                    entry(voucher, accounts.inputGst.id, debit = voucher.tax, at = at),
+                    entry(voucher, paidFrom, credit = voucher.total, at = at),
+                )
+            }
+
+            VoucherType.CONTRA -> {
+                val from = requireMoneyAccount(voucher, paymentAccountId)
+                val to = requireNotNull(voucher.ledgerAccountId) { "Transfer needs a destination account" }
+                require(to != from) { "Transfer accounts must differ" }
+                require(voucher.taxable == Money.ZERO && voucher.tax == Money.ZERO && voucher.roundOff == Money.ZERO) {
+                    "Transfers cannot have tax or round-off"
+                }
+                listOfNotNull(
+                    entry(voucher, to, debit = voucher.total, at = at),
+                    entry(voucher, from, credit = voucher.total, at = at),
+                )
+            }
+
             else -> error("Unsupported ledger voucher type ${voucher.type}")
         }
 
@@ -216,6 +243,9 @@ class LedgerJournalDerivation(
         }
         return paymentAccountId
     }
+
+    private fun requireMoneyAccount(voucher: Voucher, paymentAccountId: String?): String =
+        requireNotNull(paymentAccountId) { "${voucher.type} vouchers require a payment account" }
 
     private fun entry(
         voucher: Voucher,

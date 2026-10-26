@@ -116,7 +116,18 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+    /**
+     * Money: the expense category / contra destination account on vouchers and the bank
+     * reconciliation date on journal entries. Both nullable; existing rows are uncleared.
+     */
+    private val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `ledgerAccountId` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `journal_entries` ADD COLUMN `clearedOn` TEXT DEFAULT NULL")
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
     fun migrationsFor(
         startVersion: Int,

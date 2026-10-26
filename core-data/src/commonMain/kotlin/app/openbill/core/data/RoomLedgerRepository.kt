@@ -4,6 +4,8 @@ import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.database.dao.PartyLedgerRow
 import app.openbill.core.domain.model.Account
+import app.openbill.core.domain.model.AccountTransaction
+import app.openbill.core.domain.model.PartyMovement
 import app.openbill.core.domain.model.AccountCode
 import app.openbill.core.domain.model.FirmLedgerAccounts
 import app.openbill.core.domain.model.JournalEntry
@@ -149,6 +151,48 @@ class RoomLedgerRepository(
             debit = debit + if (opening > Money.ZERO) opening else Money.ZERO,
             credit = credit + if (opening < Money.ZERO) -opening else Money.ZERO,
         )
+    }
+
+    override fun observePartyMovements(firmId: String): Flow<List<PartyMovement>> =
+        accounts.observePartyMovements(firmId).map { rows ->
+            rows.map {
+                PartyMovement(
+                    partyId = it.partyId,
+                    voucherId = it.voucherId,
+                    voucherType = decodeEnum<VoucherType>(it.voucherType, "voucher type"),
+                    voucherNumber = it.voucherNumber,
+                    date = LocalDate.parse(it.date),
+                    net = Money.of(it.debit - it.credit),
+                )
+            }
+        }
+
+    override fun observeAccountBalances(firmId: String): Flow<Map<String, Money>> = combine(
+        accounts.observeAccounts(firmId),
+        accounts.observeAccountTotals(firmId),
+    ) { accountRows, totals ->
+        val byId = totals.associateBy { it.accountId }
+        accountRows.associate { a ->
+            val t = byId[a.id]
+            a.id to Money.of(a.openingBalance + (t?.debit ?: 0L) - (t?.credit ?: 0L))
+        }
+    }
+
+    override fun observeAccountTransactions(accountId: String): Flow<List<AccountTransaction>> =
+        accounts.observeAccountEntries(accountId).map { rows ->
+            rows.map {
+                AccountTransaction(
+                    entry = it.entry.toDomain(),
+                    voucherType = decodeEnum<VoucherType>(it.voucherType, "voucher type"),
+                    voucherNumber = it.voucherNumber,
+                    partyId = it.partyId,
+                )
+            }
+        }
+
+    override suspend fun setCleared(entryId: String, clearedOn: LocalDate?) {
+        val changed = accounts.setCleared(entryId, clearedOn?.toString())
+        require(changed == 1) { "Unknown journal entry: $entryId" }
     }
 
     private fun signedOpening(party: app.openbill.core.database.PartyEntity): Money {

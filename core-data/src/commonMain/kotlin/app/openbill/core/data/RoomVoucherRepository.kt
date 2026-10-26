@@ -20,6 +20,9 @@ import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.model.isPayment
 import app.openbill.core.domain.model.isPaymentAccount
 import app.openbill.core.domain.model.postsLedger
+import app.openbill.core.domain.model.requireLedgerAccount
+import app.openbill.core.domain.model.requiresParty
+import app.openbill.core.domain.model.usesPaymentAccount
 import app.openbill.core.domain.repository.VoucherRepository
 import app.openbill.core.domain.service.LedgerJournalDerivation
 import app.openbill.core.domain.service.StockMovementDerivation
@@ -358,10 +361,12 @@ class RoomVoucherRepository(
         at: Instant,
     ): List<JournalEntry> {
         if (!voucher.type.postsLedger()) return emptyList()
-        require(voucher.partyId != null) {
-            "Voucher must have a party to post to the ledger"
+        if (voucher.type.requiresParty()) {
+            require(voucher.partyId != null) {
+                "Voucher must have a party to post to the ledger"
+            }
         }
-        val paymentAccountId = if (voucher.type.isPayment()) {
+        val paymentAccountId = if (voucher.type.usesPaymentAccount()) {
             val details = paymentDetails.findForVoucher(voucher.id)
                 ?: throw IllegalArgumentException(
                     "Payment details are required before posting",
@@ -380,6 +385,11 @@ class RoomVoucherRepository(
         } else {
             null
         }
+        requireLedgerAccount(
+            voucher,
+            voucher.ledgerAccountId?.let { ledgerDao().findAccountById(it)?.toDomain() },
+            paymentAccountId,
+        )
         val accounts = ledger.ensureSystemAccountsLocked(voucher.firmId, at)
         return ledgerDerivation.derivePosted(voucher, accounts, paymentAccountId, at)
     }
@@ -553,6 +563,8 @@ class RoomVoucherRepository(
         VoucherType.EXPENSE -> "EXP"
         VoucherType.STOCK_ADJUSTMENT -> "ADJ"
         VoucherType.STOCK_TRANSFER -> "TRF"
+        VoucherType.DELIVERY_CHALLAN -> "DC"
+        VoucherType.CONTRA -> "CTR"
     }
 
     private fun auditEvent(

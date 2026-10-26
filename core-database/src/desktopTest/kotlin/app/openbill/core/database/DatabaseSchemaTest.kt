@@ -48,15 +48,16 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(6, OPENBILL_DATABASE_VERSION)
+        assertEquals(7, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/4.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/5.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/6.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/7.json").exists())
 
-        helper.createDatabase(6).use { connection ->
+        helper.createDatabase(7).use { connection ->
             val tables = mutableListOf<String>()
             connection.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -316,7 +317,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(5, migrations.size)
+        assertEquals(6, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -326,7 +327,48 @@ class DatabaseSchemaTest {
         assertEquals(4, migrations[3].startVersion)
         assertEquals(5, migrations[3].endVersion)
         assertEquals(6, migrations[4].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(6).isEmpty())
+        assertEquals(7, migrations[5].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(7).isEmpty())
+    }
+
+    @Test
+    fun schemaV6MigratesToV7AndKeepsLedgerRows() {
+        helper.createDatabase(6).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO financial_years (id, firmId, startDate, endDate, createdAt, updatedAt) " +
+                    "VALUES ('fy-1', 'firm-1', '2026-04-01', '2027-03-31', 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO accounts (id, firmId, name, type, code, openingBalance, isDefault, createdAt, updatedAt, revision) " +
+                    "VALUES ('cash', 'firm-1', 'Cash', 'cash', 'CASH', 0, 1, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO vouchers (id, firmId, financialYearId, type, date, status, " +
+                    "placeOfSupplyStateCode, subtotal, discount, taxable, tax, roundOff, total, " +
+                    "createdAt, updatedAt, revision) VALUES ('voucher-1', 'firm-1', 'fy-1', 'payment_in', " +
+                    "'2026-05-10', 'draft', '27', 0, 0, 0, 0, 0, 500, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO journal_entries (id, firmId, voucherId, accountId, date, debit, credit, createdAt) " +
+                    "VALUES ('j-1', 'firm-1', 'voucher-1', 'cash', '2026-05-10', 500, 0, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(7, DatabaseMigrations.migrationsFor(6)).use { connection ->
+            connection.prepare("SELECT debit, clearedOn FROM journal_entries WHERE id = 'j-1'").use {
+                assertTrue(it.step())
+                assertEquals(500L, it.getLong(0))
+                assertTrue(it.isNull(1))
+            }
+            connection.prepare("SELECT ledgerAccountId FROM vouchers WHERE id = 'voucher-1'").use {
+                assertTrue(it.step())
+                assertTrue(it.isNull(0))
+            }
+            connection.execSQL("UPDATE journal_entries SET clearedOn = '2026-05-12' WHERE id = 'j-1'")
+        }
     }
 
     @Test

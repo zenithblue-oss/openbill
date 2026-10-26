@@ -71,6 +71,7 @@ data class VoucherEntity(
     val restoredAt: Long?,
     @Embedded val sync: SyncMetadata,
     @ColumnInfo(defaultValue = "NULL") val referenceNumber: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val ledgerAccountId: String? = null,
 )
 
 @Entity(

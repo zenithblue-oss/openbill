@@ -1,6 +1,8 @@
 package app.openbill.core.domain.fake
 
 import app.openbill.core.domain.model.Account
+import app.openbill.core.domain.model.AccountTransaction
+import app.openbill.core.domain.model.PartyMovement
 import app.openbill.core.domain.model.AccountCode
 import app.openbill.core.domain.model.FirmLedgerAccounts
 import app.openbill.core.domain.model.JournalEntry
@@ -201,6 +203,45 @@ class InMemoryLedgerRepository(
             debit = debit + if (opening > Money.ZERO) opening else Money.ZERO,
             credit = credit + if (opening < Money.ZERO) -opening else Money.ZERO,
         )
+    }
+
+    override fun observePartyMovements(firmId: String): Flow<List<PartyMovement>> = combine(
+        accounts,
+        entries,
+        vouchers?.observeVouchers(firmId, MIN_DATE, MAX_DATE) ?: flowOf(emptyList()),
+    ) { accountValues, entryValues, voucherValues ->
+        val control = accountValues.filter { it.code in CONTROL_CODES }.map { it.id }.toSet()
+        val byId = voucherValues.associateBy { it.id }
+        entryValues.mapNotNull { e ->
+            val v = byId[e.voucherId] ?: return@mapNotNull null
+            val partyId = v.partyId
+            if (e.accountId !in control || partyId == null || v.status != VoucherStatus.POSTED || v.deletedAt != null) {
+                return@mapNotNull null
+            }
+            PartyMovement(partyId, v.id, v.type, v.number, e.date, e.net())
+        }.sortedBy { it.date }
+    }
+
+    override fun observeAccountBalances(firmId: String): Flow<Map<String, Money>> =
+        combine(accounts, entries) { accountValues, entryValues ->
+            accountValues.filter { it.firmId == firmId }.associate { a ->
+                a.id to entryValues.filter { it.accountId == a.id }.fold(a.openingBalance) { t, e -> t + e.net() }
+            }
+        }
+
+    override fun observeAccountTransactions(accountId: String): Flow<List<AccountTransaction>> =
+        entries.map { entryValues ->
+        entryValues.filter { it.accountId == accountId }
+            .sortedWith(compareBy<JournalEntry> { it.date }.thenBy { it.createdAt }.thenBy { it.id })
+            .map { e ->
+                val v = vouchers?.findVoucher(e.voucherId)
+                AccountTransaction(e, v?.type ?: app.openbill.core.domain.model.VoucherType.EXPENSE, v?.number, v?.partyId)
+            }
+    }
+
+    override suspend fun setCleared(entryId: String, clearedOn: LocalDate?) = mutex.withLock {
+        require(entries.value.any { it.id == entryId }) { "Unknown journal entry: $entryId" }
+        entries.update { list -> list.map { if (it.id == entryId) it.copy(clearedOn = clearedOn) else it } }
     }
 
     private fun signedOpening(party: Party?): Money {

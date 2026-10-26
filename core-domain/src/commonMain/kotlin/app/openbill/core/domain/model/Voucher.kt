@@ -206,6 +206,8 @@ data class Voucher(
     val referenceVoucherId: String? = null,
     /** The supplier's own bill number on a purchase bill or the party's document number. */
     val referenceNumber: String? = null,
+    /** Expense category account (EXPENSE) or contra destination account (CONTRA). */
+    val ledgerAccountId: String? = null,
     val status: VoucherStatus = VoucherStatus.DRAFT,
     val placeOfSupplyStateCode: String,
     val lines: List<VoucherLine> = emptyList(),

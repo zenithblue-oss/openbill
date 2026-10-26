@@ -2,8 +2,8 @@ package app.openbill.core.domain.usecase
 
 import app.openbill.core.domain.model.PaymentDetails
 import app.openbill.core.domain.model.VoucherStatus
-import app.openbill.core.domain.model.isPayment
 import app.openbill.core.domain.model.isPaymentAccount
+import app.openbill.core.domain.model.usesPaymentAccount
 import app.openbill.core.domain.repository.LedgerRepository
 import app.openbill.core.domain.repository.PaymentRepository
 import app.openbill.core.domain.repository.VoucherRepository
@@ -20,7 +20,7 @@ class SavePaymentDetails(
         require(voucher.firmId == details.firmId) {
             "Payment details belong to a different firm"
         }
-        require(voucher.type.isPayment()) { "Voucher is not a payment" }
+        require(voucher.type.usesPaymentAccount()) { "Voucher has no payment account" }
         require(voucher.status == VoucherStatus.DRAFT) {
             "Payment details can only be saved for drafts"
         }

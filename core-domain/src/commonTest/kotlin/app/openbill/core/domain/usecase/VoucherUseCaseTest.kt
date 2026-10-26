@@ -11,6 +11,7 @@ import app.openbill.core.model.Rate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -164,19 +165,17 @@ class VoucherUseCaseTest {
     }
 
     @Test
-    fun postRejectsQuotationAndProforma(): kotlin.Unit = runBlocking {
+    fun postIssuesQuotationAndProformaWithANumber(): kotlin.Unit = runBlocking {
         val repository = InMemoryVoucherRepository()
         val post = PostVoucher(repository)
 
-        for (type in listOf(VoucherType.QUOTATION, VoucherType.PROFORMA)) {
+        for (type in listOf(VoucherType.QUOTATION, VoucherType.PROFORMA, VoucherType.DELIVERY_CHALLAN)) {
             val draft = voucher("voucher-$type", type = type)
             repository.saveDraft(draft)
 
-            assertFailsWith<IllegalArgumentException> {
-                post(draft.id, postingTime)
-            }
-            assertNull(repository.findVoucher(draft.id)?.number)
-            assertEquals(VoucherStatus.DRAFT, repository.findVoucher(draft.id)?.status)
+            post(draft.id, postingTime)
+            assertNotNull(repository.findVoucher(draft.id)?.number)
+            assertEquals(VoucherStatus.POSTED, repository.findVoucher(draft.id)?.status)
         }
     }
 

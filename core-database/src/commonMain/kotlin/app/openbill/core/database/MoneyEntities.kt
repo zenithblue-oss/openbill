@@ -175,4 +175,5 @@ data class JournalEntryEntity(
     val credit: Long,
     val narration: String?,
     val createdAt: Long,
+    @ColumnInfo(defaultValue = "NULL") val clearedOn: String? = null,
 )

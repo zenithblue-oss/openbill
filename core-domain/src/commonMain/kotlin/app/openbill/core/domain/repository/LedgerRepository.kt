@@ -1,6 +1,9 @@
 package app.openbill.core.domain.repository
 
 import app.openbill.core.domain.model.Account
+import app.openbill.core.domain.model.AccountTransaction
+import app.openbill.core.domain.model.PartyMovement
+import app.openbill.core.model.Money
 import app.openbill.core.domain.model.AccountCode
 import app.openbill.core.domain.model.FirmLedgerAccounts
 import app.openbill.core.domain.model.JournalEntry
@@ -31,4 +34,16 @@ interface LedgerRepository {
     ): Flow<PartyLedger>
 
     suspend fun partyBalance(firmId: String, partyId: String, asOf: LocalDate): PartyBalance
+
+    /** Receivable/payable movements of every party (posted, non-deleted vouchers). */
+    fun observePartyMovements(firmId: String): Flow<List<PartyMovement>>
+
+    /** Balance of every account: opening balance plus debits minus credits. */
+    fun observeAccountBalances(firmId: String): Flow<Map<String, Money>>
+
+    /** Journal lines of one account, oldest first. */
+    fun observeAccountTransactions(accountId: String): Flow<List<AccountTransaction>>
+
+    /** Marks a journal entry cleared on [clearedOn] (bank reconciliation), or uncleared when null. */
+    suspend fun setCleared(entryId: String, clearedOn: LocalDate?)
 }
