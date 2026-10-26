@@ -237,6 +237,7 @@ fun MoreScreen(
                     )
                 }
 
+                CsvSection(container, session, listColors)
                 BackupSection(listColors)
 
                 SectionHeader("About")

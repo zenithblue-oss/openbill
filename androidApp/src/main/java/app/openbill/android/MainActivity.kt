@@ -46,6 +46,12 @@ class MainActivity : ComponentActivity() {
         pendingFile = null
     }
 
+    private var pendingOpenFile: CompletableDeferred<Uri?>? = null
+    private val openFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingOpenFile?.complete(uri)
+        pendingOpenFile = null
+    }
+
     private var pendingBackupCreate: CompletableDeferred<Uri?>? = null
     private var pendingBackupOpen: CompletableDeferred<Uri?>? = null
     private val createBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -84,6 +90,12 @@ class MainActivity : ComponentActivity() {
                     pendingFile?.complete(null)
                     val d = CompletableDeferred<Uri?>().also { pendingFile = it }
                     createFile.launch(name)
+                    d.await()
+                },
+                openFile = {
+                    pendingOpenFile?.complete(null)
+                    val d = CompletableDeferred<Uri?>().also { pendingOpenFile = it }
+                    openFile.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel"))
                     d.await()
                 },
             ),

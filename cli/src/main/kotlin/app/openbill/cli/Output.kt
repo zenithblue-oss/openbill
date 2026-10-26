@@ -57,37 +57,3 @@ fun Money.indian(): String {
     }
     return (if (neg) "-" else "") + grouped + "." + frac
 }
-
-/** RFC 4180 CSV. */
-object Csv {
-    fun row(cells: List<String?>): String = cells.joinToString(",") { c ->
-        val v = c ?: ""
-        if (v.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + v.replace("\"", "\"\"") + "\"" else v
-    }
-
-    fun parse(text: String): List<List<String>> {
-        val rows = ArrayList<List<String>>()
-        var row = ArrayList<String>()
-        val cell = StringBuilder()
-        var quoted = false
-        var i = 0
-        val t = text.removePrefix("﻿")
-        while (i < t.length) {
-            val c = t[i]
-            if (quoted) {
-                if (c == '"') {
-                    if (i + 1 < t.length && t[i + 1] == '"') { cell.append('"'); i++ } else quoted = false
-                } else cell.append(c)
-            } else when (c) {
-                '"' -> quoted = true
-                ',' -> { row.add(cell.toString()); cell.clear() }
-                '\r' -> {}
-                '\n' -> { row.add(cell.toString()); cell.clear(); rows.add(row); row = ArrayList() }
-                else -> cell.append(c)
-            }
-            i++
-        }
-        if (cell.isNotEmpty() || row.isNotEmpty()) { row.add(cell.toString()); rows.add(row) }
-        return rows.filter { r -> r.any { it.isNotBlank() } }
-    }
-}

@@ -1,5 +1,6 @@
 package app.openbill.cli
 
+import app.openbill.core.domain.csv.MasterCsv
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
@@ -42,7 +43,7 @@ fun itemJson(i: Item, unit: String?) = jsonOf(
 fun Rate.percent(): String = Quantity.ofScaledUnits(units).format()
 
 /** Percent text ("18", "0.25") to a [Rate]; same 4-decimal scale as [Quantity]. */
-fun parseRate(text: String): Rate = Rate.ofBasisPointsHundredths(Quantity.parse(text.trim().removeSuffix("%")).scaledUnits)
+fun parseRate(text: String): Rate = MasterCsv.parseRate(text)
 
 fun parseMoney(text: String): Money = runCatching { Money.parse(text.trim()) }
     .getOrElse { fail(Exit.VALIDATION, "Invalid amount '$text' (use a decimal like 1500.00)") }
@@ -150,12 +151,7 @@ class PartyAdd(private val cli: CliState) : CliktCommand("add") {
     }
 }
 
-private val GSTIN = Regex("^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]Z[0-9A-Z]$")
-
-fun validateParty(p: Party) {
-    require(p.gstin == null || GSTIN.matches(p.gstin!!)) { "Invalid GSTIN '${p.gstin}'" }
-    require(p.stateCode == null || Regex("^[0-9]{2}$").matches(p.stateCode!!)) { "State code must be two digits" }
-}
+fun validateParty(p: Party) = MasterCsv.validateParty(p)
 
 // ---- item ----
 

@@ -40,6 +40,8 @@ class ActivityHooks(
     val createPdf: suspend (suggestedName: String) -> Uri?,
     /** Save dialog for any file; the MIME type follows the name's extension. */
     val createFile: suspend (suggestedName: String) -> Uri?,
+    /** Open dialog for a CSV or text file. */
+    val openFile: suspend () -> Uri?,
 )
 
 class AndroidPlatformServices(
@@ -91,6 +93,13 @@ class AndroidPlatformServices(
         }
         context.startActivity(Intent.createChooser(send, subject).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return null
+    }
+
+    override suspend fun openTextFile(): String? {
+        val uri = requireHooks().openFile() ?: return null
+        return withContext(Dispatchers.IO) {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: error("Could not open the chosen file")
+        }
     }
 
     override suspend fun saveTextFile(fileName: String, text: String): String? {

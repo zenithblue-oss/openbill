@@ -73,6 +73,9 @@ interface PlatformServices {
      */
     suspend fun saveTextFile(fileName: String, text: String): String? = shareText(fileName, text)
 
+    /** Lets the user choose a CSV or text file and returns its UTF-8 text; null if cancelled or unsupported. */
+    suspend fun openTextFile(): String? = null
+
     /**
      * Bulk output of many invoices (desktop W and L). [pdfs] are rendered lazily in order; each
      * PDF is saved into one chosen folder, or every PDF goes to one printer chosen once. Failures

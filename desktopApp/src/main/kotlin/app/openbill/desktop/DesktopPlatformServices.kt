@@ -164,7 +164,7 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         withContext(Dispatchers.Default) { PdfBoxPainter.preview(layout, pageIndex, widthPx).toComposeImageBitmap() }
 
     override suspend fun pickImage(maxEdgePx: Int): LogoImage? {
-        val file = withContext(Dispatchers.IO) { chooseOpenFile() } ?: return null
+        val file = withContext(Dispatchers.IO) { chooseOpenFile("Choose an image (PNG or JPG)", "png", "jpg", "jpeg") } ?: return null
         return withContext(Dispatchers.IO) {
             val src = ImageIO.read(file) ?: error("not a PNG or JPEG image")
             downscaleToPng(src, maxEdgePx)
@@ -197,13 +197,16 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         Unit
     }
 
-    private fun chooseOpenFile(): File? {
+    override suspend fun openTextFile(): String? =
+        withContext(Dispatchers.IO) { chooseOpenFile("Choose a CSV file", "csv", "txt")?.readText() }
+
+    private fun chooseOpenFile(title: String, vararg exts: String): File? {
         val result = CompletableFuture<File?>()
         EventQueue.invokeLater {
             runCatching {
-                val dialog = FileDialog(null as Frame?, "Choose an image (PNG or JPG)", FileDialog.LOAD)
-                dialog.setFilenameFilter { _, name -> name.lowercase().let { it.endsWith(".png") || it.endsWith(".jpg") || it.endsWith(".jpeg") } }
-                if (System.getProperty("os.name").lowercase().contains("win")) dialog.file = "*.png;*.jpg;*.jpeg"
+                val dialog = FileDialog(null as Frame?, title, FileDialog.LOAD)
+                dialog.setFilenameFilter { _, name -> exts.any { name.lowercase().endsWith(".$it") } }
+                if (System.getProperty("os.name").lowercase().contains("win")) dialog.file = exts.joinToString(";") { "*.$it" }
                 dialog.directory = System.getProperty("user.home")
                 dialog.isVisible = true
                 val name = dialog.file
