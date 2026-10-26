@@ -8,8 +8,8 @@ and Linux from one Kotlin codebase.
 ![Platforms](https://img.shields.io/badge/platforms-Android%20%7C%20Windows%20%7C%20Linux-informational)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-> **Alpha.** Invoicing and PDF output work today. Payments, reports, inventory screens,
-> backup, and the CLI are still ahead. See [Progress](#progress) and [What's left](#whats-left).
+> **Alpha.** Invoicing, inventory, payments, reports, GST exports, backup, CSV import and the
+> CLI work today; the remaining 1.0 gaps are listed in [What's left](#whats-left).
 
 ## Download
 
@@ -76,33 +76,36 @@ Method: every row in [docs/01-feature-inventory.md](docs/01-feature-inventory.md
 against what is usable in the app today. A feature counts 1 when it works end to end, 0.5 when
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
-**1.0 scope: 42% (57.5 of 136 P0 features)** `████████░░░░░░░░░░░░`
-**Full parity: 25% (about 69 of 277 P0+P1+P2 features)** `█████░░░░░░░░░░░░░░░`
+**1.0 scope: about 85% (about 116 of 136 P0 features)** `█████████████████░░░`
+**Full parity: about 43% (about 120 of 277 P0+P1+P2 features)** `█████████░░░░░░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
-| Billing and vouchers | Invoices, drafts, post/cancel done; other voucher types pending | 59% (13 / 22) |
-| Parties and items | Create, edit, search, GSTIN done | 69% (16 / 31 P0) |
-| Inventory | Stock ledger engine only, no screens | 25% (est.) |
-| Payments and accounting | Allocation and ledger engines only | 29% (4 / 14) |
-| Reports and GST | Tax engine done; no reports or GSTR-1 yet | 8% (1.5 / 19) |
-| Printing and output | Templates, PDF, share/print/save done | 77% (11.5 / 15) |
-| Data and backup | Open SQLite store; backup/import pending | 10% (1 / 10) |
+| Billing and vouchers | Invoices, quotations, proforma, challans, credit/debit notes, purchases, duplicate, recycle bin | 91% (20 / 22) |
+| Parties and items | Masters, ledgers, statements, CSV import with dry run; attachments pending | 87% (27 / 31 P0) |
+| Inventory | Godowns, batches (FEFO picker), serials, adjustments, transfers, valuation, labels | 95% (est.) |
+| Payments and accounting | Payments, allocation, expenses, accounts, ageing, reconciliation; split tender pending | 86% (12 / 14) |
+| Reports and GST | Registers, books, statements, stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 95% (18 / 19) |
+| Printing and output | Templates, A4/A5/thermal PDF, print, bulk export/print; silent print, image share pending | 77% (11.5 / 15) |
+| Data and backup | Backup/restore, CSV import/export, Tally, GSTR-1; schedule, portable mode pending | 70% (7 / 10) |
 | Desktop apps | Windows and Linux builds run the shared UI | Alpha |
-| CLI | Not started | 0% |
+| CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 |
 | Server | Not started (post-1.0) | 0% |
 
 ## What's left
 
 Phases are defined in [ROADMAP.md](ROADMAP.md); details in [docs/04-implementation-plan.md](docs/04-implementation-plan.md).
 
-- Next release: onboarding and firm setup, additional-charges entry.
-- Payments and money: payment in/out screens, allocation, expenses, ledgers, outstanding.
-- Reports and GST: sales/purchase/day book, GST and HSN summary, GSTR-1 CSV.
-- Inventory: stock screens, adjustments, godowns, low-stock alerts.
-- Other vouchers: quotations, proforma, credit/debit notes, purchase bills.
-- Data: full backup/restore, CSV import/export, Tally export.
-- CLI (direct mode) for 1.0; optional server after 1.0.
+Remaining 1.0 (P0) gaps:
+
+- Output: silent print to the default printer, export notification with show-in-folder,
+  share invoice as image, WhatsApp share of invoices, direct Bluetooth/USB thermal printing.
+- Data: scheduled backups, portable desktop mode, firm/data deletion, secure storage.
+- Firms: business switcher; party and invoice attachments.
+- Money: split payment (several tenders) on an invoice; editable reminder templates.
+- Items: offline HSN/SAC search dataset.
+- Settings: party balance on documents, licenses screen.
+- Optional server after 1.0.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
 the source code of myBillBook or any other commercial billing product. See

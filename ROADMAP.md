@@ -362,31 +362,31 @@ Maps each feature group to the competitor plan tier that gates it (as recorded i
 here), the OpenBill phase, and the surfaces: A = Android, W = Windows, L = Linux,
 S = self-hosted server, C = CLI. In OpenBill every row is free.
 
-| Feature group | Competitor plan that gates it | OpenBill phase | Surfaces |
-| --- | --- | --- | --- |
-| Core invoicing, parties, items, payments, reports, GSTR-1, backup | Free tier (limited) and paid tiers | Phases 1-6 (1.0) | A W L C |
-| Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C |
-| Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L |
-| Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L |
-| Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C |
-| Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L |
-| Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C |
-| Multi-currency and export billing | Paid tiers | Phase 7 | A W L |
-| GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C |
-| POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L |
-| Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C |
-| E-invoice and e-way bill, bulk generation | Paid tiers | Phase 7 (provider interface), Phase 9 (bulk, alerts) | A W L S C |
-| POS and retail hardware (cash drawer, scale, label sheets) | Top paid tier | Phase 9 | W L A |
-| Restaurant tables and kitchen slips | Add-on module | Phase 9 | A W L |
-| Staff attendance, payroll, geo check-in, staff mode | Separate paid module | Phase 9 | A W L S |
-| CRM, loyalty, service reminders, greetings, shared ledger | Paid tiers | Phase 9 | A W L S |
-| WhatsApp and SMS marketing, AI reminder calls | Paid tiers plus vendor credit packs | Phase 9 (bring-your-own provider) | S A W L |
-| Online store, catalogue, custom domain, UPI and COD checkout | Paid tiers | Phase 9 (server module) | S |
-| AI and OCR: bill capture, gallery scan, assisted reconciliation | Paid tiers plus scan credits | Phase 9 (opt-in, local first) | A W L |
-| TDS and TCS, approval workflows, suspicious-activity alerts | Top paid tier | Phase 9 | A W L S |
-| Balance sheet, P&L, other ledgers, cheque tracking, report builder | Paid tiers | Phase 9 | A W L C |
-| Web client | Vendor web app | Phase 8 (S6, read-only first), Phase 9 (staff mode) | S |
-| Ads, attribution SDKs, referral program, paywalls, trials, credit packs, paid themes, data brokerage, lending | Vendor monetization | Not planned | None |
+| Feature group | Competitor plan that gates it | OpenBill phase | Surfaces | Status |
+| --- | --- | --- | --- | --- |
+| Core invoicing, parties, items, payments, reports, GSTR-1, backup | Free tier (limited) and paid tiers | Phases 1-6 (1.0) | A W L C | Mostly done; gaps: split tender, attachments, backup schedule, HSN dataset, firm switcher |
+| Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C | Done (FEFO batch picker on sale lines) |
+| Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L | Alpha builds; packaging and signing pending |
+| Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Bulk export and bulk print done; silent print and OS notification pending |
+| Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Delivery challans done; rest planned |
+| Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Planned |
+| Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Planned |
+| Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Planned |
+| GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | GSTR-3B summary done; rest planned |
+| POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Planned |
+| Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | Planned |
+| E-invoice and e-way bill, bulk generation | Paid tiers | Phase 7 (provider interface), Phase 9 (bulk, alerts) | A W L S C | Planned |
+| POS and retail hardware (cash drawer, scale, label sheets) | Top paid tier | Phase 9 | W L A | Planned |
+| Restaurant tables and kitchen slips | Add-on module | Phase 9 | A W L | Planned |
+| Staff attendance, payroll, geo check-in, staff mode | Separate paid module | Phase 9 | A W L S | Planned |
+| CRM, loyalty, service reminders, greetings, shared ledger | Paid tiers | Phase 9 | A W L S | Planned |
+| WhatsApp and SMS marketing, AI reminder calls | Paid tiers plus vendor credit packs | Phase 9 (bring-your-own provider) | S A W L | Planned |
+| Online store, catalogue, custom domain, UPI and COD checkout | Paid tiers | Phase 9 (server module) | S | Planned |
+| AI and OCR: bill capture, gallery scan, assisted reconciliation | Paid tiers plus scan credits | Phase 9 (opt-in, local first) | A W L | Planned |
+| TDS and TCS, approval workflows, suspicious-activity alerts | Top paid tier | Phase 9 | A W L S | Planned |
+| Balance sheet, P&L, other ledgers, cheque tracking, report builder | Paid tiers | Phase 9 | A W L C | Planned |
+| Web client | Vendor web app | Phase 8 (S6, read-only first), Phase 9 (staff mode) | S | Planned |
+| Ads, attribution SDKs, referral program, paywalls, trials, credit packs, paid themes, data brokerage, lending | Vendor monetization | Not planned | None | - |
 
 ## Feature matrix
 
