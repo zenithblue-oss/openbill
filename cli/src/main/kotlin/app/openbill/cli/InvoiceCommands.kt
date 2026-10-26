@@ -1,6 +1,7 @@
 package app.openbill.cli
 
 import app.openbill.core.domain.model.Firm
+import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherLine
 import app.openbill.core.domain.model.VoucherStatus
@@ -17,6 +18,14 @@ import app.openbill.core.tax.InvoiceTaxInput
 import app.openbill.core.tax.TaxContext
 import app.openbill.core.tax.TaxLineInput
 import app.openbill.core.tax.TaxMode
+import app.openbill.ui.invoice.InvoiceDocument
+import app.openbill.ui.pdf.InvoiceLayoutEngine
+import app.openbill.ui.pdf.InvoiceStyle
+import app.openbill.ui.pdf.InvoiceTemplate
+import app.openbill.ui.pdf.LayoutInput
+import app.openbill.ui.pdf.LogoImage
+import app.openbill.ui.pdf.PdfBoxPainter
+import app.openbill.ui.pdf.PdfFonts
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.subcommands
@@ -27,6 +36,7 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.file
+import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -38,7 +48,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 fun invoiceCommands(cli: CliState) = Group("invoice", "Sales invoices").subcommands(
-    InvoiceList(cli), InvoiceShow(cli), InvoiceCreate(cli), InvoicePost(cli), InvoiceCancel(cli),
+    InvoiceList(cli), InvoiceShow(cli), InvoiceCreate(cli), InvoicePost(cli), InvoiceCancel(cli), InvoicePdfCmd(cli),
 )
 
 private val ALL_FROM = LocalDate(1900, 1, 1)
@@ -241,3 +251,49 @@ class InvoiceCancel(private val cli: CliState) : CliktCommand("cancel") {
 
 fun parseDate(text: String): LocalDate = runCatching { LocalDate.parse(text.trim()) }
     .getOrElse { fail(Exit.USAGE, "Invalid date '$text' (use YYYY-MM-DD)") }
+
+/** `invoice pdf REF [--template ID] [--out FILE]`: the same layout engine and PDFBox painter as the desktop app. */
+class InvoicePdfCmd(private val cli: CliState) : CliktCommand("pdf") {
+    override fun help(context: Context) = "Write an invoice as PDF (default file: <title>-<number>.pdf)"
+    private val ref by argument()
+    private val template by option("--template", help = "Layout id (default: ${InvoiceTemplate.DEFAULT.id})")
+        .choice(*InvoiceTemplate.entries.map { it.id }.toTypedArray())
+    private val out by option("--out", help = "PDF file").file(canBeDir = false)
+
+    override fun run() = cli.withData(write = false) {
+        val f = firm()
+        val v = findInvoice(f.id, ref)
+        val target = out ?: File("${invoiceDocument(f, v).fileStem}.pdf")
+        writeAtomically(target, invoicePdf(f, v, InvoiceTemplate.fromId(template)))
+        if (cli.json) cli.printJson(jsonOf("number" to v.number, "path" to target.path))
+        else if (cli.quiet) cli.out.println(target.path)
+        else cli.out.println("Wrote ${target.path}")
+    }
+}
+
+suspend fun Data.invoiceDocument(f: Firm, v: Voucher): InvoiceDocument {
+    val units = units(f.id)
+    val unitsByItem = v.lines.mapNotNull { it.itemId }.distinct()
+        .mapNotNull { id -> repos.catalog.findItem(id)?.let { item -> units.symbolOf(item.unitId)?.let { id to it } } }.toMap()
+    return InvoiceDocument.build(v, f, repos.firms.findSettings(f.id) ?: FirmSettings(f.id), v.partyId?.let { repos.parties.findParty(it) }, unitsByItem)
+}
+
+suspend fun Data.invoicePdf(f: Firm, v: Voucher, template: InvoiceTemplate): ByteArray {
+    // Logo and signature from the desktop app's data directory (DesktopPlatformServices.imageFile).
+    fun image(suffix: String): LogoImage? {
+        val file = File(File(dataDir, "logos"), f.id.replace(Regex("[^A-Za-z0-9_-]"), "_") + "$suffix.png")
+        if (!file.isFile) return null
+        val bytes = file.readBytes()
+        val img = javax.imageio.ImageIO.read(bytes.inputStream()) ?: return null
+        return LogoImage(bytes, img.width, img.height)
+    }
+    val layout = InvoiceLayoutEngine.layout(LayoutInput(invoiceDocument(f, v), InvoiceStyle(template = template), PdfFonts.metrics, image(""), image("-signature")))
+    return PdfBoxPainter.toPdf(layout)
+}
+
+fun writeAtomically(target: File, bytes: ByteArray) {
+    target.absoluteFile.parentFile.mkdirs()
+    val tmp = File(target.absoluteFile.parentFile, target.name + ".tmp")
+    tmp.writeBytes(bytes)
+    java.nio.file.Files.move(tmp.toPath(), target.absoluteFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+}

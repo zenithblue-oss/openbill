@@ -79,9 +79,16 @@ class ImportCsv(private val cli: CliState, private val entity: String) : CliktCo
     }
 }
 
+/** `export csv parties|items|invoices [--out FILE]` (docs/11-cli.md). */
+class ExportCsv(cli: CliState) : ExportCmd(cli, null) {
+    private val name by argument(help = "Entity").choice("parties", "items", "invoices")
+    override val entity: String get() = name
+}
+
 /** `export parties|items|invoices --format csv|json [--out FILE]` */
-class ExportCmd(private val cli: CliState, private val entity: String) : CliktCommand(entity) {
-    override fun help(context: Context) = "Export $entity"
+open class ExportCmd(private val cli: CliState, private val fixed: String?) : CliktCommand(fixed ?: "csv") {
+    override fun help(context: Context) = "Export ${fixed ?: "parties, items or invoices as CSV"}"
+    protected open val entity: String get() = fixed!!
     private val format by option("--format").choice("csv", "json").default("csv")
     private val out by option("--out", help = "File (default: stdout)").file(canBeDir = false)
 

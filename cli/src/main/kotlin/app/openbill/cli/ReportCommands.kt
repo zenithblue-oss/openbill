@@ -87,7 +87,7 @@ class ReportList(private val cli: CliState) : CliktCommand("list") {
 }
 
 /** `report NAME` and (via [ReportRun]) `report run NAME`. */
-open class ReportNamed(private val cli: CliState, private val fixed: ReportKind?) : CliktCommand(fixed?.key ?: "run") {
+open class ReportNamed(private val cli: CliState, private val fixed: ReportKind?, name: String = fixed?.key ?: "run") : CliktCommand(name) {
     override fun help(context: Context) = fixed?.title ?: "Run a report by name (see `report list`)"
     protected open val kindKey: String get() = fixed!!.key
     private val from by option("--from", help = "YYYY-MM-DD (default: start of this financial year)")

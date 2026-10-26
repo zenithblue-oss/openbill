@@ -240,4 +240,27 @@ class CliTest {
         assertEquals(0, run("gst", "gstr1", "--period", "2026-09", "--out", out.path).code)
         assertTrue(out.readText().startsWith("{"))
     }
+
+    @Test
+    fun pdfPaymentStockAndExportCsv() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        val number = ok("-q", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:10", "--post").out.trim()
+        val pdf = File(root, "inv.pdf")
+        ok("invoice", "pdf", number, "--template", "receipt-80", "--out", pdf.path)
+        assertTrue(pdf.readBytes().copyOfRange(0, 5).decodeToString() == "%PDF-")
+        assertEquals(2, run("invoice", "pdf", number, "--template", "nope").code)
+        // 10 x 12.50 + 18% GST = 147.50: allocate 100, the rest of 120 stays on account.
+        val pay = ok("--json", "payment", "in", "--party", "Acme Stores", "--amount", "120.00", "--date", "2026-10-02", "--allocate", "$number:100.00").out
+        assertTrue(pay.contains("\"allocated\": \"100.00\"") && pay.contains("\"advance\": \"20.00\""), pay)
+        assertEquals(3, run("payment", "in", "--party", "Acme Stores", "--amount", "100.00", "--date", "2026-10-02", "--allocate", "$number:60.00").code) // over-allocation
+        ok("payment", "in", "--party", "Acme Stores", "--amount", "47.50", "--date", "2026-10-03", "--auto")
+        assertEquals(2, ok("payment", "list").out.lines().count { it.contains("Acme Stores") })
+        ok("stock", "adjust", "BOLT", "--qty", "+50", "--reason", "Opening", "--date", "2026-10-01", "--unit-cost", "5.00")
+        assertEquals(2, run("stock", "adjust", "BOLT", "--qty", "-5").code) // needs --reason
+        ok("stock", "adjust", "BOLT", "--qty", "-5", "--reason", "Damaged", "--date", "2026-10-04")
+        assertTrue(ok("stock", "ledger", "BOLT").out.lines().last { it.isNotBlank() }.trim().endsWith("35"))
+        assertTrue(ok("stock", "summary", "--format", "csv").out.contains("Steel Bolt"))
+        assertEquals(ok("export", "parties", "--format", "csv").out, ok("export", "csv", "parties").out)
+    }
 }

@@ -22,6 +22,7 @@ version = "0.1.3"
 dependencies {
     implementation(project(":core-data"))
     implementation(project(":core-backup"))
+    implementation(project(":core-printing"))
     implementation(libs.androidx.sqlite.bundled)
     implementation(libs.clikt)
     implementation(libs.kotlinx.serialization.json)
