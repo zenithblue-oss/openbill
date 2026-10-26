@@ -1,0 +1,102 @@
+package app.openbill.core.backup
+
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
+import java.io.File
+import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
+
+class OpenBillBackupTest {
+    private val root = Files.createTempDirectory("backup-test").toFile()
+
+    @AfterTest
+    fun cleanup() {
+        root.deleteRecursively()
+    }
+
+    private fun location(dir: File, firmName: String, version: Int = 5): DataLocation {
+        dir.mkdirs()
+        val db = File(dir, "openbill.db")
+        BundledSQLiteDriver().open(db.path).apply {
+            execSQL("PRAGMA journal_mode=WAL")
+            execSQL("CREATE TABLE firms (id TEXT PRIMARY KEY, name TEXT, createdAt INTEGER)")
+            execSQL("INSERT INTO firms VALUES ('f1', '$firmName', 1)")
+            execSQL("PRAGMA user_version=$version")
+            close()
+        }
+        File(dir, "logos").mkdirs()
+        File(dir, "logos/f1.png").writeText("logo-$firmName")
+        return DataLocation(db, mapOf("logos" to File(dir, "logos")))
+    }
+
+    private fun firmName(db: File): String =
+        BundledSQLiteDriver().open(db.path).let { c -> c.prepare("SELECT name FROM firms").use { it.step(); it.getText(0) }.also { c.close() } }
+
+    @Test
+    fun roundTrip() {
+        val a = location(File(root, "a"), "Alpha")
+        val zip = File(root, "out/a.openbill.zip")
+        val m = OpenBillBackup.create(a, zip, "1.0")
+        assertEquals(listOf(BackupFirm("f1", "Alpha")), m.firms)
+        assertEquals(5, m.schemaVersion)
+        assertEquals(1L, m.recordCounts["firms"])
+        assertEquals(m.files, OpenBillBackup.verify(zip, 5).files)
+
+        val b = location(File(root, "b"), "Beta")
+        val safety = OpenBillBackup.restore(zip, b, 5)
+        assertEquals("Alpha", firmName(b.databaseFile))
+        assertEquals("logo-Alpha", File(root, "b/logos/f1.png").readText())
+        assertEquals("Beta", firmName(File(safety, "openbill.db")))
+        assertEquals("logo-Beta", File(safety, "attachments/logos/f1.png").readText())
+        assertTrue(File(root, "b").listFiles()!!.none { it.name.startsWith(".restore-") })
+    }
+
+    @Test
+    fun corruptArchiveLeavesDataUntouched() {
+        val zip = File(root, "a.openbill.zip")
+        OpenBillBackup.create(location(File(root, "a"), "Alpha"), zip, "1.0")
+        // Flip the logo's content while keeping the manifest: checksum must fail.
+        val bad = File(root, "bad.openbill.zip")
+        ZipOutputStream(bad.outputStream()).use { out ->
+            ZipInputStream(zip.inputStream()).use { input ->
+                while (true) {
+                    val e = input.nextEntry ?: break
+                    val bytes = input.readBytes()
+                    out.putNextEntry(ZipEntry(e.name))
+                    out.write(if (e.name.endsWith(".png")) "tampered".toByteArray() else bytes)
+                    out.closeEntry()
+                }
+            }
+        }
+        val b = location(File(root, "b"), "Beta")
+        val before = File(root, "b").walkTopDown().filter { it.isFile }.associate { it.path to it.readBytes() }
+        val e = assertFailsWith<BackupException> { OpenBillBackup.restore(bad, b, 5) }
+        assertEquals(BackupFailure.INTEGRITY, e.kind)
+        val after = File(root, "b").walkTopDown().filter { it.isFile }.associate { it.path to it.readBytes() }
+        assertEquals(before.keys, after.keys)
+        before.forEach { (k, v) -> assertContentEquals(v, after[k]) }
+    }
+
+    @Test
+    fun newerSchemaRefused() {
+        val zip = File(root, "a.openbill.zip")
+        OpenBillBackup.create(location(File(root, "a"), "Alpha", version = 9), zip, "2.0")
+        assertEquals(BackupFailure.SCHEMA_TOO_NEW, assertFailsWith<BackupException> { OpenBillBackup.verify(zip, 5) }.kind)
+    }
+
+    @Test
+    fun preMigrationBackupOnlyForOlderSchema() {
+        val a = location(File(root, "a"), "Alpha", version = 4)
+        val out = OpenBillBackup.backupBeforeMigration(a, File(root, "backups"), 5, "1.0")
+        assertTrue(out != null && out.isFile)
+        assertEquals(null, OpenBillBackup.backupBeforeMigration(a, File(root, "backups"), 4, "1.0"))
+    }
+}
