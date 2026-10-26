@@ -76,8 +76,8 @@ Method: every row in [docs/01-feature-inventory.md](docs/01-feature-inventory.md
 against what is usable in the app today. A feature counts 1 when it works end to end, 0.5 when
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
-**1.0 scope: about 94% (about 128 of 136 P0 features)** `███████████████████░`
-**Full parity: about 47% (about 131 of 277 P0+P1+P2 features)** `█████████░░░░░░░░░░░`
+**1.0 scope: about 96% (about 130 of 136 P0 features)** `███████████████████░`
+**Full parity: about 48% (about 133 of 277 P0+P1+P2 features)** `█████████░░░░░░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
@@ -86,8 +86,8 @@ only the engine/data layer exists without UI, and 0 otherwise. These are the mai
 | Inventory | Godowns, batches (FEFO picker), serials, adjustments, transfers, valuation, labels | 95% (est.) |
 | Payments and accounting | Payments, allocation, split tender, expenses, accounts, ageing, reconciliation, reminder templates | 100% (14 / 14) |
 | Reports and GST | Registers, books, statements, stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 95% (18 / 19) |
-| Printing and output | Templates, party balance, A4/A5/thermal PDF, print, bulk export/print, share with summary, share as image; silent print pending | 90% (13.5 / 15) |
-| Data and backup | Backup/restore with attachments, daily automatic backups, portable desktop mode, business deletion, CSV, Tally, GSTR-1; secure storage pending | 95% (9.5 / 10) |
+| Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image | 100% (15 / 15) |
+| Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN, biometric on Android), daily automatic backups, portable desktop mode, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
 | Desktop apps | Windows and Linux builds run the shared UI | Alpha |
 | CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 |
 | Server | Not started (post-1.0) | 0% |
@@ -98,10 +98,9 @@ Phases are defined in [ROADMAP.md](ROADMAP.md); details in [docs/04-implementati
 
 Remaining 1.0 (P0) gaps:
 
-- Output: silent print to the default printer, export notification with show-in-folder,
-  direct Bluetooth/USB thermal printing.
-- Data: secure storage; physical erasure of a deleted business (it is hidden today, its rows
-  stay in the database file); backup schedule and retention settings (fixed at daily, keep 7).
+- Output: USB thermal printing on Android (Bluetooth works; desktop USB goes through the
+  print service or /dev/usb/lp*).
+- Data: backup schedule and retention settings (fixed at daily, keep 7).
 - Desktop: packaging and signing.
 - Optional server after 1.0.
 
