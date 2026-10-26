@@ -66,6 +66,7 @@ import app.openbill.ui.components.StatusChip
 import app.openbill.ui.components.pageGutter
 import app.openbill.ui.format.AmountInWords
 import app.openbill.ui.format.Fmt
+import app.openbill.core.model.Money
 import app.openbill.ui.pdf.InvoicePdf
 import app.openbill.ui.theme.Spacing
 import kotlinx.coroutines.flow.first
@@ -85,7 +86,13 @@ suspend fun buildInvoiceDocument(container: AppContainer, session: Session, vouc
     val repos = container.repositories
     val party = voucher.partyId?.let { repos.parties.findParty(it) }
     val firm = repos.firms.findFirm(session.firm.id) ?: session.firm
-    return InvoiceDocument.build(voucher, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
+    val doc = InvoiceDocument.build(voucher, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
+    if (party == null || voucher.status != VoucherStatus.POSTED || !container.invoiceStyles.style(firm.id).value.options.showPartyBalance) return doc
+    val current = repos.ledger.partyBalance(firm.id, party.id, voucher.date).net
+    val effect = repos.ledger.observePartyMovements(firm.id).first()
+        .filter { it.voucherId == voucher.id }.fold(Money.ZERO) { a, m -> a + m.net }
+    fun drCr(m: Money) = Fmt.inr(if (m < Money.ZERO) -m else m) + if (m < Money.ZERO) " Cr" else " Dr"
+    return doc.copy(partyBalance = "Previous balance ${drCr(current - effect)} · Current balance ${drCr(current)}")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

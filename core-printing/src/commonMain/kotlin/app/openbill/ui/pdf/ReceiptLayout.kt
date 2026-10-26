@@ -100,6 +100,10 @@ class ReceiptLayout(
             y += 2f * k
             y += pen.paragraph(m.wrap(doc.amountInWords, ts(7.2f, color = Ink.BLACK), cw, 4), left, y, ts(7.2f, color = Ink.BLACK))
         }
+        doc.partyBalance?.takeIf { opt.showPartyBalance }?.let {
+            y += 2f * k
+            y += pen.paragraph(m.wrap(it, ts(7.2f, color = Ink.BLACK), cw, 4), left, y, ts(7.2f, color = Ink.BLACK))
+        }
         if (withTax && opt.showTaxSummary && doc.rateSummary.isNotEmpty()) {
             dashed()
             val look = TableLook(

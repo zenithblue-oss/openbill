@@ -453,8 +453,13 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         }
     }
 
-    fun wordsBlock(width: Float, titleStyle: TextStyle, body: TextStyle): Block =
-        if (!opt.showAmountInWords) Block.EMPTY else noteBlock("Amount in words", doc.amountInWords, width, titleStyle, body, 3)
+    fun wordsBlock(width: Float, titleStyle: TextStyle, body: TextStyle): Block = Block.stack(
+        listOfNotNull(
+            if (opt.showAmountInWords) noteBlock("Amount in words", doc.amountInWords, width, titleStyle, body, 3) else null,
+            doc.partyBalance?.takeIf { opt.showPartyBalance }?.let { noteBlock("Party balance", it, width, titleStyle, body, 3) },
+        ),
+        gap = 4f * k,
+    )
 
     fun notesAndTerms(width: Float, titleStyle: TextStyle, body: TextStyle): Block = Block.stack(
         listOfNotNull(

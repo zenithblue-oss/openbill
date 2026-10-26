@@ -54,6 +54,8 @@ data class InvoiceDocument(
     val totalQuantity: String = "",
     /** Column sums of the line table (taxable, tax heads, amount), for ledger layouts. */
     val lineTotals: Line? = null,
+    /** "Previous balance ... · Current balance ...", filled by the caller when the print option is on. */
+    val partyBalance: String? = null,
 ) {
     data class PartyBlock(
         val name: String,

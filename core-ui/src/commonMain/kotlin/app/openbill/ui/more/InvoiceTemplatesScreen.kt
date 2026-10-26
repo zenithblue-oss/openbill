@@ -176,6 +176,7 @@ fun InvoiceTemplatesScreen(container: AppContainer, session: Session, onBack: ()
                 OptionSwitch("Notes", null, o.showNotes) { v -> options { it.copy(showNotes = v) } }
                 OptionSwitch("Terms and conditions", null, o.showTerms) { v -> options { it.copy(showTerms = v) } }
                 OptionSwitch("Signature image", "Set it in Business details", o.showSignature) { v -> options { it.copy(showSignature = v) } }
+                OptionSwitch("Party balance", "Previous and current balance on posted documents", o.showPartyBalance) { v -> options { it.copy(showPartyBalance = v) } }
                 Spacer(Modifier.height(Spacing.sm))
                 PickerField("Copy label", o.copies.label, onClick = { copyPicker = true })
                 Spacer(Modifier.height(Spacing.sm))

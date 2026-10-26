@@ -84,6 +84,8 @@ data class PrintOptions(
     val showNotes: Boolean = true,
     val showTerms: Boolean = true,
     val showSignature: Boolean = true,
+    /** The party's balance before and after this document (posted documents with a party). */
+    val showPartyBalance: Boolean = false,
     val copies: CopyMode = CopyMode.ORIGINAL,
     /** UPI VPA such as name@bank; printed with a locally generated payment QR. */
     val upiId: String = "",
@@ -118,6 +120,7 @@ data class InvoiceStyle(
                     showNotes = b("notes", d.showNotes),
                     showTerms = b("terms", d.showTerms),
                     showSignature = b("signature", d.showSignature),
+                    showPartyBalance = b("partyBalance", d.showPartyBalance),
                     copies = s("copies")?.let { v -> CopyMode.entries.firstOrNull { it.name == v } } ?: d.copies,
                     upiId = s("upiId") ?: "",
                     terms = s("termsText") ?: "",
@@ -141,6 +144,7 @@ data class InvoiceStyle(
             put("notes", o.showNotes.toString())
             put("terms", o.showTerms.toString())
             put("signature", o.showSignature.toString())
+            put("partyBalance", o.showPartyBalance.toString())
             put("copies", o.copies.name)
             put("upiId", o.upiId)
             put("termsText", o.terms)
