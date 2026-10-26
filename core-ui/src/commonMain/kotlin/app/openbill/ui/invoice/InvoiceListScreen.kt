@@ -19,7 +19,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import app.openbill.ui.components.LocalAppMessages
+import app.openbill.ui.pdf.InvoicePdf
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -225,6 +233,9 @@ fun InvoiceListScreen(
                             val count = if (f.status == null) sales.size else sales.count { it.status == f.status }
                             SelectableChip("${f.label} ($count)", filter == f, { filterName = f.name })
                         }
+                        if (container.platform.supportsBulkPdf && shown.isNotEmpty()) {
+                            BulkPdfButtons(container, session, shown)
+                        }
                     }
                 }
                 if (shown.isEmpty()) {
@@ -306,5 +317,42 @@ private fun SummaryCard(firmName: String, summary: SalesSummary) {
                 modifier = Modifier.padding(top = Spacing.xs),
             )
         }
+    }
+}
+
+/**
+ * Desktop bulk output of the listed invoices (current search and filter): PDFs into a folder,
+ * or every invoice to one printer, with progress and cancellation.
+ */
+@Composable
+private fun BulkPdfButtons(container: AppContainer, session: Session, shown: List<Voucher>) {
+    val scope = rememberCoroutineScope()
+    val messages = LocalAppMessages.current
+    var job by remember { mutableStateOf<Job?>(null) }
+    var progress by remember { mutableStateOf(0 to 0) }
+    fun run(print: Boolean) {
+        val list = shown.toList()
+        progress = 0 to list.size
+        job = scope.launch {
+            val pdfs = list.map { v ->
+                val stem = pdfTitle(v.type, session.firm.gstin).replace(" ", "") + "-" + (v.number ?: v.id).replace(Regex("[^A-Za-z0-9_-]"), "_")
+                stem to suspend { InvoicePdf.layout(container, session.firm.id, buildInvoiceDocument(container, session, v)) }
+            }
+            val msg = runCatching { container.platform.bulkPdf(pdfs, print) { done -> progress = done to list.size } }
+                .getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) "Stopped after ${progress.first} of ${list.size}" else e.message }
+            job = null
+            msg?.let { messages?.show(it) }
+        }
+    }
+    OutlinedButton(onClick = { run(print = false) }, enabled = job == null) { Text("Export ${shown.size} PDFs") }
+    OutlinedButton(onClick = { run(print = true) }, enabled = job == null) { Text("Print ${shown.size}") }
+    if (job != null && progress.second > 0) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Working on ${progress.first} of ${progress.second}") },
+            text = { LinearProgressIndicator(progress = { progress.first / progress.second.toFloat() }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { job?.cancel() }) { Text("Cancel") } },
+        )
     }
 }

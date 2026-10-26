@@ -73,6 +73,15 @@ interface PlatformServices {
      */
     suspend fun saveTextFile(fileName: String, text: String): String? = shareText(fileName, text)
 
+    /**
+     * Bulk output of many invoices (desktop W and L). [pdfs] are rendered lazily in order; each
+     * PDF is saved into one chosen folder, or every PDF goes to one printer chosen once. Failures
+     * are per invoice; cancelling the calling coroutine stops the loop. Returns a summary for the
+     * user, or null when the folder or printer dialog is cancelled.
+     */
+    suspend fun bulkPdf(pdfs: List<Pair<String, suspend () -> InvoiceLayout>>, print: Boolean, onProgress: (Int) -> Unit): String? = null
+    val supportsBulkPdf: Boolean get() = false
+
     /** Per-device UI preferences (theme). Platforms override this with persistent storage. */
     val settingsStore: SettingsStore get() = defaultSettingsStore()
 }

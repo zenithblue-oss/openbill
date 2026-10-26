@@ -23,6 +23,8 @@ import java.io.File
 import java.util.concurrent.CompletableFuture
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.pdfbox.printing.PDFPageable
 
@@ -89,6 +91,55 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
             }.isSuccess
             if (opened) null else "No PDF viewer found. The file is at ${file.absolutePath}"
         }
+    }
+
+    override val supportsBulkPdf: Boolean get() = true
+
+    override suspend fun bulkPdf(pdfs: List<Pair<String, suspend () -> InvoiceLayout>>, print: Boolean, onProgress: (Int) -> Unit): String? {
+        // One dialog up front (folder or printer); then a sequential loop with per-invoice failures.
+        val dir = if (print) null else withContext(Dispatchers.IO) { chooseFolder() } ?: return null
+        val printer = if (print) withContext(Dispatchers.IO) { PrinterJob.getPrinterJob().takeIf { it.printDialog() }?.printService } ?: return null else null
+        val failed = mutableListOf<String>()
+        pdfs.forEachIndexed { i, (stem, render) ->
+            currentCoroutineContext().ensureActive()
+            runCatching {
+                val layout = render()
+                withContext(Dispatchers.IO) {
+                    if (dir != null) {
+                        val tmp = File(dir, "$stem.pdf.tmp")
+                        tmp.writeBytes(PdfBoxPainter.toPdf(layout))
+                        java.nio.file.Files.move(tmp.toPath(), File(dir, "$stem.pdf").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    } else {
+                        PdfBoxPainter.document(layout, subsetFonts = false).use { doc ->
+                            val job = PrinterJob.getPrinterJob()
+                            job.printService = printer
+                            job.jobName = stem
+                            job.setPageable(PDFPageable(doc))
+                            job.print()
+                        }
+                    }
+                }
+            }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it else failed += stem }
+            onProgress(i + 1)
+        }
+        if (dir != null) File(dir, "${pdfs.firstOrNull()?.first}.pdf").takeIf { it.isFile }?.let(::revealInFolder)
+        val done = pdfs.size - failed.size
+        val head = if (print) "Sent $done to the printer" else "Saved $done PDFs to ${dir!!.name}"
+        return if (failed.isEmpty()) head else "$head; failed: ${failed.joinToString()}"
+    }
+
+    private fun chooseFolder(): File? {
+        val result = CompletableFuture<File?>()
+        EventQueue.invokeLater {
+            runCatching {
+                val chooser = javax.swing.JFileChooser(File(System.getProperty("user.home")))
+                chooser.dialogTitle = "Export invoice PDFs to folder"
+                chooser.fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+                val owner = Frame.getFrames().firstOrNull { it.isVisible }
+                result.complete(if (chooser.showSaveDialog(owner) == javax.swing.JFileChooser.APPROVE_OPTION) chooser.selectedFile else null)
+            }.onFailure { result.completeExceptionally(it) }
+        }
+        return result.get()
     }
 
     override suspend fun saveTextFile(fileName: String, text: String): String? {
