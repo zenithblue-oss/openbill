@@ -142,6 +142,10 @@ fun InvoiceEditorScreen(
         // Party, date and item errors are all near the top of the form.
         if (state.rejectedSaves > 0) scroll.animateScrollTo(0)
     }
+    LaunchedEffect(state.failure) {
+        // Save/post failures render below the notes, off-screen on most windows.
+        if (state.failure != null) scroll.animateScrollTo(scroll.maxValue)
+    }
     val finished: (String, Boolean) -> Unit = { id, posted ->
         messages?.show(if (posted) "${doc.title} ${if (state.type.isIssueOnly()) "issued" else "posted"}" else "Draft saved")
         onFinished(id, posted)
