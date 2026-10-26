@@ -114,12 +114,12 @@ class AndroidPlatformServices(
     private fun uriFor(file: File): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 
     override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? =
-        pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action)
+        pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action, document.shareSummary())
 
     override suspend fun pdfAction(fileName: String, layout: InvoiceLayout, action: PdfAction): String? =
         pdfAction(fileName, fileName, layout, action)
 
-    private suspend fun pdfAction(stem: String, title: String, layout: InvoiceLayout, action: PdfAction): String? {
+    private suspend fun pdfAction(stem: String, title: String, layout: InvoiceLayout, action: PdfAction, text: String? = null): String? {
         when (action) {
             PdfAction.SHARE -> {
                 val uri = uriFor(writeCachedPdf(stem, layout))
@@ -127,6 +127,7 @@ class AndroidPlatformServices(
                     type = "application/pdf"
                     putExtra(Intent.EXTRA_STREAM, uri)
                     putExtra(Intent.EXTRA_SUBJECT, title)
+                    text?.let { putExtra(Intent.EXTRA_TEXT, it) }
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 val chooser = Intent.createChooser(send, "Share $title").apply {

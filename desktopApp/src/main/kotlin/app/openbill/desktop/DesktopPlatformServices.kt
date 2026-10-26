@@ -36,8 +36,12 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
 
     override val pdfFontMetrics: FontMetrics get() = PdfFonts.metrics
 
-    override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? =
-        pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action)
+    override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? {
+        val msg = pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action) ?: return null
+        if (action != PdfAction.SHARE) return msg
+        shareText("Summary", document.shareSummary())
+        return "$msg; summary copied to the clipboard"
+    }
 
     override suspend fun pdfAction(fileName: String, layout: InvoiceLayout, action: PdfAction): String? =
         pdfAction(fileName, fileName, layout, action)

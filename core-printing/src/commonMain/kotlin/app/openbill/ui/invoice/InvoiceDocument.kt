@@ -57,6 +57,15 @@ data class InvoiceDocument(
     /** "Previous balance ... · Current balance ...", filled by the caller when the print option is on. */
     val partyBalance: String? = null,
 ) {
+    /** Plain-text summary sent along with a shared PDF; WhatsApp and SMS pick it up from the share sheet. */
+    fun shareSummary(): String = buildString {
+        append("$title $number dated $date")
+        buyer?.let { append("\nTo: ${it.name}") }
+        append("\nAmount: $grandTotal")
+        dueDate?.let { append("\nDue by: $it") }
+        append("\nFrom: ${seller.name}")
+    }
+
     data class PartyBlock(
         val name: String,
         val addressLines: List<String>,
