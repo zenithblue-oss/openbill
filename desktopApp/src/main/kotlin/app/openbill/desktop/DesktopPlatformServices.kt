@@ -89,6 +89,12 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         }
     }
 
+    /** Desktop has no share sheet: the text goes to the clipboard for pasting into WhatsApp Web or mail. */
+    override suspend fun shareText(subject: String, text: String): String? {
+        java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(text), null)
+        return "$subject copied to the clipboard"
+    }
+
     override suspend fun renderPagePreview(layout: InvoiceLayout, pageIndex: Int, widthPx: Int): ImageBitmap? =
         withContext(Dispatchers.Default) { PdfBoxPainter.preview(layout, pageIndex, widthPx).toComposeImageBitmap() }
 

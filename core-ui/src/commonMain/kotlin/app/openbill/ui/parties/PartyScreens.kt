@@ -395,6 +395,7 @@ fun PartyEditScreen(
     partyId: String?,
     onDone: () -> Unit,
     backHandler: BackHandlerSlot = { _, _ -> },
+    onLedger: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val model = remember(partyId) { PartyEditorModel(container, session.firm.id, partyId, scope) }
@@ -419,6 +420,9 @@ fun PartyEditScreen(
     Scaffold(
         topBar = {
             AppTopBar(if (partyId == null) "New party" else "Edit party", onBack = requestClose) {
+                if (partyId != null && onLedger != null) {
+                    androidx.compose.material3.TextButton(onClick = { onLedger(partyId) }) { Text("Ledger") }
+                }
                 if (partyId != null) {
                     IconButton(onClick = { confirmRemove = true }, enabled = !form.saving) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove party")

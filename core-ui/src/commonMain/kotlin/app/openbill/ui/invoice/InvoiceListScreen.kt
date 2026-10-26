@@ -130,8 +130,17 @@ fun InvoiceListScreen(
     purchases: Boolean = false,
     onBack: (() -> Unit)? = null,
     onStock: ((lowOnly: Boolean) -> Unit)? = null,
+    /** Quotations, proformas or challans instead of invoices. */
+    docType: VoucherType? = null,
+    onMoney: ((app.openbill.ui.money.MoneyCard) -> Unit)? = null,
 ) {
-    val types = if (purchases) setOf(VoucherType.PURCHASE, VoucherType.DEBIT_NOTE) else setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE)
+    val types = when {
+        docType != null -> setOf(docType)
+        purchases -> setOf(VoucherType.PURCHASE, VoucherType.DEBIT_NOTE)
+        else -> setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE)
+    }
+    val title = docType?.let { app.openbill.ui.money.DOC_LIST_TITLES[it] } ?: if (purchases) "Purchases" else "Invoices"
+    val secondary = purchases || docType != null
     val firmId = session.firm.id
     val vouchers by remember(firmId) { container.repositories.vouchers.observeVouchers(firmId, ALL_FROM, ALL_TO) }
         .collectAsState(initial = null)
@@ -153,17 +162,17 @@ fun InvoiceListScreen(
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            if (onBack != null) AppTopBar(if (purchases) "Purchases" else "Invoices", onBack = onBack)
-            else CollapsingTopBar(if (purchases) "Purchases" else "Invoices", scrollBehavior)
+            if (onBack != null) AppTopBar(title, onBack = onBack)
+            else CollapsingTopBar(title, scrollBehavior)
         },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
             // With a navigation rail, its header FAB is the screen's one create action.
-            if (!LocalWidthClass.current.usesRail || purchases) ExtendedFloatingActionButton(
+            if (!LocalWidthClass.current.usesRail || secondary) ExtendedFloatingActionButton(
                 onClick = onNew,
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text(if (purchases) "New purchase" else "New invoice") },
+                text = { Text(if (docType != null) "New ${docLabels(docType).noun}" else if (purchases) "New purchase" else "New invoice") },
             )
         },
     ) { padding ->
@@ -174,11 +183,12 @@ fun InvoiceListScreen(
                 return@CenteredContent
             }
             val sales = all.filter { it.type in types }
-            if (sales.isEmpty() && purchases) {
+            if (sales.isEmpty() && secondary) {
                 EmptyState(
                     Icons.Outlined.Create,
-                    "No purchases yet",
-                    "Record a supplier's bill to add its items to stock and claim input GST.",
+                    "No ${title.lowercase()} yet",
+                    if (docType != null) "Issue one to the party; convert it to an invoice when they confirm."
+                    else "Record a supplier's bill to add its items to stock and claim input GST.",
                     Modifier.align(Alignment.Center),
                 )
                 return@CenteredContent
@@ -202,7 +212,8 @@ fun InvoiceListScreen(
             val summary = remember(sales) { SalesSummary.of(sales, container.today()) }
             // Header rows scroll with the list so the list stays usable in landscape and at large font sizes.
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
-                if (!purchases) item(key = "summary") { SummaryCard(session.firm.name, summary) }
+                if (!secondary) item(key = "summary") { SummaryCard(session.firm.name, summary) }
+                if (onMoney != null) item(key = "money") { app.openbill.ui.money.MoneyDashboardCard(container, session, onMoney) }
                 if (onStock != null) item(key = "stock") { app.openbill.ui.inventory.StockDashboardCard(container, session, onStock) }
                 item(key = "search") { AppSearchBar(query, { query = it }, "Search number or party") }
                 item(key = "filters") {

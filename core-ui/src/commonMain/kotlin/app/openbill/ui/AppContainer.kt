@@ -61,6 +61,12 @@ interface PlatformServices {
 
     val appVersion: String
 
+    /**
+     * Shares plain text (payment reminders, statements) through the platform share sheet, where
+     * WhatsApp and SMS pick it up; no network. Returns a message for the user, if any.
+     */
+    suspend fun shareText(subject: String, text: String): String? = "Sharing is not available here"
+
     /** Per-device UI preferences (theme). Platforms override this with persistent storage. */
     val settingsStore: SettingsStore get() = defaultSettingsStore()
 }

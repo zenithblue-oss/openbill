@@ -84,6 +84,24 @@ object AppIcons {
         },
     ).build()
 
+    private val noteOutline: PathBuilder.() -> Unit = {
+        moveTo(3f, 6f); lineTo(21f, 6f); lineTo(21f, 18f); lineTo(3f, 18f); close()
+    }
+    private val noteCoin: PathBuilder.() -> Unit = {
+        moveTo(12f, 9.5f); arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, 5f)
+        arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, -5f)
+    }
+
+    /** Banknote with a coin: the Money destination. */
+    val Money = icon("money") {
+        noteOutline()
+        noteCoin()
+    }
+    val MoneySelected = filled("money-selected", noteOutline) {
+        noteOutline()
+        noteCoin()
+    }
+
     val Invoice = icon("invoice") {
         moveTo(6f, 3f); lineTo(18f, 3f); lineTo(18f, 21f); lineTo(15f, 19f); lineTo(12f, 21f)
         lineTo(9f, 19f); lineTo(6f, 21f); close()

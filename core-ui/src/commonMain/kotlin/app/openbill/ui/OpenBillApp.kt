@@ -105,6 +105,14 @@ import app.openbill.ui.items.ItemEditScreen
 import app.openbill.ui.items.ItemListScreen
 import app.openbill.ui.more.InvoiceTemplatesScreen
 import app.openbill.ui.more.MoreScreen
+import app.openbill.ui.money.AccountScreen
+import app.openbill.ui.money.MoneyCard
+import app.openbill.ui.money.MoneyDetailScreen
+import app.openbill.ui.money.MoneyEditorScreen
+import app.openbill.ui.money.MoneyScreen
+import app.openbill.ui.money.OutstandingScreen
+import app.openbill.ui.money.PartyLedgerScreen
+import app.openbill.core.domain.model.usesPaymentAccount
 import app.openbill.ui.nav.BackDispatcher
 import app.openbill.ui.nav.LocalKeyRootFocus
 import app.openbill.ui.nav.LocalSearchFocus
@@ -383,6 +391,7 @@ private fun Tab.createAction(nav: Navigator): CreateAction? = when (this) {
     Tab.INVOICES -> CreateAction("New invoice", "New invoice (Ctrl+N)") { nav.push(Route.InvoiceEditor(null)) }
     Tab.PARTIES -> CreateAction("New party", "New party") { nav.push(Route.PartyEdit(null)) }
     Tab.ITEMS -> CreateAction("New item", "New item") { nav.push(Route.ItemEdit(null)) }
+    Tab.MONEY -> CreateAction("Payment in", "Record payment received") { nav.push(Route.MoneyEditor(VoucherType.PAYMENT_IN)) }
     Tab.MORE -> null
 }
 
@@ -391,6 +400,7 @@ private val Tab.selectedIcon: ImageVector
         Tab.INVOICES -> AppIcons.InvoiceSelected
         Tab.PARTIES -> AppIcons.PartiesSelected
         Tab.ITEMS -> AppIcons.ItemsSelected
+        Tab.MONEY -> AppIcons.MoneySelected
         Tab.MORE -> AppIcons.MoreSelected
     }
 
@@ -399,6 +409,7 @@ private val Tab.icon: ImageVector
         Tab.INVOICES -> AppIcons.Invoice
         Tab.PARTIES -> AppIcons.Parties
         Tab.ITEMS -> AppIcons.Items
+        Tab.MONEY -> AppIcons.Money
         Tab.MORE -> AppIcons.More
     }
 
@@ -448,6 +459,15 @@ private fun RouteContent(
                 },
                 onAddParty = { nav.push(Route.PartyEdit(null)) },
                 onStock = { low -> nav.push(Route.StockSummary(low)) },
+                onMoney = { c -> if (c == MoneyCard.CASH_BANK) nav.selectTab(Tab.MONEY) else nav.push(moneyCardRoute(c)) },
+            )
+            Tab.MONEY -> MoneyScreen(
+                container, s,
+                onNew = { t -> nav.push(Route.MoneyEditor(t)) },
+                onOpenVoucher = { v -> nav.push(Route.MoneyDetail(v.id)) },
+                onAccount = { id -> nav.push(Route.AccountLedger(id)) },
+                onOutstanding = { r -> nav.push(Route.Outstanding(r)) },
+                onDocuments = { t -> nav.push(Route.Documents(t)) },
             )
             Tab.PARTIES -> PartyListScreen(container, s) { id -> nav.push(Route.PartyEdit(id)) }
             Tab.ITEMS -> ItemListScreen(
@@ -465,7 +485,10 @@ private fun RouteContent(
                 onGodowns = { nav.push(Route.Godowns) },
             )
         }
-        is Route.PartyEdit -> PartyEditScreen(container, s, route.partyId, onDone = nav::pop, backHandler = backHandler)
+        is Route.PartyEdit -> PartyEditScreen(
+            container, s, route.partyId, onDone = nav::pop, backHandler = backHandler,
+            onLedger = { id -> nav.replace(Route.PartyLedger(id)) },
+        )
         is Route.ItemEdit -> ItemEditScreen(
             container, s, route.itemId, onDone = nav::pop, backHandler = backHandler,
             onOpenStock = { id -> nav.replace(Route.ItemStock(id)) },
@@ -487,6 +510,33 @@ private fun RouteContent(
             onAddParty = { nav.push(Route.PartyEdit(null)) },
             purchases = true,
             onBack = nav::pop,
+        )
+        is Route.Documents -> InvoiceListScreen(
+            container, s,
+            onNew = { nav.push(Route.InvoiceEditor(null, route.type)) },
+            onOpen = { v ->
+                nav.push(if (v.status == VoucherStatus.DRAFT) Route.InvoiceEditor(v.id) else Route.InvoiceDetail(v.id))
+            },
+            onAddParty = { nav.push(Route.PartyEdit(null)) },
+            onBack = nav::pop,
+            docType = route.type,
+        )
+        is Route.MoneyEditor -> MoneyEditorScreen(
+            container, s, route.type, route.partyId, route.invoiceId,
+            onDone = { id -> if (id != null) nav.replace(Route.MoneyDetail(id)) else nav.pop() },
+            backHandler = backHandler,
+        )
+        is Route.MoneyDetail -> MoneyDetailScreen(container, s, route.voucherId, onBack = nav::pop)
+        is Route.AccountLedger -> AccountScreen(
+            container, s, route.accountId,
+            onBack = nav::pop,
+            onOpenVoucher = { id, type -> nav.push(if (type.usesPaymentAccount()) Route.MoneyDetail(id) else Route.InvoiceDetail(id)) },
+        )
+        is Route.Outstanding -> OutstandingScreen(container, s, route.receivable, onBack = nav::pop, onParty = { id -> nav.push(Route.PartyLedger(id)) })
+        is Route.PartyLedger -> PartyLedgerScreen(
+            container, s, route.partyId,
+            onBack = nav::pop,
+            onRecordPayment = { t -> nav.push(Route.MoneyEditor(t, route.partyId)) },
         )
         is Route.StockSummary -> StockSummaryScreen(
             container, s, route.lowOnly,
@@ -514,6 +564,11 @@ private fun RouteContent(
             onEditDraft = { id -> nav.replace(Route.InvoiceEditor(id)) },
             onViewPdf = { id -> nav.push(Route.InvoicePdf(id)) },
             onReturn = { id -> nav.push(Route.InvoiceEditor(null, VoucherType.DEBIT_NOTE, returnOf = id)) },
+            onConvert = { id -> nav.push(Route.InvoiceEditor(null, VoucherType.SALE, returnOf = id)) },
+            onRecordPayment = { v ->
+                val t = if (v.type == VoucherType.PURCHASE) VoucherType.PAYMENT_OUT else VoucherType.PAYMENT_IN
+                nav.push(Route.MoneyEditor(t, v.partyId, v.id))
+            },
         )
         is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler)
         Route.BusinessEdit -> BusinessEditScreen(container, s, onDone = nav::pop, backHandler = backHandler)
@@ -527,4 +582,10 @@ private fun RouteContent(
             backHandler = backHandler,
         )
     }
+}
+
+private fun moneyCardRoute(c: MoneyCard): Route = when (c) {
+    MoneyCard.RECEIVABLE -> Route.Outstanding(true)
+    MoneyCard.PAYABLE -> Route.Outstanding(false)
+    MoneyCard.CASH_BANK -> Route.Home(Tab.MONEY)
 }

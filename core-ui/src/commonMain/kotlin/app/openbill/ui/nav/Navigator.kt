@@ -10,6 +10,7 @@ enum class Tab(val label: String) {
     INVOICES("Invoices"),
     PARTIES("Parties"),
     ITEMS("Items"),
+    MONEY("Money"),
     MORE("More"),
 }
 
@@ -25,6 +26,14 @@ sealed interface Route {
         val returnOf: String? = null,
     ) : Route
     data object Purchases : Route
+    /** Payment in/out, expense or contra; [partyId]/[invoiceId] prefill a payment. */
+    data class MoneyEditor(val type: VoucherType, val partyId: String? = null, val invoiceId: String? = null) : Route
+    data class MoneyDetail(val voucherId: String) : Route
+    data class AccountLedger(val accountId: String) : Route
+    data class Outstanding(val receivable: Boolean) : Route
+    data class PartyLedger(val partyId: String) : Route
+    /** Quotations, proformas or delivery challans. */
+    data class Documents(val type: VoucherType) : Route
     data class StockSummary(val lowOnly: Boolean = false) : Route
     data class ItemStock(val itemId: String) : Route
     data class StockEntry(val itemId: String?, val transfer: Boolean) : Route
@@ -47,6 +56,12 @@ sealed interface Route {
             is InvoiceEditor -> "editor:${voucherId.orEmpty()}" +
                 if (type == VoucherType.SALE && returnOf == null) "" else "|${type.name}|${returnOf.orEmpty()}"
             Purchases -> "purchases:"
+            is MoneyEditor -> "money:${type.name}|${partyId.orEmpty()}|${invoiceId.orEmpty()}"
+            is MoneyDetail -> "moneydetail:$voucherId"
+            is AccountLedger -> "account:$accountId"
+            is Outstanding -> "outstanding:${if (receivable) "r" else "p"}"
+            is PartyLedger -> "ledger:$partyId"
+            is Documents -> "docs:${type.name}"
             is StockSummary -> "stock:${if (lowOnly) "low" else ""}"
             is ItemStock -> "itemstock:$itemId"
             is StockEntry -> "stockentry:${if (transfer) "t" else "a"}|${itemId.orEmpty()}"
@@ -75,6 +90,16 @@ sealed interface Route {
                     )
                 }
                 "purchases" -> Purchases
+                "money" -> arg.split('|').let { p ->
+                    VoucherType.entries.firstOrNull { it.name == p[0] }?.let {
+                        MoneyEditor(it, p.getOrNull(1)?.ifEmpty { null }, p.getOrNull(2)?.ifEmpty { null })
+                    }
+                }
+                "moneydetail" -> arg.takeIf { it.isNotEmpty() }?.let { MoneyDetail(it) }
+                "account" -> arg.takeIf { it.isNotEmpty() }?.let { AccountLedger(it) }
+                "outstanding" -> Outstanding(arg == "r")
+                "ledger" -> arg.takeIf { it.isNotEmpty() }?.let { PartyLedger(it) }
+                "docs" -> VoucherType.entries.firstOrNull { it.name == arg }?.let { Documents(it) }
                 "stock" -> StockSummary(arg == "low")
                 "itemstock" -> arg.takeIf { it.isNotEmpty() }?.let { ItemStock(it) }
                 "stockentry" -> StockEntry(arg.substringAfter('|').ifEmpty { null }, arg.startsWith("t"))

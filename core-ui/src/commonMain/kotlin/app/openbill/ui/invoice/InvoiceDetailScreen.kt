@@ -94,7 +94,12 @@ fun InvoiceDetailScreen(
     onEditDraft: (String) -> Unit,
     onViewPdf: (String) -> Unit = {},
     onReturn: (String) -> Unit = {},
+    /** Quotation/proforma/challan to a new invoice. */
+    onConvert: (String) -> Unit = {},
+    onRecordPayment: (Voucher) -> Unit = {},
 ) {
+    val outstanding by remember(voucherId) { container.repositories.payments.observeInvoiceOutstanding(voucherId) }
+        .collectAsState(initial = null)
     val voucher by remember(voucherId) { container.repositories.vouchers.observeVoucher(voucherId) }.collectAsState(initial = null)
     var party by remember { mutableStateOf<Party?>(null) }
     var units by remember { mutableStateOf(emptyMap<String, String>()) }
@@ -238,6 +243,18 @@ fun InvoiceDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Cancel ${docLabels(v.type).noun}") }
                     VoucherStatus.CANCELLED -> {}
+                }
+                if (v.status == VoucherStatus.POSTED && v.type.isIssueOnly()) {
+                    PrimaryButton("Convert to invoice", { onConvert(v.id) }, Modifier.fillMaxWidth())
+                }
+                val due = outstanding
+                if (v.status == VoucherStatus.POSTED && due != null && due > app.openbill.core.model.Money.ZERO &&
+                    (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE || v.type == app.openbill.core.domain.model.VoucherType.SALE)
+                ) {
+                    AmountRow("Balance due", due, emphasize = true)
+                    OutlinedButton(onClick = { onRecordPayment(v) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (v.type == app.openbill.core.domain.model.VoucherType.SALE) "Record payment received" else "Record payment made")
+                    }
                 }
                 if (v.status == VoucherStatus.POSTED && (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE || v.type == app.openbill.core.domain.model.VoucherType.SALE)) {
                     OutlinedButton(onClick = { onReturn(v.id) }, modifier = Modifier.fillMaxWidth()) {
