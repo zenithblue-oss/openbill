@@ -364,16 +364,16 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 
 | Feature group | Competitor plan that gates it | OpenBill phase | Surfaces | Status |
 | --- | --- | --- | --- | --- |
-| Core invoicing, parties, items, payments, reports, GSTR-1, backup | Free tier (limited) and paid tiers | Phases 1-6 (1.0) | A W L C | Mostly done; gaps: split tender, attachments, backup schedule, HSN dataset, firm switcher |
+| Core invoicing, parties, items, payments, reports, GSTR-1, backup | Free tier (limited) and paid tiers | Phases 1-6 (1.0) | A W L C | Done (split tender, voucher attachments, daily backups, HSN/SAC search, business switcher added); secure storage pending |
 | Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C | Done (FEFO batch picker on sale lines) |
 | Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L | Alpha builds; packaging and signing pending |
-| Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Bulk export and bulk print done; silent print and OS notification pending |
+| Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Bulk export and bulk print done; portable mode and Ctrl+K palette done; silent print and OS notification pending |
 | Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Delivery challans done; rest planned |
-| Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Planned |
+| Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Editable reminder message done; scheduling planned |
 | Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Planned |
 | Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Planned |
 | GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | GSTR-3B summary done; rest planned |
-| POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Planned |
+| POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Split tender on payments done; held bills planned |
 | Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | Planned |
 | E-invoice and e-way bill, bulk generation | Paid tiers | Phase 7 (provider interface), Phase 9 (bulk, alerts) | A W L S C | Planned |
 | POS and retail hardware (cash drawer, scale, label sheets) | Top paid tier | Phase 9 | W L A | Planned |

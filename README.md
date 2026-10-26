@@ -76,18 +76,18 @@ Method: every row in [docs/01-feature-inventory.md](docs/01-feature-inventory.md
 against what is usable in the app today. A feature counts 1 when it works end to end, 0.5 when
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
-**1.0 scope: about 85% (about 116 of 136 P0 features)** `█████████████████░░░`
-**Full parity: about 43% (about 120 of 277 P0+P1+P2 features)** `█████████░░░░░░░░░░░`
+**1.0 scope: about 94% (about 128 of 136 P0 features)** `███████████████████░`
+**Full parity: about 47% (about 131 of 277 P0+P1+P2 features)** `█████████░░░░░░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
-| Billing and vouchers | Invoices, quotations, proforma, challans, credit/debit notes, purchases, duplicate, recycle bin | 91% (20 / 22) |
-| Parties and items | Masters, ledgers, statements, CSV import with dry run; attachments pending | 87% (27 / 31 P0) |
+| Billing and vouchers | Invoices, quotations, proforma, challans, credit/debit notes, purchases, duplicate, recycle bin, restore cancelled, attachments | 100% (22 / 22) |
+| Parties and items | Masters, ledgers, statements, CSV import (one transaction), offline HSN/SAC search, business switcher | 94% (29 / 31 P0) |
 | Inventory | Godowns, batches (FEFO picker), serials, adjustments, transfers, valuation, labels | 95% (est.) |
-| Payments and accounting | Payments, allocation, expenses, accounts, ageing, reconciliation; split tender pending | 86% (12 / 14) |
+| Payments and accounting | Payments, allocation, split tender, expenses, accounts, ageing, reconciliation, reminder templates | 100% (14 / 14) |
 | Reports and GST | Registers, books, statements, stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 95% (18 / 19) |
-| Printing and output | Templates, A4/A5/thermal PDF, print, bulk export/print; silent print, image share pending | 77% (11.5 / 15) |
-| Data and backup | Backup/restore, CSV import/export, Tally, GSTR-1; schedule, portable mode pending | 70% (7 / 10) |
+| Printing and output | Templates, party balance, A4/A5/thermal PDF, print, bulk export/print, share with summary, share as image; silent print pending | 90% (13.5 / 15) |
+| Data and backup | Backup/restore with attachments, daily automatic backups, portable desktop mode, business deletion, CSV, Tally, GSTR-1; secure storage pending | 95% (9.5 / 10) |
 | Desktop apps | Windows and Linux builds run the shared UI | Alpha |
 | CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 |
 | Server | Not started (post-1.0) | 0% |
@@ -99,12 +99,10 @@ Phases are defined in [ROADMAP.md](ROADMAP.md); details in [docs/04-implementati
 Remaining 1.0 (P0) gaps:
 
 - Output: silent print to the default printer, export notification with show-in-folder,
-  share invoice as image, WhatsApp share of invoices, direct Bluetooth/USB thermal printing.
-- Data: scheduled backups, portable desktop mode, firm/data deletion, secure storage.
-- Firms: business switcher; party and invoice attachments.
-- Money: split payment (several tenders) on an invoice; editable reminder templates.
-- Items: offline HSN/SAC search dataset.
-- Settings: party balance on documents, licenses screen.
+  direct Bluetooth/USB thermal printing.
+- Data: secure storage; physical erasure of a deleted business (it is hidden today, its rows
+  stay in the database file); backup schedule and retention settings (fixed at daily, keep 7).
+- Desktop: packaging and signing.
 - Optional server after 1.0.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
