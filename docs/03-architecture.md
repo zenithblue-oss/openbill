@@ -233,6 +233,15 @@ Rules:
 - Sum of allocations never exceeds a payment or an invoice balance.
 - Stock movements for a cancelled document sum to zero while it remains cancelled.
 - Batch and serial quantities match line quantities.
+- Every stock change is a movement of a posted voucher: opening stock and adjustments (with a
+  reason) are `STOCK_ADJUSTMENT` vouchers, godown moves are `STOCK_TRANSFER` vouchers that
+  derive an outward and an inward leg.
+- A serial number is in stock at most once per item: inward rejects a serial already in
+  stock, outward needs it in stock (unless negative stock is allowed and it was never seen).
+- Batch rows are per item, godown and batch number; batch stock is checked per batch.
+- Valuation is moving weighted average per item across godowns: purchases come in at their
+  taxable value per unit (GST is input credit), adjustments at their stated cost, returns
+  and transfer legs at the running average; outward movements leave at the running average.
 - FTS row counts match canonical row counts for indexed types.
 - Foreign keys are enforced; SQLite `foreign_keys` is on for every connection.
 - `audit_events` is append-only. Triggers reject every `UPDATE` and `DELETE`, on fresh and

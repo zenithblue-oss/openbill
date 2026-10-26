@@ -1,5 +1,7 @@
 package app.openbill.ui.nav
 
+import app.openbill.core.domain.model.VoucherType
+
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
@@ -16,7 +18,18 @@ sealed interface Route {
     data class Home(val tab: Tab) : Route
     data class PartyEdit(val partyId: String?) : Route
     data class ItemEdit(val itemId: String?) : Route
-    data class InvoiceEditor(val voucherId: String?) : Route
+    /** [type] and [returnOf] apply to new documents (purchase bill, return of a posted one). */
+    data class InvoiceEditor(
+        val voucherId: String?,
+        val type: VoucherType = VoucherType.SALE,
+        val returnOf: String? = null,
+    ) : Route
+    data object Purchases : Route
+    data class StockSummary(val lowOnly: Boolean = false) : Route
+    data class ItemStock(val itemId: String) : Route
+    data class StockEntry(val itemId: String?, val transfer: Boolean) : Route
+    data object Godowns : Route
+    data class BarcodeLabels(val itemIds: List<String>) : Route
     data class InvoiceDetail(val voucherId: String) : Route
     data object BusinessEdit : Route
     data object InvoiceTemplates : Route
@@ -31,7 +44,14 @@ sealed interface Route {
             is Home -> "home:${tab.name}"
             is PartyEdit -> "party:${partyId.orEmpty()}"
             is ItemEdit -> "item:${itemId.orEmpty()}"
-            is InvoiceEditor -> "editor:${voucherId.orEmpty()}"
+            is InvoiceEditor -> "editor:${voucherId.orEmpty()}" +
+                if (type == VoucherType.SALE && returnOf == null) "" else "|${type.name}|${returnOf.orEmpty()}"
+            Purchases -> "purchases:"
+            is StockSummary -> "stock:${if (lowOnly) "low" else ""}"
+            is ItemStock -> "itemstock:$itemId"
+            is StockEntry -> "stockentry:${if (transfer) "t" else "a"}|${itemId.orEmpty()}"
+            Godowns -> "godowns:"
+            is BarcodeLabels -> "labels:${itemIds.joinToString(",")}"
             is InvoiceDetail -> "detail:$voucherId"
             BusinessEdit -> "business:"
             InvoiceTemplates -> "templates:"
@@ -47,7 +67,19 @@ sealed interface Route {
                 "home" -> Tab.entries.firstOrNull { it.name == arg }?.let { Home(it) }
                 "party" -> PartyEdit(arg.ifEmpty { null })
                 "item" -> ItemEdit(arg.ifEmpty { null })
-                "editor" -> InvoiceEditor(arg.ifEmpty { null })
+                "editor" -> arg.split('|').let { p ->
+                    InvoiceEditor(
+                        p[0].ifEmpty { null },
+                        p.getOrNull(1)?.let { t -> VoucherType.entries.firstOrNull { it.name == t } } ?: VoucherType.SALE,
+                        p.getOrNull(2)?.ifEmpty { null },
+                    )
+                }
+                "purchases" -> Purchases
+                "stock" -> StockSummary(arg == "low")
+                "itemstock" -> arg.takeIf { it.isNotEmpty() }?.let { ItemStock(it) }
+                "stockentry" -> StockEntry(arg.substringAfter('|').ifEmpty { null }, arg.startsWith("t"))
+                "godowns" -> Godowns
+                "labels" -> BarcodeLabels(arg.split(',').filter { it.isNotEmpty() })
                 "detail" -> arg.takeIf { it.isNotEmpty() }?.let { InvoiceDetail(it) }
                 "business" -> BusinessEdit
                 "templates" -> InvoiceTemplates

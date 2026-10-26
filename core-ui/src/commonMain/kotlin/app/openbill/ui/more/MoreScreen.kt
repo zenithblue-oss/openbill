@@ -71,6 +71,9 @@ fun MoreScreen(
     onEditBusiness: () -> Unit,
     onInvoiceTemplates: () -> Unit = {},
     onViewIntroduction: () -> Unit = {},
+    onPurchases: () -> Unit = {},
+    onStock: () -> Unit = {},
+    onGodowns: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -124,6 +127,27 @@ fun MoreScreen(
                     trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                     colors = listColors,
                     modifier = Modifier.clickable(role = Role.Button, onClick = onInvoiceTemplates),
+                )
+
+                SectionHeader("Purchases and stock")
+                listOf(
+                    Triple("Purchases", "Supplier bills and purchase returns", onPurchases),
+                    Triple("Stock", "Stock summary, valuation, adjustments and transfers", onStock),
+                    Triple("Godowns", "Stock locations", onGodowns),
+                ).forEach { (title, sub, action) ->
+                    ListItem(
+                        headlineContent = { Text(title) },
+                        supportingContent = { Text(sub) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                        colors = listColors,
+                        modifier = Modifier.clickable(role = Role.Button, onClick = action),
+                    )
+                }
+                app.openbill.ui.inventory.SwitchRow(
+                    "Allow negative stock",
+                    if (session.settings.negativeStockAllowed) "Sales can post even when stock is short" else "Posting is blocked when stock would go below zero",
+                    session.settings.negativeStockAllowed,
+                    { allow -> scope.launch { container.repositories.firms.saveSettings(session.settings.copy(negativeStockAllowed = allow)) } },
                 )
 
                 SectionHeader("Appearance")

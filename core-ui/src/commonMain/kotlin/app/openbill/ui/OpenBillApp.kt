@@ -86,6 +86,13 @@ import androidx.compose.ui.unit.dp
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.VoucherStatus
+import app.openbill.core.domain.model.VoucherType
+import app.openbill.ui.inventory.GodownsScreen
+import app.openbill.ui.inventory.Inventory
+import app.openbill.ui.inventory.ItemStockScreen
+import app.openbill.ui.inventory.StockEntryScreen
+import app.openbill.ui.inventory.StockSummaryScreen
+import app.openbill.ui.items.BarcodeLabelsScreen
 import app.openbill.ui.components.AppMessages
 import app.openbill.ui.components.LoadingState
 import app.openbill.ui.components.LocalAppMessages
@@ -171,7 +178,10 @@ private data class NavEntry(val route: Route, val depth: Int)
 
 @Composable
 private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHandlerSlot, keyBack: BackDispatcher?) {
-    LaunchedEffect(firm.id) { runCatching { FirmSetupModel.ensureDefaults(container, firm.id) } }
+    LaunchedEffect(firm.id) {
+        runCatching { FirmSetupModel.ensureDefaults(container, firm.id) }
+        runCatching { Inventory.ensureDefaultGodown(container, firm.id) }
+    }
     // Keyed by id only: editing the business re-emits the firm, which must not reset navigation.
     val parts by remember(firm.id) {
         val repos = container.repositories.firms
@@ -437,29 +447,73 @@ private fun RouteContent(
                     nav.push(if (v.status == VoucherStatus.DRAFT) Route.InvoiceEditor(v.id) else Route.InvoiceDetail(v.id))
                 },
                 onAddParty = { nav.push(Route.PartyEdit(null)) },
+                onStock = { low -> nav.push(Route.StockSummary(low)) },
             )
             Tab.PARTIES -> PartyListScreen(container, s) { id -> nav.push(Route.PartyEdit(id)) }
-            Tab.ITEMS -> ItemListScreen(container, s) { id -> nav.push(Route.ItemEdit(id)) }
+            Tab.ITEMS -> ItemListScreen(
+                container, s,
+                onOpen = { id -> nav.push(Route.ItemEdit(id)) },
+                onStock = { low -> nav.push(Route.StockSummary(low)) },
+            )
             Tab.MORE -> MoreScreen(
                 container, s,
                 onEditBusiness = { nav.push(Route.BusinessEdit) },
                 onInvoiceTemplates = { nav.push(Route.InvoiceTemplates) },
                 onViewIntroduction = { nav.push(Route.Introduction) },
+                onPurchases = { nav.push(Route.Purchases) },
+                onStock = { nav.push(Route.StockSummary()) },
+                onGodowns = { nav.push(Route.Godowns) },
             )
         }
         is Route.PartyEdit -> PartyEditScreen(container, s, route.partyId, onDone = nav::pop, backHandler = backHandler)
-        is Route.ItemEdit -> ItemEditScreen(container, s, route.itemId, onDone = nav::pop, backHandler = backHandler)
+        is Route.ItemEdit -> ItemEditScreen(
+            container, s, route.itemId, onDone = nav::pop, backHandler = backHandler,
+            onOpenStock = { id -> nav.replace(Route.ItemStock(id)) },
+        )
         is Route.InvoiceEditor -> InvoiceEditorScreen(
             container, s, route.voucherId,
             onClose = nav::pop,
             onFinished = { id, _ -> nav.replace(Route.InvoiceDetail(id)) },
             backHandler = backHandler,
+            newType = route.type,
+            returnOf = route.returnOf,
         )
+        Route.Purchases -> InvoiceListScreen(
+            container, s,
+            onNew = { nav.push(Route.InvoiceEditor(null, VoucherType.PURCHASE)) },
+            onOpen = { v ->
+                nav.push(if (v.status == VoucherStatus.DRAFT) Route.InvoiceEditor(v.id) else Route.InvoiceDetail(v.id))
+            },
+            onAddParty = { nav.push(Route.PartyEdit(null)) },
+            purchases = true,
+            onBack = nav::pop,
+        )
+        is Route.StockSummary -> StockSummaryScreen(
+            container, s, route.lowOnly,
+            onOpenItem = { id -> nav.push(Route.ItemStock(id)) },
+            onAdjust = { nav.push(Route.StockEntry(null, transfer = false)) },
+            onTransfer = { nav.push(Route.StockEntry(null, transfer = true)) },
+            onGodowns = { nav.push(Route.Godowns) },
+            onLabels = { nav.push(Route.BarcodeLabels(emptyList())) },
+            onBack = nav::pop,
+        )
+        is Route.ItemStock -> ItemStockScreen(
+            container, s, route.itemId,
+            onBack = nav::pop,
+            onAdjust = { nav.push(Route.StockEntry(route.itemId, transfer = false)) },
+            onTransfer = { nav.push(Route.StockEntry(route.itemId, transfer = true)) },
+            onEditItem = { nav.push(Route.ItemEdit(route.itemId)) },
+            onLabels = { nav.push(Route.BarcodeLabels(listOf(route.itemId))) },
+        )
+        is Route.StockEntry -> StockEntryScreen(container, s, route.itemId, route.transfer, onDone = nav::pop, backHandler = backHandler)
+        Route.Godowns -> GodownsScreen(container, s, onBack = nav::pop)
+        is Route.BarcodeLabels -> BarcodeLabelsScreen(container, s, route.itemIds, onBack = nav::pop, backHandler = backHandler)
         is Route.InvoiceDetail -> InvoiceDetailScreen(
             container, s, route.voucherId,
             onBack = nav::pop,
             onEditDraft = { id -> nav.replace(Route.InvoiceEditor(id)) },
             onViewPdf = { id -> nav.push(Route.InvoicePdf(id)) },
+            onReturn = { id -> nav.push(Route.InvoiceEditor(null, VoucherType.DEBIT_NOTE, returnOf = id)) },
         )
         is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler)
         Route.BusinessEdit -> BusinessEditScreen(container, s, onDone = nav::pop, backHandler = backHandler)

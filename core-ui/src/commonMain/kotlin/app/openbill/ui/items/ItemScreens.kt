@@ -50,6 +50,14 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import app.openbill.core.domain.model.Item
+import app.openbill.core.domain.usecase.StockLineInput
+import app.openbill.core.domain.usecase.StockVouchers
+import app.openbill.ui.barcode.BarcodeScanButton
+import app.openbill.ui.components.SectionHeader
+import app.openbill.ui.inventory.Inventory
+import app.openbill.ui.inventory.SwitchRow
+import app.openbill.ui.inventory.StockDashboardCard
+import androidx.compose.material3.OutlinedButton
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.model.Money
 import app.openbill.core.model.Rate
@@ -93,7 +101,8 @@ import kotlinx.datetime.LocalDate
 fun Item.matches(query: String): Boolean {
     val q = query.trim()
     if (q.isEmpty()) return true
-    return name.contains(q, true) || (hsnSac?.contains(q) ?: false) || (sku?.contains(q, true) ?: false)
+    return name.contains(q, true) || (hsnSac?.contains(q) ?: false) || (sku?.contains(q, true) ?: false) ||
+        (barcode?.contains(q, true) ?: false)
 }
 
 /** Selectable GST slabs on a date, from the versioned schedule in core-tax. */
@@ -135,6 +144,7 @@ fun ItemListScreen(
     container: AppContainer,
     session: Session,
     onOpen: (String?) -> Unit,
+    onStock: (lowOnly: Boolean) -> Unit = {},
 ) {
     val firmId = session.firm.id
     val items by remember(firmId) { container.repositories.catalog.observeItems(firmId) }.collectAsState(initial = null)
@@ -182,7 +192,8 @@ fun ItemListScreen(
                 }
             }
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
-                item(key = "search") { AppSearchBar(query, { query = it }, "Search name or HSN/SAC") }
+                item(key = "stock") { StockDashboardCard(container, session, onStock) }
+                item(key = "search") { AppSearchBar(query, { query = it }, "Search name, HSN/SAC or barcode") }
                 item(key = "filters") {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter),
@@ -239,6 +250,14 @@ data class ItemForm(
     val gstRate: Rate = Rate.ofPercent(18),
     val salePrice: String = "",
     val purchasePrice: String = "",
+    val trackInventory: Boolean = false,
+    val trackBatch: Boolean = false,
+    val trackSerial: Boolean = false,
+    val lowStock: String = "",
+    val barcode: String = "",
+    /** Opening stock, recorded as a posted adjustment when a new tracked item is saved. */
+    val openingQty: String = "",
+    val openingCost: String = "",
     val errors: Map<String, String> = emptyMap(),
     val saving: Boolean = false,
     val failure: String? = null,
@@ -260,6 +279,10 @@ object ItemRules {
         Validation.hsnError(form.hsnSac)?.let { put("hsn", it) }
         Validation.moneyError(form.salePrice)?.let { put("sale", it) }
         Validation.moneyError(form.purchasePrice)?.let { put("purchase", it) }
+        if (form.lowStock.isNotBlank() && Parse.quantity(form.lowStock) == null) put("low", "Enter a quantity")
+        if (form.openingQty.isNotBlank() && (Parse.quantity(form.openingQty)?.let { it.scaledUnits < 0 } != false)) put("opening", "Enter a quantity")
+        Validation.moneyError(form.openingCost)?.let { put("openingCost", it) }
+        if (form.barcode.isNotBlank() && form.barcode.any { it.code !in 32..126 }) put("barcode", "Use letters, digits and symbols only")
     }
 }
 
@@ -298,6 +321,11 @@ class ItemEditorModel(
                         gstRate = item.taxRate,
                         salePrice = if (item.salePrice.paise == 0L) "" else item.salePrice.format(),
                         purchasePrice = if (item.purchasePrice.paise == 0L) "" else item.purchasePrice.format(),
+                        trackInventory = item.trackInventory,
+                        trackBatch = item.trackBatch,
+                        trackSerial = item.trackSerial,
+                        lowStock = item.lowStockLevel?.format().orEmpty(),
+                        barcode = item.barcode.orEmpty(),
                     )
                 }
             }
@@ -340,8 +368,6 @@ class ItemEditorModel(
                     firmId = firmId,
                     name = form.name.trim(),
                     unitId = form.unitId!!,
-                    // Stock tracking arrives in a later phase; billing alpha does not move stock.
-                    trackInventory = false,
                     createdAt = now,
                     updatedAt = now,
                 )).copy(
@@ -352,9 +378,38 @@ class ItemEditorModel(
                     taxRate = form.gstRate,
                     salePrice = Parse.money(form.salePrice) ?: Money.ZERO,
                     purchasePrice = Parse.money(form.purchasePrice) ?: Money.ZERO,
+                    trackInventory = form.trackInventory && !form.isService,
+                    trackBatch = form.trackBatch && form.trackInventory && !form.isService,
+                    trackSerial = form.trackSerial && form.trackInventory && !form.isService,
+                    lowStockLevel = Parse.quantity(form.lowStock).takeIf { form.lowStock.isNotBlank() },
+                    barcode = form.barcode.trim().ifBlank { null },
                     updatedAt = now,
                 )
                 container.repositories.catalog.saveItem(item)
+                val opening = Parse.quantity(form.openingQty)
+                if (old == null && item.trackInventory && opening != null && opening.scaledUnits > 0) {
+                    val godown = Inventory.ensureDefaultGodown(container, firmId)
+                    val today = container.today()
+                    val fy = container.repositories.firms.observeFinancialYears(firmId).first()
+                        .firstOrNull { today >= it.startDate && today <= it.endDate }
+                        ?: error("No financial year covers today")
+                    val firm = container.repositories.firms.findFirm(firmId) ?: error("Unknown firm")
+                    val id = container.newId()
+                    StockVouchers(container.repositories.vouchers, container.postVoucher).adjust(
+                        id, firmId, fy.id, firm.stateCode, today, "Opening stock",
+                        listOf(
+                            StockLineInput(
+                                itemId = item.id,
+                                description = item.name,
+                                quantity = opening,
+                                godownId = godown,
+                                unitCost = Parse.money(form.openingCost) ?: item.purchasePrice,
+                            ),
+                        ),
+                        { i -> "$id-$i" },
+                        container.now(),
+                    )
+                }
                 item
             }.onSuccess { saved ->
                 baseline = _state.value
@@ -372,6 +427,7 @@ fun ItemEditScreen(
     itemId: String?,
     onDone: () -> Unit,
     backHandler: BackHandlerSlot = { _, _ -> },
+    onOpenStock: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val model = remember(itemId) { ItemEditorModel(container, session.firm.id, itemId, scope) }
@@ -398,6 +454,9 @@ fun ItemEditScreen(
     Scaffold(
         topBar = {
             AppTopBar(if (itemId == null) "New item" else "Edit item", onBack = requestClose) {
+                if (itemId != null && form.trackInventory) {
+                    TextButton(onClick = { onOpenStock(itemId) }) { Text("Stock") }
+                }
                 if (itemId != null) {
                     IconButton(onClick = { confirmRemove = true }, enabled = !form.saving) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove item")
@@ -450,6 +509,56 @@ fun ItemEditScreen(
                     prefix = "₹",
                     imeAction = ImeAction.Done,
                 )
+                if (!form.isService) {
+                    SectionHeader("Stock")
+                    SwitchRow("Track stock", "Purchases add stock, sales deduct it", form.trackInventory, { v -> model.edit { it.copy(trackInventory = v) } })
+                    if (form.trackInventory) {
+                        SwitchRow("Batch and expiry", "Enter a batch number on each purchase and sale", form.trackBatch, { v -> model.edit { it.copy(trackBatch = v) } })
+                        SwitchRow("Serial / IMEI numbers", "One number per unit; duplicates are rejected", form.trackSerial, { v -> model.edit { it.copy(trackSerial = v) } })
+                        FormField(
+                            "Low-stock level",
+                            form.lowStock,
+                            { v -> model.edit { it.copy(lowStock = v) } },
+                            error = form.errors["low"],
+                            keyboardType = KeyboardType.Decimal,
+                            supporting = "Alert when stock falls to this quantity",
+                        )
+                        if (itemId == null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                FormField(
+                                    "Opening stock",
+                                    form.openingQty,
+                                    { v -> model.edit { it.copy(openingQty = v) } },
+                                    Modifier.weight(1f),
+                                    error = form.errors["opening"],
+                                    keyboardType = KeyboardType.Decimal,
+                                )
+                                FormField(
+                                    "Cost per unit",
+                                    form.openingCost,
+                                    { v -> model.edit { it.copy(openingCost = v) } },
+                                    Modifier.weight(1f),
+                                    error = form.errors["openingCost"],
+                                    keyboardType = KeyboardType.Decimal,
+                                    prefix = "₹",
+                                )
+                            }
+                        }
+                    }
+                }
+                FormField(
+                    "Barcode",
+                    form.barcode,
+                    { v -> model.edit { it.copy(barcode = v.trim()) } },
+                    error = form.errors["barcode"],
+                    supporting = "Scan or type the product's code, or generate one for your own labels",
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    OutlinedButton(onClick = { model.edit { it.copy(barcode = Inventory.generateBarcode(container.now().toEpochMilliseconds())) } }) {
+                        Text("Generate barcode")
+                    }
+                    BarcodeScanButton(onScanned = { code -> model.edit { it.copy(barcode = code) } })
+                }
                 form.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(Spacing.sm))
                 PrimaryButton("Save item", { save() }, Modifier.fillMaxWidth(), busy = form.saving, busyText = "Saving…")
