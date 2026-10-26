@@ -92,10 +92,10 @@ class MainActivity : ComponentActivity() {
                     createFile.launch(name)
                     d.await()
                 },
-                openFile = {
+                openFile = { types ->
                     pendingOpenFile?.complete(null)
                     val d = CompletableDeferred<Uri?>().also { pendingOpenFile = it }
-                    openFile.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel"))
+                    openFile.launch(types)
                     d.await()
                 },
             ),

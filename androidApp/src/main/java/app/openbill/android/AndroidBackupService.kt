@@ -14,7 +14,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal fun androidDataLocation(context: Context, databaseName: String) =
-    DataLocation(context.getDatabasePath(databaseName), mapOf("logos" to File(context.filesDir, "logos")))
+    DataLocation(
+        context.getDatabasePath(databaseName),
+        mapOf("logos" to File(context.filesDir, "logos"), "attachments" to File(context.filesDir, "attachments")),
+    )
 
 /**
  * Backup to a user-chosen document (SAF CreateDocument) and restore from one (OpenDocument).

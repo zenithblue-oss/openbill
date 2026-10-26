@@ -86,6 +86,16 @@ interface PlatformServices {
     suspend fun bulkPdf(pdfs: List<Pair<String, suspend () -> InvoiceLayout>>, print: Boolean, onProgress: (Int) -> Unit): String? = null
     val supportsBulkPdf: Boolean get() = false
 
+    /**
+     * Files attached to a voucher ([ownerId]), stored under the data directory and included in
+     * backups. [addAttachment] asks for an image or PDF; it and [openAttachment] return a message.
+     */
+    val supportsAttachments: Boolean get() = false
+    suspend fun attachments(ownerId: String): List<String> = emptyList()
+    suspend fun addAttachment(ownerId: String): String? = null
+    suspend fun openAttachment(ownerId: String, name: String): String? = null
+    suspend fun deleteAttachment(ownerId: String, name: String) {}
+
     /** Per-device UI preferences (theme). Platforms override this with persistent storage. */
     val settingsStore: SettingsStore get() = defaultSettingsStore()
 }

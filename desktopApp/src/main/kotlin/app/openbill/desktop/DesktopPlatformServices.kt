@@ -214,6 +214,25 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         Unit
     }
 
+    private val attachmentStore = app.openbill.core.backup.AttachmentStore(desktopDataLocation(dataDir).attachmentDirs.getValue("attachments"))
+    override val supportsAttachments: Boolean get() = true
+    override suspend fun attachments(ownerId: String): List<String> = withContext(Dispatchers.IO) { attachmentStore.list(ownerId) }
+    override suspend fun deleteAttachment(ownerId: String, name: String) = withContext(Dispatchers.IO) { attachmentStore.delete(ownerId, name) }
+
+    override suspend fun addAttachment(ownerId: String): String? = withContext(Dispatchers.IO) {
+        val file = chooseOpenFile("Attach an image or PDF", "png", "jpg", "jpeg", "webp", "pdf") ?: return@withContext null
+        "Attached " + file.inputStream().use { attachmentStore.add(ownerId, file.name, it) }
+    }
+
+    override suspend fun openAttachment(ownerId: String, name: String): String? = withContext(Dispatchers.IO) {
+        val file = attachmentStore.file(ownerId, name)
+        val opened = runCatching {
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) Desktop.getDesktop().open(file)
+            else ProcessBuilder("xdg-open", file.absolutePath).start()
+        }.isSuccess
+        if (opened) null else "No app can open $name. The file is at ${file.absolutePath}"
+    }
+
     override suspend fun openTextFile(): String? =
         withContext(Dispatchers.IO) { chooseOpenFile("Choose a CSV file", "csv", "txt")?.readText() }
 

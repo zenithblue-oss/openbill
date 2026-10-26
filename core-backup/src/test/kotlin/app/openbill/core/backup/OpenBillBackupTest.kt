@@ -34,7 +34,9 @@ class OpenBillBackupTest {
         }
         File(dir, "logos").mkdirs()
         File(dir, "logos/f1.png").writeText("logo-$firmName")
-        return DataLocation(db, mapOf("logos" to File(dir, "logos")))
+        File(dir, "attachments/v1").mkdirs()
+        File(dir, "attachments/v1/bill.pdf").writeText("bill-$firmName")
+        return DataLocation(db, mapOf("logos" to File(dir, "logos"), "attachments" to File(dir, "attachments")))
     }
 
     private fun firmName(db: File): String =
@@ -54,6 +56,7 @@ class OpenBillBackupTest {
         val safety = OpenBillBackup.restore(zip, b, 5)
         assertEquals("Alpha", firmName(b.databaseFile))
         assertEquals("logo-Alpha", File(root, "b/logos/f1.png").readText())
+        assertEquals("bill-Alpha", File(root, "b/attachments/v1/bill.pdf").readText())
         assertEquals("Beta", firmName(File(safety, "openbill.db")))
         assertEquals("logo-Beta", File(safety, "attachments/logos/f1.png").readText())
         assertTrue(File(root, "b").listFiles()!!.none { it.name.startsWith(".restore-") })

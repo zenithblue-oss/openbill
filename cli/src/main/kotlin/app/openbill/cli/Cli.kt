@@ -79,7 +79,7 @@ class CliState(val env: CliEnv) {
 
     fun location(): DataLocation {
         val dir = dataDir ?: env.defaultDataDir()
-        return DataLocation(File(dir, "openbill.db"), mapOf("logos" to File(dir, "logos")))
+        return DataLocation(File(dir, "openbill.db"), mapOf("logos" to File(dir, "logos"), "attachments" to File(dir, "attachments")))
     }
 
     /**

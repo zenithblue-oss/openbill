@@ -1,5 +1,9 @@
 package app.openbill.ui.invoice
 
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.ListItem
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -243,6 +247,7 @@ fun InvoiceDetailScreen(
                     SectionHeader("Notes")
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 }
+                if (container.platform.supportsAttachments) AttachmentsSection(container, v.id)
                 Spacer(Modifier.height(Spacing.sm))
                 PrimaryButton("View PDF", { onViewPdf(v.id) }, Modifier.fillMaxWidth())
                 OutlinedButton(onClick = { share(v) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
@@ -408,4 +413,29 @@ private fun LineCard(line: VoucherLine, unit: String?) {
             line.hsnSac?.let { AmountRow("HSN/SAC", it) }
         }
     }
+}
+
+/** Images and PDFs attached to a voucher; stored beside the database and carried in backups. */
+@Composable
+private fun AttachmentsSection(container: AppContainer, voucherId: String) {
+    val platform = container.platform
+    val scope = rememberCoroutineScope()
+    val messages = LocalAppMessages.current
+    var version by remember { mutableStateOf(0) }
+    val names by produceState(emptyList<String>(), voucherId, version) { value = runCatching { platform.attachments(voucherId) }.getOrDefault(emptyList()) }
+    fun run(block: suspend () -> String?) {
+        scope.launch {
+            runCatching { block() }.onSuccess { it?.let { m -> messages?.show(m) } }.onFailure { messages?.show(it.message ?: "Could not do that") }
+            version++
+        }
+    }
+    SectionHeader("Attachments (${names.size})")
+    names.forEach { name ->
+        ListItem(
+            headlineContent = { Text(name) },
+            trailingContent = { TextButton(onClick = { run { platform.deleteAttachment(voucherId, name); "Removed $name" } }) { Text("Remove") } },
+            modifier = Modifier.clickable(role = Role.Button) { run { platform.openAttachment(voucherId, name) } },
+        )
+    }
+    OutlinedButton(onClick = { run { platform.addAttachment(voucherId) } }, modifier = Modifier.fillMaxWidth()) { Text("Attach image or PDF") }
 }

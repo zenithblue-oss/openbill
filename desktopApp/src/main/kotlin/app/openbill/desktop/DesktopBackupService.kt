@@ -16,7 +16,10 @@ import kotlin.system.exitProcess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal fun desktopDataLocation(dataDir: File) = DataLocation(File(dataDir, "openbill.db"), mapOf("logos" to File(dataDir, "logos")))
+internal fun desktopDataLocation(dataDir: File) = DataLocation(
+    File(dataDir, "openbill.db"),
+    mapOf("logos" to File(dataDir, "logos"), "attachments" to File(dataDir, "attachments")),
+)
 
 /** Backup/restore with native file dialogs. Restore closes the database, swaps the files and exits. */
 internal class DesktopBackupService(

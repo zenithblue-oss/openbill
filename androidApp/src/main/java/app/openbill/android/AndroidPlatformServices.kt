@@ -18,6 +18,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.FileProvider
+import app.openbill.core.backup.AttachmentStore
 import app.openbill.ui.PlatformServices
 import app.openbill.ui.invoice.InvoiceDocument
 import app.openbill.ui.pdf.FontMetrics
@@ -40,8 +41,8 @@ class ActivityHooks(
     val createPdf: suspend (suggestedName: String) -> Uri?,
     /** Save dialog for any file; the MIME type follows the name's extension. */
     val createFile: suspend (suggestedName: String) -> Uri?,
-    /** Open dialog for a CSV or text file. */
-    val openFile: suspend () -> Uri?,
+    /** Open dialog for a document of the given MIME types. */
+    val openFile: suspend (mimeTypes: Array<String>) -> Uri?,
 )
 
 class AndroidPlatformServices(
@@ -96,7 +97,7 @@ class AndroidPlatformServices(
     }
 
     override suspend fun openTextFile(): String? {
-        val uri = requireHooks().openFile() ?: return null
+        val uri = requireHooks().openFile(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel")) ?: return null
         return withContext(Dispatchers.IO) {
             context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: error("Could not open the chosen file")
         }
@@ -109,6 +110,34 @@ class AndroidPlatformServices(
                 ?: error("Could not open the chosen location")
         }
         return "Saved $fileName"
+    }
+
+    private val attachmentStore = AttachmentStore(androidDataLocation(context, OpenBillApplication.DATABASE_NAME).attachmentDirs.getValue("attachments"))
+    override val supportsAttachments: Boolean get() = true
+    override suspend fun attachments(ownerId: String): List<String> = withContext(Dispatchers.IO) { attachmentStore.list(ownerId) }
+    override suspend fun deleteAttachment(ownerId: String, name: String) = withContext(Dispatchers.IO) { attachmentStore.delete(ownerId, name) }
+
+    override suspend fun addAttachment(ownerId: String): String? {
+        val uri = requireHooks().openFile(arrayOf("image/*", "application/pdf")) ?: return null
+        return withContext(Dispatchers.IO) {
+            val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "attachment"
+            context.contentResolver.openInputStream(uri)?.use { attachmentStore.add(ownerId, name, it) } ?: error("Could not open the chosen file")
+        }.let { "Attached $it" }
+    }
+
+    override suspend fun openAttachment(ownerId: String, name: String): String? {
+        val file = withContext(Dispatchers.IO) { attachmentStore.file(ownerId, name) }
+        val type = if (name.endsWith(".pdf", true)) "application/pdf" else "image/*"
+        return try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW).setDataAndType(uriFor(file), type)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            null
+        } catch (_: ActivityNotFoundException) {
+            "No app can open $name"
+        }
     }
 
     private fun uriFor(file: File): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
