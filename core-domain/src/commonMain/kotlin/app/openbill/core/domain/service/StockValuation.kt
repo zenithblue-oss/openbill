@@ -36,7 +36,19 @@ data class ItemStock(
 object StockValuation {
     private const val UNIT = 10_000L
 
-    fun value(movements: List<StockMovement>): ItemValuation {
+    fun value(movements: List<StockMovement>): ItemValuation = walk(movements) { _, _ -> }
+
+    /**
+     * Value change of each movement (paise, signed) under the same costing walk; an outward
+     * movement's negated value is its cost of goods. Keys are movement ids.
+     */
+    fun movementValues(movements: List<StockMovement>): Map<String, Money> {
+        val out = HashMap<String, Money>()
+        walk(movements) { m, delta -> out[m.id] = Money.of(delta) }
+        return out
+    }
+
+    private inline fun walk(movements: List<StockMovement>, onEach: (StockMovement, Long) -> Unit): ItemValuation {
         var quantity = 0L
         var value = 0L
         var average = 0L
@@ -44,6 +56,7 @@ object StockValuation {
         for (m in ordered) {
             val q = m.quantity.scaledUnits
             val cost = m.unitCost?.paise ?: average
+            val before = value
             value += Rounding.multiplyDivide(q, cost, UNIT, RoundingMode.HALF_UP)
             quantity += q
             if (quantity <= 0L) {
@@ -51,6 +64,7 @@ object StockValuation {
             } else {
                 average = Rounding.multiplyDivide(value, UNIT, quantity, RoundingMode.HALF_UP)
             }
+            onEach(m, value - before)
         }
         return ItemValuation(Quantity.ofScaledUnits(quantity), Money.of(value), Money.of(average))
     }
