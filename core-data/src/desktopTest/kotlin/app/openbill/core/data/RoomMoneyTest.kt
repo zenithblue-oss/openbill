@@ -87,7 +87,8 @@ class RoomMoneyTest {
         assertEquals(Money.of(18_345), ageing.total)
 
         val txns = ledger.observeAccountTransactions("bank").first()
-        assertEquals(listOf(VoucherType.PAYMENT_IN, VoucherType.CONTRA), txns.map { it.voucherType })
+        // Same date and millisecond: order between them follows random ULID ids.
+        assertEquals(setOf(VoucherType.PAYMENT_IN, VoucherType.CONTRA), txns.map { it.voucherType }.toSet())
         ledger.setCleared(txns.first().entry.id, LocalDate(2026, 5, 22))
         assertEquals(LocalDate(2026, 5, 22), ledger.observeAccountTransactions("bank").first().first().entry.clearedOn)
         ledger.setCleared(txns.first().entry.id, null)
