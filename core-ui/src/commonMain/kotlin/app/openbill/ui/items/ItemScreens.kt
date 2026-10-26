@@ -286,6 +286,9 @@ object ItemRules {
         if (form.lowStock.isNotBlank() && Parse.quantity(form.lowStock) == null) put("low", "Enter a quantity")
         if (form.openingQty.isNotBlank() && (Parse.quantity(form.openingQty)?.let { it.scaledUnits < 0 } != false)) put("opening", "Enter a quantity")
         Validation.moneyError(form.openingCost)?.let { put("openingCost", it) }
+        // The opening adjustment needs batch or serial numbers it cannot collect; failing after the item is saved would duplicate it on retry.
+        if (form.openingQty.isNotBlank() && form.trackInventory && !form.isService && (form.trackBatch || form.trackSerial) && "opening" !in this)
+            put("opening", "Batch and serial items get stock from a purchase, not an opening quantity")
         if (form.barcode.isNotBlank() && form.barcode.any { it.code !in 32..126 }) put("barcode", "Use letters, digits and symbols only")
     }
 }
