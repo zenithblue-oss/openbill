@@ -1,0 +1,6 @@
+exit: 0
+--- stdout
+ID  NAME            GSTIN            STATE
+--  --------------  ---------------  -----
+F1  Sharma Traders  27ABCDE1234F1Z5  27
+--- stderr

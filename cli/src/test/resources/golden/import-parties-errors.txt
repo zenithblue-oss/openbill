@@ -1,0 +1,6 @@
+exit: 3
+--- stdout
+--- stderr
+row 3: type must be customer, supplier, or both
+row 4: Invalid GSTIN '27XX'
+error: 2 invalid row(s); nothing imported

@@ -1,0 +1,6 @@
+exit: 0
+--- stdout
+name,type,phone,email,gstin,state_code
+Acme Stores,customer,9876543210,,27AAAPL1234C1Z5,27
+Bharat Supplies,supplier,,,,29
+--- stderr

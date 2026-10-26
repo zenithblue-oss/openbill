@@ -1,0 +1,29 @@
+exit: 0
+--- stdout
+[
+    {
+        "id": "P1",
+        "name": "Acme Stores",
+        "type": "customer",
+        "phone": "9876543210",
+        "email": null,
+        "gstin": "27AAAPL1234C1Z5",
+        "stateCode": "27",
+        "openingBalance": "0.00",
+        "openingBalanceType": "debit",
+        "notes": null
+    },
+    {
+        "id": "P2",
+        "name": "Bharat Supplies",
+        "type": "supplier",
+        "phone": null,
+        "email": null,
+        "gstin": null,
+        "stateCode": "29",
+        "openingBalance": "0.00",
+        "openingBalanceType": "debit",
+        "notes": null
+    }
+]
+--- stderr

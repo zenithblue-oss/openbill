@@ -1,0 +1,7 @@
+exit: 0
+--- stdout
+ID  NAME             TYPE      PHONE       GSTIN
+--  ---------------  --------  ----------  ---------------
+P1  Acme Stores      customer  9876543210  27AAAPL1234C1Z5
+P2  Bharat Supplies  supplier  -           -
+--- stderr

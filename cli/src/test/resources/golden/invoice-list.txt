@@ -1,0 +1,6 @@
+exit: 0
+--- stdout
+NUMBER    DATE        PARTY        STATUS        TOTAL  ID
+--------  ----------  -----------  ---------  --------  ------
+INV-0001  2026-10-01  Acme Stores  cancelled  1,328.00  ID0003
+--- stderr

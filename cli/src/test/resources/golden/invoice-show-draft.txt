@@ -1,0 +1,19 @@
+exit: 0
+--- stdout
+Number           (draft)
+Id               ID0003
+Date             2026-10-01
+Party            Acme Stores
+Status           draft
+Place of supply  27
+
+#  DESCRIPTION      QTY      RATE  GST%   TAXABLE     TAX     TOTAL
+-  ---------------  ---  --------  ----  --------  ------  --------
+1  Steel Bolt        10     12.50    18    125.00   22.50    147.50
+2  Fitting Service    1  1,000.00    18  1,000.00  180.00  1,180.00
+
+Taxable    1,125.00
+Tax        202.50
+Round off  0.50
+Total      1,328.00
+--- stderr

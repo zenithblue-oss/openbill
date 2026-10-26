@@ -1,0 +1,20 @@
+exit: 0
+--- stdout
+{
+    "id": "ID0003",
+    "number": "INV-0001",
+    "date": "2026-10-01",
+    "status": "posted",
+    "partyId": "P1",
+    "partyName": "Acme Stores",
+    "placeOfSupply": "27",
+    "subtotal": "1125.00",
+    "discount": "0.00",
+    "taxable": "1125.00",
+    "tax": "202.50",
+    "roundOff": "0.50",
+    "total": "1328.00",
+    "notes": null,
+    "cancellationReason": null
+}
+--- stderr

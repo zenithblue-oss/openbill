@@ -1,0 +1,7 @@
+exit: 0
+--- stdout
+ID  NAME             SKU   UNIT  GST%     PRICE
+--  ---------------  ----  ----  ----  --------
+I2  Fitting Service  SVC   pcs     18  1,500.00
+I1  Steel Bolt       BOLT  pcs     18     12.50
+--- stderr
