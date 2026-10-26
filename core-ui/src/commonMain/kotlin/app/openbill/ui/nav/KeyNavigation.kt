@@ -49,7 +49,7 @@ class BackDispatcher {
 }
 
 /**
- * Lets a keyboard shortcut (Ctrl/Cmd+K) focus the search field of the visible list. The list's
+ * Lets a keyboard shortcut (Ctrl/Cmd+F) focus the search field of the visible list. The list's
  * search bar registers its requester while composed; [focusOnNextRegistration] covers the case
  * where the shortcut first switches tab.
  */

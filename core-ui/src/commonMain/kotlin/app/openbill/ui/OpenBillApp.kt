@@ -1,5 +1,7 @@
 package app.openbill.ui
 
+import app.openbill.ui.nav.paletteCommands
+import app.openbill.ui.nav.CommandPalette
 import androidx.compose.runtime.key
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -153,7 +155,7 @@ typealias BackHandlerSlot = @Composable (enabled: Boolean, onBack: () -> Unit) -
 
 /**
  * Root composable. Android passes its system [backHandler]; without one (desktop) the app
- * handles Escape itself through a [BackDispatcher], plus Ctrl/Cmd+N and Ctrl/Cmd+K.
+ * handles Escape itself through a [BackDispatcher], plus Ctrl/Cmd+N, Ctrl/Cmd+K (command palette) and Ctrl/Cmd+F (search).
  */
 @Composable
 fun OpenBillApp(container: AppContainer, backHandler: BackHandlerSlot? = null) {
@@ -246,6 +248,14 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
     val axisOffset = with(LocalDensity.current) { Motion.SharedAxisOffset.roundToPx() }
 
     val searchFocus = remember { SearchFocus() }
+    var palette by remember { mutableStateOf(false) }
+    fun focusSearch() {
+        if (!searchFocus.focus() && route is Route.Home) {
+            searchFocus.focusOnNextRegistration()
+            nav.selectTab(Tab.INVOICES)
+        }
+    }
+    if (palette) CommandPalette(paletteCommands(nav) { focusSearch() }) { palette = false }
     val rootFocus = remember { FocusRequester() }
     var rootHasFocus by remember { mutableStateOf(false) }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
@@ -272,10 +282,11 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
                         true
                     }
                     mod && e.key == Key.K -> {
-                        if (!searchFocus.focus() && route is Route.Home) {
-                            searchFocus.focusOnNextRegistration()
-                            nav.selectTab(Tab.INVOICES)
-                        }
+                        palette = true
+                        true
+                    }
+                    mod && e.key == Key.F -> {
+                        focusSearch()
                         true
                     }
                     else -> false

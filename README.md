@@ -212,7 +212,7 @@ See [docs/11-cli.md](docs/11-cli.md).
 
 Search is a first-class workflow, not a filter bolted onto one screen.
 
-- Global search (Ctrl/Cmd+K on desktop, search icon on Android) across invoices, parties,
+- Command palette (Ctrl/Cmd+K) and list search (Ctrl/Cmd+F) on desktop, search icon on Android; search across invoices, parties,
   items, payments, and expenses.
 - Invoice search by invoice number, party name, and amount.
 - Item search by name, SKU, HSN, and barcode, with stock-state filters.
