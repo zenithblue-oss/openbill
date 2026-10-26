@@ -1,6 +1,12 @@
 package app.openbill.ui.more
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.MaterialTheme
+import app.openbill.ui.components.FormField
+import app.openbill.ui.theme.Spacing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Create
@@ -103,4 +109,50 @@ fun BackupSection(listColors: ListItemColors) {
             dismissButton = { TextButton(onClick = { pending = null }) { Text("Cancel") } },
         )
     }
+}
+
+/**
+ * Deletes the active business: the user types its name, a backup is saved first (cancelling the
+ * save dialog cancels the deletion), then the business is removed from the app.
+ */
+@Composable
+fun DeleteFirmItem(firmName: String, listColors: ListItemColors, delete: suspend () -> Unit) {
+    val service = LocalBackupService.current ?: return
+    val scope = rememberCoroutineScope()
+    val messages = LocalAppMessages.current
+    var open by remember { mutableStateOf(false) }
+    var typed by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text("Delete this business") },
+        supportingContent = { Text("Backs up all data first, then removes $firmName from this device") },
+        leadingContent = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        colors = listColors,
+        modifier = Modifier.clickable(role = Role.Button) { typed = ""; open = true },
+    )
+    if (!open) return
+    AlertDialog(
+        onDismissRequest = { if (!busy) open = false },
+        title = { Text("Delete $firmName?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text("You will be asked where to save a backup first. Type the business name to confirm.")
+                FormField("Business name", typed, { typed = it })
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy && typed.trim() == firmName.trim(), onClick = {
+                busy = true
+                scope.launch {
+                    val msg = runCatching {
+                        if (service.createBackup() == null) "Backup cancelled; nothing was deleted" else { delete(); null }
+                    }.getOrElse { "Nothing was deleted: ${it.message}" }
+                    busy = false
+                    open = false
+                    msg?.let { messages?.show(it) }
+                }
+            }) { Text("Back up and delete", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = { open = false }) { Text("Cancel") } },
+    )
 }

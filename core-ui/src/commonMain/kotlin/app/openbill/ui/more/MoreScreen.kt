@@ -239,6 +239,10 @@ fun MoreScreen(
 
                 CsvSection(container, session, listColors)
                 BackupSection(listColors)
+                // shortcut: the firm is soft-deleted (hidden; its rows stay in the database file) because
+                // audit_events is append-only and some foreign keys restrict deletes. Add a trigger-aware
+                // purge in RoomFirmRepository when physical erasure is required.
+                DeleteFirmItem(firm.name, listColors) { container.repositories.firms.archiveFirm(firm.id, container.now()) }
 
                 SectionHeader("About")
                 ListItem(
