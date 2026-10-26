@@ -108,4 +108,5 @@ dependencies {
     implementation(project(":core-data"))
     implementation(project(":core-backup"))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.work.runtime)
 }

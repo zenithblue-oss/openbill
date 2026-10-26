@@ -43,6 +43,17 @@ class OpenBillBackupTest {
         BundledSQLiteDriver().open(db.path).let { c -> c.prepare("SELECT name FROM firms").use { it.step(); it.getText(0) }.also { c.close() } }
 
     @Test
+    fun autoBackupRunsWhenDueAndKeepsTheNewest() {
+        val a = location(File(root, "a"), "Alpha")
+        val dir = File(root, "auto")
+        val t0 = java.time.Instant.parse("2026-01-01T00:00:00Z")
+        assertTrue(OpenBillBackup.autoBackup(a, dir, "1.0", everyDays = 1, keep = 2, now = t0) != null)
+        assertEquals(null, OpenBillBackup.autoBackup(a, dir, "1.0", everyDays = 1, keep = 2, now = t0.plusSeconds(3600)))
+        (1L..3L).forEach { d -> OpenBillBackup.autoBackup(a, dir, "1.0", everyDays = 1, keep = 2, now = t0.plusSeconds(d * 86_400)) }
+        assertEquals(listOf("auto-20260103-000000.openbill.zip", "auto-20260104-000000.openbill.zip"), dir.list()!!.sorted())
+    }
+
+    @Test
     fun roundTrip() {
         val a = location(File(root, "a"), "Alpha")
         val zip = File(root, "out/a.openbill.zip")

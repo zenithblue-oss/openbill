@@ -100,6 +100,11 @@ fun main() {
         OpenBillBackup.backupBeforeMigration(desktopDataLocation(dataDir), File(dataDir, "backups"), OPENBILL_DATABASE_VERSION, platform.appVersion)
     }.onFailure { System.err.println("Pre-migration backup failed: ${it.message}") }
     val database = openBillDatabase(File(dataDir, "openbill.db").absolutePath)
+    // Scheduled backup: on start, when the last automatic one is a day old; the newest 7 are kept.
+    Thread {
+        runCatching { OpenBillBackup.autoBackup(desktopDataLocation(dataDir), File(dataDir, "backups"), platform.appVersion) }
+            .onFailure { System.err.println("Automatic backup failed: ${it.message}") }
+    }.apply { isDaemon = true }.start()
     val container = AppContainer(database.roomRepositories(), platform)
     val backupService = DesktopBackupService(dataDir, platform.appVersion) { database.close() }
     application {

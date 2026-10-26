@@ -227,6 +227,23 @@ object OpenBillBackup {
         return out
     }
 
+    /**
+     * Scheduled backup: when the newest `auto-*.openbill.zip` in [backupDir] is older than
+     * [everyDays], writes a new one, then keeps only the newest [keep]. Returns the new archive, or null.
+     */
+    fun autoBackup(source: DataLocation, backupDir: File, appVersion: String, everyDays: Int = 1, keep: Int = 7, now: Instant = Instant.now()): File? {
+        if (!source.databaseFile.isFile) return null
+        fun autos() = backupDir.listFiles { f -> f.name.startsWith("auto-") && f.name.endsWith(".openbill.zip") }.orEmpty().sortedByDescending { it.name }
+        val newest = autos().firstOrNull()?.lastModified() ?: 0L
+        if (now.toEpochMilli() - newest < everyDays * 86_400_000L) return null
+        val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(now)
+        val out = File(backupDir, "auto-$stamp.openbill.zip")
+        create(source, out, appVersion, now)
+        out.setLastModified(now.toEpochMilli())
+        autos().drop(keep).forEach { it.delete() }
+        return out
+    }
+
     /** Consistent copy of a live database. */
     fun snapshot(db: File, out: File) {
         out.delete()

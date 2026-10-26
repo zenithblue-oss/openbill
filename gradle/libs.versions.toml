@@ -16,12 +16,14 @@ compose-material-icons = "1.7.3"
 pdfbox = "3.0.7"
 zxing = "3.5.3"
 camerax = "1.4.2"
+work = "2.9.1"
 clikt = "5.1.0"
 kotlinx-serialization = "1.8.1"
 
 [libraries]
 compose-material-icons-core = { module = "org.jetbrains.compose.material:material-icons-core", version.ref = "compose-material-icons" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "work" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
