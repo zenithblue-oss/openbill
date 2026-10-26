@@ -4,7 +4,11 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowState
 import app.openbill.core.data.roomRepositories
 import app.openbill.core.database.openBillDatabase
 import app.openbill.core.backup.OpenBillBackup
@@ -16,6 +20,8 @@ import app.openbill.ui.OpenBillApp
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import app.openbill.ui.theme.BrandLogo
 import java.awt.Dimension
+import java.awt.GraphicsEnvironment
+import java.awt.Rectangle
 import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
@@ -62,6 +68,25 @@ private fun acquireSingleInstanceLock(dataDir: File): FileChannel? {
     return if (lock != null) channel else null
 }
 
+/**
+ * Fit the first window to the usable screen (AWT logical pixels == Compose dp on desktop).
+ * Small or portrait screens (phones, phosh) start maximized; the explicit full-screen size
+ * also covers X servers without a window manager, where MAXIMIZED_BOTH is ignored.
+ */
+internal fun initialWindowState(
+    screen: Rectangle = GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds,
+): WindowState {
+    val preferred = DpSize(1100.dp, 760.dp)
+    if (screen.width < 1600 || screen.height < 1000 || screen.height > screen.width) {
+        return WindowState(
+            placement = WindowPlacement.Maximized,
+            position = WindowPosition(screen.x.dp, screen.y.dp),
+            size = DpSize(screen.width.dp, screen.height.dp),
+        )
+    }
+    return WindowState(position = WindowPosition(Alignment.Center), size = preferred)
+}
+
 fun main() {
     val dataDir = dataDirectory()
     val lockChannel = acquireSingleInstanceLock(dataDir)
@@ -78,14 +103,14 @@ fun main() {
     val container = AppContainer(database.roomRepositories(), platform)
     val backupService = DesktopBackupService(dataDir, platform.appVersion) { database.close() }
     application {
-        val windowState = rememberWindowState(size = DpSize(1100.dp, 760.dp))
+        val windowState = remember { initialWindowState() }
         Window(
             onCloseRequest = ::exitApplication,
             title = "OpenBill",
             icon = rememberVectorPainter(BrandLogo.Mark),
             state = windowState,
         ) {
-            window.minimumSize = Dimension(1024, 700)
+            window.minimumSize = Dimension(minOf(1024, windowState.size.width.value.toInt()), minOf(700, windowState.size.height.value.toInt()))
             CompositionLocalProvider(LocalBackupService provides backupService) {
                 OpenBillApp(container)
             }
