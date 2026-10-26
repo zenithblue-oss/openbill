@@ -21,6 +21,7 @@ java {
 dependencies {
     implementation(project(":core-ui"))
     implementation(project(":core-data"))
+    implementation(project(":core-backup"))
     implementation(compose.desktop.currentOs)
     implementation(libs.pdfbox)
     testImplementation(kotlin("test"))

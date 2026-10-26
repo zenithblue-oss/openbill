@@ -106,5 +106,6 @@ kotlin {
 dependencies {
     implementation(project(":core-ui"))
     implementation(project(":core-data"))
+    implementation(project(":core-backup"))
     implementation(libs.androidx.activity.compose)
 }

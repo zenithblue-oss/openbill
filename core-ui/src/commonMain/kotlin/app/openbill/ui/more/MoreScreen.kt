@@ -219,6 +219,8 @@ fun MoreScreen(
                     )
                 }
 
+                BackupSection(listColors)
+
                 SectionHeader("About")
                 ListItem(
                     headlineContent = { Text("OpenBill ${container.platform.appVersion}") },

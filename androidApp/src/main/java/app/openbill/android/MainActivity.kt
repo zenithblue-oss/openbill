@@ -9,7 +9,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.CompositionLocalProvider
 import app.openbill.ui.OpenBillApp
+import app.openbill.ui.more.LocalBackupService
 import kotlinx.coroutines.CompletableDeferred
 
 class MainActivity : ComponentActivity() {
@@ -24,6 +26,17 @@ class MainActivity : ComponentActivity() {
     private val createPdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         pendingCreate?.complete(uri)
         pendingCreate = null
+    }
+
+    private var pendingBackupCreate: CompletableDeferred<Uri?>? = null
+    private var pendingBackupOpen: CompletableDeferred<Uri?>? = null
+    private val createBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        pendingBackupCreate?.complete(uri)
+        pendingBackupCreate = null
+    }
+    private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingBackupOpen?.complete(uri)
+        pendingBackupOpen = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,11 +64,31 @@ class MainActivity : ComponentActivity() {
                 },
             ),
         )
+        val backupService = AndroidBackupService(
+            context = applicationContext,
+            databaseName = OpenBillApplication.DATABASE_NAME,
+            appVersion = app.platformServices.appVersion,
+            closeDatabase = { app.database.close() },
+            createDocument = { name ->
+                pendingBackupCreate?.complete(null)
+                val d = CompletableDeferred<Uri?>().also { pendingBackupCreate = it }
+                createBackup.launch(name)
+                d.await()
+            },
+            openDocument = {
+                pendingBackupOpen?.complete(null)
+                val d = CompletableDeferred<Uri?>().also { pendingBackupOpen = it }
+                openBackup.launch(arrayOf("application/zip", "application/octet-stream"))
+                d.await()
+            },
+        )
         setContent {
-            OpenBillApp(
-                container = container,
-                backHandler = { enabled, onBack -> BackHandler(enabled = enabled, onBack = onBack) },
-            )
+            CompositionLocalProvider(LocalBackupService provides backupService) {
+                OpenBillApp(
+                    container = container,
+                    backHandler = { enabled, onBack -> BackHandler(enabled = enabled, onBack = onBack) },
+                )
+            }
         }
     }
 

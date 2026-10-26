@@ -7,6 +7,10 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import app.openbill.core.data.roomRepositories
 import app.openbill.core.database.openBillDatabase
+import app.openbill.core.backup.OpenBillBackup
+import app.openbill.core.database.OPENBILL_DATABASE_VERSION
+import androidx.compose.runtime.CompositionLocalProvider
+import app.openbill.ui.more.LocalBackupService
 import app.openbill.ui.AppContainer
 import app.openbill.ui.OpenBillApp
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -65,8 +69,14 @@ fun main() {
         System.err.println("OpenBill is already running for data directory $dataDir; exiting.")
         exitProcess(1)
     }
+    val platform = DesktopPlatformServices(dataDir)
+    // Automatic pre-migration backup (docs/03-architecture.md section 14); best effort.
+    runCatching {
+        OpenBillBackup.backupBeforeMigration(desktopDataLocation(dataDir), File(dataDir, "backups"), OPENBILL_DATABASE_VERSION, platform.appVersion)
+    }.onFailure { System.err.println("Pre-migration backup failed: ${it.message}") }
     val database = openBillDatabase(File(dataDir, "openbill.db").absolutePath)
-    val container = AppContainer(database.roomRepositories(), DesktopPlatformServices(dataDir))
+    val container = AppContainer(database.roomRepositories(), platform)
+    val backupService = DesktopBackupService(dataDir, platform.appVersion) { database.close() }
     application {
         val windowState = rememberWindowState(size = DpSize(1100.dp, 760.dp))
         Window(
@@ -76,7 +86,9 @@ fun main() {
             state = windowState,
         ) {
             window.minimumSize = Dimension(1024, 700)
-            OpenBillApp(container)
+            CompositionLocalProvider(LocalBackupService provides backupService) {
+                OpenBillApp(container)
+            }
         }
     }
 }

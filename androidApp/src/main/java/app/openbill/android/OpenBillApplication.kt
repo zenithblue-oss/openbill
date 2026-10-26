@@ -3,7 +3,10 @@ package app.openbill.android
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import app.openbill.core.data.roomRepositories
+import app.openbill.core.backup.OpenBillBackup
+import app.openbill.core.database.OPENBILL_DATABASE_VERSION
 import app.openbill.core.database.openBillDatabase
+import java.io.File
 import app.openbill.ui.AppContainer
 
 class OpenBillApplication : Application() {
@@ -18,12 +21,22 @@ class OpenBillApplication : Application() {
     }
 
     /** Manual DI root: one database and one container per process. */
+    val database by lazy {
+        // Automatic pre-migration backup (docs/03-architecture.md section 14); best effort.
+        runCatching {
+            OpenBillBackup.backupBeforeMigration(
+                androidDataLocation(this, DATABASE_NAME), File(filesDir, "backups"),
+                OPENBILL_DATABASE_VERSION, platformServices.appVersion,
+            )
+        }
+        openBillDatabase(this, DATABASE_NAME)
+    }
+
     val container: AppContainer by lazy {
-        val database = openBillDatabase(this, DATABASE_NAME)
         AppContainer(repositories = database.roomRepositories(), platform = platformServices)
     }
 
-    private companion object {
+    internal companion object {
         const val DATABASE_NAME = "openbill.db"
     }
 }
