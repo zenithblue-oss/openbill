@@ -66,6 +66,10 @@ class MoneyUiTest {
         )
         assertTrue("INV-7" in text && "30 days" in text)
         assertTrue("upi://pay?pa=shree@upi" in text && "am=1500.00" in text)
+        assertEquals(
+            "Hi Asha, Shree Traders here: ₹1,500.00 due.",
+            Reminders.text("Shree Traders", "Asha", Money.of(150_000), emptyList(), LocalDate(2026, 5, 31), template = "Hi {party}, {firm} here: {balance} due.{invoices}{upi}"),
+        )
     }
 
     @Test

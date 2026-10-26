@@ -256,6 +256,7 @@ fun MoreScreen(
                     )
                 }
 
+                ReminderTemplateItem(container, firm.id, listColors)
                 CsvSection(container, session, listColors)
                 BackupSection(listColors)
                 // shortcut: the firm is soft-deleted (hidden; its rows stay in the database file) because
@@ -285,4 +286,36 @@ fun MoreScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ReminderTemplateItem(container: AppContainer, firmId: String, colors: androidx.compose.material3.ListItemColors) {
+    val store = container.platform.settingsStore
+    var editing by remember { mutableStateOf<String?>(null) }
+    ListItem(
+        headlineContent = { Text("Payment reminder message") },
+        supportingContent = { Text("Text sent from a party's statement; edit the wording") },
+        leadingContent = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+        colors = colors,
+        modifier = Modifier.clickable(role = Role.Button) { editing = app.openbill.ui.money.Reminders.template(store, firmId) },
+    )
+    val text = editing ?: return
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { editing = null },
+        title = { Text("Payment reminder message") },
+        text = {
+            Column {
+                Text("Placeholders: {party} {firm} {balance} {invoices} {upi}", style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.OutlinedTextField(text, { editing = it }, Modifier.fillMaxWidth(), minLines = 6)
+                androidx.compose.material3.TextButton(onClick = { editing = app.openbill.ui.money.Reminders.DEFAULT_TEMPLATE }) { Text("Reset to default") }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                app.openbill.ui.money.Reminders.saveTemplate(store, firmId, text)
+                editing = null
+            }) { Text("Save") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { editing = null }) { Text("Cancel") } },
+    )
 }

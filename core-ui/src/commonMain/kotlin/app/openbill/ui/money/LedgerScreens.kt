@@ -234,6 +234,7 @@ fun PartyLedgerScreen(
                 Reminders.text(
                     session.firm.name, p.name, closing, open, container.today(),
                     container.invoiceStyles.style(session.firm.id).value.options.upiId,
+                    Reminders.template(container.platform.settingsStore, session.firm.id),
                 )
             } else {
                 statementText(session.firm.name, p.name, l.openingBalance, l.entries.map { Triple(it.date, listOfNotNull(moneyTitle(it.voucherType), it.voucherNumber).joinToString(" "), it.net) })

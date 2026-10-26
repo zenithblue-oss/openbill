@@ -1,5 +1,6 @@
 package app.openbill.ui.money
 
+import app.openbill.ui.settings.SettingsStore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
@@ -85,6 +86,14 @@ fun moneyTitle(type: VoucherType): String = when (type) {
 }
 
 object Reminders {
+    /** Placeholders: {party} {firm} {balance} {invoices} (bulleted, may be empty) {upi} (may be empty). */
+    const val DEFAULT_TEMPLATE = "Dear {party},\n\nThis is a friendly reminder from {firm}. Your outstanding balance is {balance}.\n{invoices}{upi}\nPlease ignore if already paid. Thank you!"
+
+    private fun key(firmId: String) = "reminder.template.$firmId"
+    fun template(store: SettingsStore, firmId: String): String =
+        runCatching { store.getString(key(firmId)) }.getOrNull()?.takeIf { it.isNotBlank() } ?: DEFAULT_TEMPLATE
+    fun saveTemplate(store: SettingsStore, firmId: String, template: String) = runCatching { store.putString(key(firmId), template) }
+
     /** WhatsApp-friendly payment reminder; plain text, no links other than an optional UPI one. */
     fun text(
         firmName: String,
@@ -93,23 +102,15 @@ object Reminders {
         open: List<OutstandingInvoice>,
         today: LocalDate,
         upiId: String? = null,
-    ): String = buildString {
-        appendLine("Dear $partyName,")
-        appendLine()
-        appendLine("This is a friendly reminder from $firmName. Your outstanding balance is ${Fmt.inr(balance)}.")
-        if (open.isNotEmpty()) {
-            appendLine()
-            open.sortedBy { it.date }.forEach { inv ->
-                val days = (today.toEpochDays() - inv.date.toEpochDays())
-                appendLine("• ${inv.number ?: "Invoice"} dated ${Fmt.date(inv.date)}: ${Fmt.inr(inv.outstanding)} ($days days)")
-            }
+        template: String = DEFAULT_TEMPLATE,
+    ): String {
+        val invoices = if (open.isEmpty()) "" else open.sortedBy { it.date }.joinToString("", prefix = "\n") { inv ->
+            val days = (today.toEpochDays() - inv.date.toEpochDays())
+            "• ${inv.number ?: "Invoice"} dated ${Fmt.date(inv.date)}: ${Fmt.inr(inv.outstanding)} ($days days)\n"
         }
-        upiId?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            appendLine()
-            appendLine("Pay by UPI to $it")
-            appendLine(InvoiceLayoutEngine.upiUri(it, firmName, balance.paise, "dues"))
-        }
-        appendLine()
-        append("Please ignore if already paid. Thank you!")
+        val upi = upiId?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { "\nPay by UPI to $it\n${InvoiceLayoutEngine.upiUri(it, firmName, balance.paise, "dues")}\n" }.orEmpty()
+        return template.replace("{party}", partyName).replace("{firm}", firmName).replace("{balance}", Fmt.inr(balance))
+            .replace("{invoices}", invoices).replace("{upi}", upi)
     }
 }
