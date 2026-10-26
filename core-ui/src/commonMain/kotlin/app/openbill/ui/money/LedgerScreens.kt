@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
@@ -203,6 +204,7 @@ fun PartyLedgerScreen(
     partyId: String,
     onBack: () -> Unit,
     onRecordPayment: (VoucherType) -> Unit,
+    onStatement: (() -> Unit)? = null,
 ) {
     val repos = container.repositories
     val scope = rememberCoroutineScope()
@@ -212,7 +214,11 @@ fun PartyLedgerScreen(
     val overview by rememberMoneyOverview(container, session.firm.id)
     val p = party
     Scaffold(
-        topBar = { AppTopBar(p?.name ?: "Ledger", onBack = onBack) },
+        topBar = {
+            AppTopBar(p?.name ?: "Ledger", onBack = onBack) {
+                if (onStatement != null) IconButton(onClick = onStatement) { Icon(Icons.Filled.List, contentDescription = "Statement report (CSV, PDF)") }
+            }
+        },
         snackbarHost = { AppSnackbarHost() },
     ) { padding ->
         val l = ledger

@@ -38,6 +38,8 @@ class ActivityHooks(
     val activity: ComponentActivity,
     val pickImage: suspend () -> Uri?,
     val createPdf: suspend (suggestedName: String) -> Uri?,
+    /** Save dialog for any file; the MIME type follows the name's extension. */
+    val createFile: suspend (suggestedName: String) -> Uri?,
 )
 
 class AndroidPlatformServices(
@@ -89,6 +91,15 @@ class AndroidPlatformServices(
         }
         context.startActivity(Intent.createChooser(send, subject).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return null
+    }
+
+    override suspend fun saveTextFile(fileName: String, text: String): String? {
+        val uri = requireHooks().createFile(fileName) ?: return null
+        withContext(Dispatchers.IO) {
+            context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                ?: error("Could not open the chosen location")
+        }
+        return "Saved $fileName"
     }
 
     private fun uriFor(file: File): Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)

@@ -101,6 +101,7 @@ fun MoneyScreen(
     onAccount: (String) -> Unit,
     onOutstanding: (receivable: Boolean) -> Unit,
     onDocuments: (VoucherType) -> Unit,
+    onReports: () -> Unit = {},
 ) {
     val firmId = session.firm.id
     val repos = container.repositories
@@ -169,6 +170,14 @@ fun MoneyScreen(
                         supportingContent = { Text("Suppliers you owe, with ageing") },
                         trailingContent = { Text(Fmt.inr(overview?.payable ?: Money.ZERO)) },
                         modifier = Modifier.clickable { onOutstanding(false) },
+                    )
+                }
+                item(key = "reports") {
+                    SectionHeader("Reports", Modifier.padding(horizontal = pageGutter))
+                    ListItem(
+                        headlineContent = { Text("Reports and GST") },
+                        supportingContent = { Text("Registers, day book, P&L, stock, GSTR-1, Tally export") },
+                        modifier = Modifier.clickable(onClick = onReports),
                     )
                 }
                 item(key = "docs-h") { SectionHeader("Documents", Modifier.padding(horizontal = pageGutter)) }

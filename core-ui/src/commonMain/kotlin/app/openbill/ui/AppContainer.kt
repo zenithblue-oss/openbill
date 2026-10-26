@@ -67,6 +67,12 @@ interface PlatformServices {
      */
     suspend fun shareText(subject: String, text: String): String? = "Sharing is not available here"
 
+    /**
+     * Saves a text export (CSV, JSON, XML) through the platform save dialog (SAF on Android, a file
+     * dialog on desktop). Returns a message for the user, or null when cancelled.
+     */
+    suspend fun saveTextFile(fileName: String, text: String): String? = shareText(fileName, text)
+
     /** Per-device UI preferences (theme). Platforms override this with persistent storage. */
     val settingsStore: SettingsStore get() = defaultSettingsStore()
 }

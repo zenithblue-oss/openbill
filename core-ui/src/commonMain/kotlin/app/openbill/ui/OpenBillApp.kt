@@ -105,6 +105,13 @@ import app.openbill.ui.items.ItemEditScreen
 import app.openbill.ui.items.ItemListScreen
 import app.openbill.ui.more.InvoiceTemplatesScreen
 import app.openbill.ui.more.MoreScreen
+import app.openbill.ui.reports.AuditLogScreen
+import app.openbill.ui.reports.BooksLockScreen
+import app.openbill.ui.reports.ReportScreen
+import app.openbill.ui.reports.ReportsScreen
+import app.openbill.core.domain.report.ReportKind
+import app.openbill.core.domain.report.ReportPeriod
+import kotlinx.datetime.LocalDate
 import app.openbill.ui.money.AccountScreen
 import app.openbill.ui.money.MoneyCard
 import app.openbill.ui.money.MoneyDetailScreen
@@ -468,6 +475,7 @@ private fun RouteContent(
                 onAccount = { id -> nav.push(Route.AccountLedger(id)) },
                 onOutstanding = { r -> nav.push(Route.Outstanding(r)) },
                 onDocuments = { t -> nav.push(Route.Documents(t)) },
+                onReports = { nav.push(Route.Reports) },
             )
             Tab.PARTIES -> PartyListScreen(container, s) { id -> nav.push(Route.PartyEdit(id)) }
             Tab.ITEMS -> ItemListScreen(
@@ -483,6 +491,9 @@ private fun RouteContent(
                 onPurchases = { nav.push(Route.Purchases) },
                 onStock = { nav.push(Route.StockSummary()) },
                 onGodowns = { nav.push(Route.Godowns) },
+                onReports = { nav.push(Route.Reports) },
+                onBooks = { nav.push(Route.BooksLock) },
+                onAudit = { nav.push(Route.AuditLog) },
             )
         }
         is Route.PartyEdit -> PartyEditScreen(
@@ -537,6 +548,10 @@ private fun RouteContent(
             container, s, route.partyId,
             onBack = nav::pop,
             onRecordPayment = { t -> nav.push(Route.MoneyEditor(t, route.partyId)) },
+            onStatement = {
+                val fy = ReportPeriod.financialYearOf(container.today(), s.settings.financialYearStartMonth)
+                nav.push(Route.Report(ReportKind.PARTY_STATEMENT.key, fy.from.toString(), fy.to.toString(), route.partyId))
+            },
         )
         is Route.StockSummary -> StockSummaryScreen(
             container, s, route.lowOnly,
@@ -570,6 +585,19 @@ private fun RouteContent(
                 nav.push(Route.MoneyEditor(t, v.partyId, v.id))
             },
         )
+        Route.Reports -> ReportsScreen(
+            container, s, onBack = nav::pop,
+            onOpen = { k, p, party -> nav.push(Route.Report(k.key, p.from.toString(), p.to.toString(), party)) },
+            onAudit = { nav.push(Route.AuditLog) },
+            onBooks = { nav.push(Route.BooksLock) },
+        )
+        is Route.Report -> {
+            val kind = ReportKind.of(route.report)
+            val period = runCatching { ReportPeriod(LocalDate.parse(route.from), LocalDate.parse(route.to)) }.getOrNull()
+            if (kind == null || period == null) nav.pop() else ReportScreen(container, s, kind, period, route.partyId, onBack = nav::pop)
+        }
+        Route.AuditLog -> AuditLogScreen(container, s, onBack = nav::pop)
+        Route.BooksLock -> BooksLockScreen(container, s, onBack = nav::pop)
         is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler)
         Route.BusinessEdit -> BusinessEditScreen(container, s, onDone = nav::pop, backHandler = backHandler)
         Route.InvoiceTemplates -> InvoiceTemplatesScreen(container, s, onBack = nav::pop, backHandler = backHandler)

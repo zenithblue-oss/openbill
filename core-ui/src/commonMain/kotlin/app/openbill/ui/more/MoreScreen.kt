@@ -74,6 +74,9 @@ fun MoreScreen(
     onPurchases: () -> Unit = {},
     onStock: () -> Unit = {},
     onGodowns: () -> Unit = {},
+    onReports: () -> Unit = {},
+    onBooks: () -> Unit = {},
+    onAudit: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -128,6 +131,21 @@ fun MoreScreen(
                     colors = listColors,
                     modifier = Modifier.clickable(role = Role.Button, onClick = onInvoiceTemplates),
                 )
+
+                SectionHeader("Reports and compliance")
+                listOf(
+                    Triple("Reports", "Registers, P&L, stock, GSTR-1, GSTR-3B and Tally export", onReports),
+                    Triple("Lock books and close year", "Stop changes to filed periods", onBooks),
+                    Triple("Audit log", "Every post, cancel, restore and lock", onAudit),
+                ).forEach { (title, sub, action) ->
+                    ListItem(
+                        headlineContent = { Text(title) },
+                        supportingContent = { Text(sub) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                        colors = listColors,
+                        modifier = Modifier.clickable(role = Role.Button, onClick = action),
+                    )
+                }
 
                 SectionHeader("Purchases and stock")
                 listOf(

@@ -28,6 +28,24 @@ class MainActivity : ComponentActivity() {
         pendingCreate = null
     }
 
+    private var pendingFile: CompletableDeferred<Uri?>? = null
+    private val createFile = registerForActivityResult(
+        object : ActivityResultContracts.CreateDocument("application/octet-stream") {
+            override fun createIntent(context: android.content.Context, input: String) =
+                super.createIntent(context, input).setType(
+                    when (input.substringAfterLast('.').lowercase()) {
+                        "csv" -> "text/csv"
+                        "json" -> "application/json"
+                        "xml" -> "text/xml"
+                        else -> "text/plain"
+                    },
+                )
+        },
+    ) { uri ->
+        pendingFile?.complete(uri)
+        pendingFile = null
+    }
+
     private var pendingBackupCreate: CompletableDeferred<Uri?>? = null
     private var pendingBackupOpen: CompletableDeferred<Uri?>? = null
     private val createBackup = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -60,6 +78,12 @@ class MainActivity : ComponentActivity() {
                     pendingCreate?.complete(null)
                     val d = CompletableDeferred<Uri?>().also { pendingCreate = it }
                     createPdf.launch(name)
+                    d.await()
+                },
+                createFile = { name ->
+                    pendingFile?.complete(null)
+                    val d = CompletableDeferred<Uri?>().also { pendingFile = it }
+                    createFile.launch(name)
                     d.await()
                 },
             ),

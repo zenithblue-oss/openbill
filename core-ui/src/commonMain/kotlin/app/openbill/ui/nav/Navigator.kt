@@ -44,6 +44,12 @@ sealed interface Route {
     data object InvoiceTemplates : Route
     data class InvoicePdf(val voucherId: String) : Route
 
+    data object Reports : Route
+    /** A report by [ReportKind] key for an ISO date range; [partyId] for a party statement. */
+    data class Report(val report: String, val from: String, val to: String, val partyId: String? = null) : Route
+    data object AuditLog : Route
+    data object BooksLock : Route
+
     /** The introduction, replayed from More. */
     data object Introduction : Route
 
@@ -72,6 +78,10 @@ sealed interface Route {
             InvoiceTemplates -> "templates:"
             is InvoicePdf -> "pdf:$voucherId"
             Introduction -> "intro:"
+            Reports -> "reports:"
+            is Report -> "report:$report|$from|$to|${partyId.orEmpty()}"
+            AuditLog -> "audit:"
+            BooksLock -> "books:"
         }
 
     companion object {
@@ -110,6 +120,10 @@ sealed interface Route {
                 "templates" -> InvoiceTemplates
                 "pdf" -> arg.takeIf { it.isNotEmpty() }?.let { InvoicePdf(it) }
                 "intro" -> Introduction
+                "reports" -> Reports
+                "report" -> arg.split('|').takeIf { it.size >= 3 }?.let { p -> Report(p[0], p[1], p[2], p.getOrNull(3)?.ifEmpty { null }) }
+                "audit" -> AuditLog
+                "books" -> BooksLock
                 else -> null
             }
         }

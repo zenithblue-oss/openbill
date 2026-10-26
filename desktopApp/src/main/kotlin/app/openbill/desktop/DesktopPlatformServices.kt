@@ -89,6 +89,18 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         }
     }
 
+    override suspend fun saveTextFile(fileName: String, text: String): String? {
+        val target = withContext(Dispatchers.IO) { chooseSaveFile(fileName) } ?: return null
+        withContext(Dispatchers.IO) {
+            target.parentFile?.mkdirs()
+            val tmp = File(target.parentFile, target.name + ".tmp")
+            tmp.writeText(text)
+            java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            revealInFolder(target)
+        }
+        return "Saved ${target.name}"
+    }
+
     /** Desktop has no share sheet: the text goes to the clipboard for pasting into WhatsApp Web or mail. */
     override suspend fun shareText(subject: String, text: String): String? {
         java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(text), null)
@@ -156,14 +168,15 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
                 // Owned by the app window so focus returns to it when the dialog closes; with no
                 // owner the window was left without keyboard focus (Esc/Ctrl shortcuts dead).
                 val owner = Frame.getFrames().firstOrNull { it.isVisible }
-                val dialog = FileDialog(owner, "Save PDF", FileDialog.SAVE)
+                val ext = suggested.substringAfterLast('.', "pdf")
+                val dialog = FileDialog(owner, "Save ${ext.uppercase()}", FileDialog.SAVE)
                 dialog.file = suggested
                 val docs = File(System.getProperty("user.home"), "Documents")
                 dialog.directory = (if (docs.isDirectory) docs else File(System.getProperty("user.home"))).absolutePath
                 dialog.isVisible = true
                 val name = dialog.file
                 val dir = dialog.directory
-                result.complete(if (name == null || dir == null) null else File(dir, if (name.endsWith(".pdf", true)) name else "$name.pdf"))
+                result.complete(if (name == null || dir == null) null else File(dir, if (name.endsWith(".$ext", true)) name else "$name.$ext"))
             }.onFailure { result.completeExceptionally(it) }
         }
         return result.get()
