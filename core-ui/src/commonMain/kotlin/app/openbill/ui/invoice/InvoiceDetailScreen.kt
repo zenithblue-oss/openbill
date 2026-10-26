@@ -122,6 +122,7 @@ fun InvoiceDetailScreen(
     var party by remember { mutableStateOf<Party?>(null) }
     var units by remember { mutableStateOf(emptyMap<String, String>()) }
     var cancelOpen by remember { mutableStateOf(false) }
+    var restoreOf by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
@@ -260,7 +261,9 @@ fun InvoiceDetailScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Cancel ${docLabels(v.type).noun}") }
-                    VoucherStatus.CANCELLED -> {}
+                    VoucherStatus.CANCELLED -> OutlinedButton(onClick = { restoreOf = v.cancellationReason.orEmpty() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Restore ${docLabels(v.type).noun}")
+                    }
                 }
                 OutlinedButton(onClick = {
                     scope.launch {
@@ -343,6 +346,32 @@ fun InvoiceDetailScreen(
                 }) { Text("Cancel invoice", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { cancelOpen = false }, enabled = !cancelling) { Text("Keep") } },
+        )
+    }
+
+    restoreOf?.let { cancellationReason ->
+        var reason by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { restoreOf = null },
+            title = { Text("Restore this document?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text("It is posted again with its original number; stock and ledger entries are reapplied.")
+                    FormField("Reason *", reason, { reason = it; error = null }, error = error)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (reason.isBlank()) { error = "A reason is required"; return@TextButton }
+                    scope.launch {
+                        runCatching { container.restoreVoucher(voucherId, cancellationReason, reason.trim(), container.now()) }
+                            .onSuccess { restoreOf = null; messages?.show("Restored") }
+                            .onFailure { error = it.message ?: "Could not restore" }
+                    }
+                }) { Text("Restore") }
+            },
+            dismissButton = { TextButton(onClick = { restoreOf = null }) { Text("Keep cancelled") } },
         )
     }
 }

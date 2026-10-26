@@ -6,6 +6,7 @@ import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.repository.Repositories
 import app.openbill.core.domain.usecase.CancelVoucher
 import app.openbill.core.domain.usecase.PostVoucher
+import app.openbill.core.domain.usecase.RestoreVoucher
 import app.openbill.core.model.Ulid
 import androidx.compose.ui.graphics.ImageBitmap
 import app.openbill.ui.invoice.InvoiceDocument
@@ -98,6 +99,7 @@ class AppContainer(
 ) {
     val postVoucher = PostVoucher(repositories.vouchers)
     val cancelVoucher = CancelVoucher(repositories.vouchers)
+    val restoreVoucher = RestoreVoucher(repositories.vouchers)
 
     /** Theme preferences, read once and persisted on change. */
     val appearance: AppearanceController by lazy { AppearanceController(platform.settingsStore) }
