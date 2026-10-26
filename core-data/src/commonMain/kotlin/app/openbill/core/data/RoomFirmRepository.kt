@@ -1,6 +1,7 @@
 package app.openbill.core.data
 
 import app.openbill.core.database.AuditEventEntity
+import app.openbill.core.database.AuditTriggers
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.domain.model.FinancialYear
@@ -45,6 +46,31 @@ class RoomFirmRepository(
                 deletedAt = at.toEpochMillis(),
                 updatedAt = at.toEpochMillis(),
             )
+        }
+    }
+
+    /**
+     * Children before parents so RESTRICT keys never fire. audit_events is append-only, so its
+     * delete trigger is dropped and recreated inside the same transaction (docs/03 section 5):
+     * any failure rolls back both the rows and the trigger change.
+     */
+    override suspend fun eraseFirm(id: String) {
+        val inVouchers = "voucherId IN (SELECT id FROM vouchers WHERE firmId = ?)"
+        val inItems = "itemId IN (SELECT id FROM items WHERE firmId = ?)"
+        val deletes = listOf(
+            "audit_events", "attachments", "journal_entries", "payment_details", "payment_allocations", "stock_movements",
+        ).map { "DELETE FROM $it WHERE firmId = ?" } +
+            listOf("voucher_charge_portions", "voucher_charges", "voucher_lines").map { "DELETE FROM $it WHERE $inVouchers" } +
+            listOf("DELETE FROM vouchers WHERE firmId = ?", "DELETE FROM voucher_number_sequences WHERE firmId = ?") +
+            listOf("serial_numbers", "batches").map { "DELETE FROM $it WHERE $inItems" } +
+            listOf("items", "item_categories", "units", "godowns").map { "DELETE FROM $it WHERE firmId = ?" } +
+            "DELETE FROM party_addresses WHERE partyId IN (SELECT id FROM parties WHERE firmId = ?)" +
+            listOf("parties", "accounts", "financial_years", "firm_settings").map { "DELETE FROM $it WHERE firmId = ?" } +
+            "DELETE FROM firms WHERE id = ?"
+        transactions.writeWith { c ->
+            c.usePrepared("DROP TRIGGER IF EXISTS audit_events_no_delete") { it.step() }
+            deletes.forEach { sql -> c.usePrepared(sql) { s -> s.bindText(1, id); s.step() } }
+            AuditTriggers.statements.forEach { sql -> c.usePrepared(sql) { it.step() } }
         }
     }
 

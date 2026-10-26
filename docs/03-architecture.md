@@ -246,6 +246,14 @@ Rules:
 - Foreign keys are enforced; SQLite `foreign_keys` is on for every connection.
 - `audit_events` is append-only. Triggers reject every `UPDATE` and `DELETE`, on fresh and
   migrated databases alike.
+- The one exception is erasing a business ("Delete this business", after a forced backup).
+  `RoomFirmRepository.eraseFirm` runs in a single write transaction: drop
+  `audit_events_no_delete`, delete the firm's rows from every table (children before
+  parents, so RESTRICT keys never fire), then recreate the trigger. SQLite DDL is
+  transactional, so a failure rolls back the rows and the trigger together, and no other
+  connection can write while the trigger is absent. A tombstone row was rejected: it would
+  keep the firm's audit details on disk, which defeats erasure. The schema is unchanged, so
+  no migration. Firm logos are deleted too; voucher attachment files are not yet.
 
 ### Payments, control accounts, and party ledger
 

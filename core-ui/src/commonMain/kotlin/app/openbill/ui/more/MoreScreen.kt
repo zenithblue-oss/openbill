@@ -269,10 +269,11 @@ fun MoreScreen(
                 CsvSection(container, session, listColors)
                 app.openbill.ui.settings.AppLockItem(container, listColors)
                 BackupSection(listColors)
-                // shortcut: the firm is soft-deleted (hidden; its rows stay in the database file) because
-                // audit_events is append-only and some foreign keys restrict deletes. Add a trigger-aware
-                // purge in RoomFirmRepository when physical erasure is required.
-                DeleteFirmItem(firm.name, listColors) { container.repositories.firms.archiveFirm(firm.id, container.now()) }
+                // shortcut: voucher attachment files stay in the attachments folder; erase them too if that matters.
+                DeleteFirmItem(firm.name, listColors) {
+                    container.repositories.firms.eraseFirm(firm.id)
+                    app.openbill.ui.pdf.ImageKind.entries.forEach { runCatching { container.platform.saveFirmImage(firm.id, it, null) } }
+                }
 
                 SectionHeader("About")
                 ListItem(

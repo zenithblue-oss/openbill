@@ -15,6 +15,9 @@ interface FirmRepository {
 
     suspend fun archiveFirm(id: String, at: Instant)
 
+    /** Physically deletes the firm and every row that belongs to it, audit log included, atomically. */
+    suspend fun eraseFirm(id: String)
+
     fun observeSettings(firmId: String): Flow<FirmSettings?>
 
     suspend fun findSettings(firmId: String): FirmSettings?

@@ -26,6 +26,10 @@ class InMemoryFirmRepository : FirmRepository {
         firms.update { current -> current.filterNot { it.id == firm.id } + firm }
     }
 
+    override suspend fun eraseFirm(id: String) {
+        firms.update { current -> current.filterNot { it.id == id } }
+    }
+
     override suspend fun archiveFirm(id: String, at: Instant) {
         firms.update { current ->
             current.map { firm ->

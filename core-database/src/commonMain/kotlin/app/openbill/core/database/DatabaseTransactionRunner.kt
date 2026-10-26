@@ -23,7 +23,10 @@ class DatabaseTransactionRunner(
 ) {
     private val writeMutex = Mutex()
 
-    suspend fun <T> write(block: suspend () -> T): T {
+    suspend fun <T> write(block: suspend () -> T): T = writeWith { block() }
+
+    /** [write] that hands [block] the transaction's connection, for raw SQL such as DDL. */
+    suspend fun <T> writeWith(block: suspend (Transactor) -> T): T {
         check(currentCoroutineContext()[TransactionMarker.Key] == null) {
             "Nested DatabaseTransactionRunner.write calls are not allowed"
         }
@@ -34,7 +37,7 @@ class DatabaseTransactionRunner(
             withContext(TransactionMarker) {
                 database.useWriterConnection { transactor ->
                     transactor.withTransaction(Transactor.SQLiteTransactionType.IMMEDIATE) {
-                        block()
+                        block(transactor)
                     }
                 }
             }

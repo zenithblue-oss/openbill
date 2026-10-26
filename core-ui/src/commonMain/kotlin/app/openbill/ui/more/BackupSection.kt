@@ -164,7 +164,7 @@ fun DeleteFirmItem(firmName: String, listColors: ListItemColors, delete: suspend
     var busy by remember { mutableStateOf(false) }
     ListItem(
         headlineContent = { Text("Delete this business") },
-        supportingContent = { Text("Backs up all data first, then removes $firmName from this device") },
+        supportingContent = { Text("Backs up all data first, then permanently erases $firmName from this device") },
         leadingContent = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
         colors = listColors,
         modifier = Modifier.clickable(role = Role.Button) { typed = ""; open = true },
