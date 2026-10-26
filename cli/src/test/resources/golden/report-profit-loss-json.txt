@@ -1,0 +1,57 @@
+exit: 0
+--- stdout
+{
+  "title": "Profit and loss",
+  "from": "2026-09-01",
+  "to": "2026-09-30",
+  "columns": [
+    {
+      "key": "particulars",
+      "label": "Particulars",
+      "kind": "text"
+    },
+    {
+      "key": "amount",
+      "label": "Amount",
+      "kind": "money"
+    }
+  ],
+  "rows": [
+    {
+      "particulars": "Sales (net of returns)",
+      "amount": "150625.00"
+    },
+    {
+      "particulars": "Opening stock",
+      "amount": "0.00"
+    },
+    {
+      "particulars": "Purchases (net of returns)",
+      "amount": "0.00"
+    },
+    {
+      "particulars": "Closing stock",
+      "amount": "0.00"
+    },
+    {
+      "particulars": "Cost of goods sold",
+      "amount": "0.00"
+    },
+    {
+      "particulars": "Gross profit",
+      "amount": "150625.00"
+    },
+    {
+      "particulars": "Expense: Round Off",
+      "amount": "-0.50"
+    }
+  ],
+  "totals": {
+    "particulars": "Net profit",
+    "amount": "150625.50"
+  },
+  "notes": [
+    "From posted journal entries; stock at moving weighted average. Not a statutory statement."
+  ]
+}
+--- stderr

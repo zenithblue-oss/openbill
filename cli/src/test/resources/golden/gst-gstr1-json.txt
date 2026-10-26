@@ -1,0 +1,118 @@
+exit: 0
+--- stdout
+{
+  "gstin": "27ABCDE1234F1Z5",
+  "fp": "092026",
+  "b2b": [
+    {
+      "ctin": "27AAAPL1234C1ZE",
+      "inv": [
+        {
+          "inum": "INV-0001",
+          "idt": "05-09-2026",
+          "val": 148.00,
+          "pos": "27",
+          "rchrg": "N",
+          "inv_typ": "R",
+          "itms": [
+            {
+              "num": 1,
+              "itm_det": {
+                "txval": 125.00,
+                "rt": 18,
+                "camt": 11.25,
+                "samt": 11.25,
+                "csamt": 0.00
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "b2cl": [
+    {
+      "pos": "29",
+      "inv": [
+        {
+          "inum": "INV-0002",
+          "idt": "06-09-2026",
+          "val": 177000.00,
+          "itms": [
+            {
+              "num": 1,
+              "itm_det": {
+                "txval": 150000.00,
+                "rt": 18,
+                "iamt": 27000.00,
+                "csamt": 0.00
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "b2cs": [
+    {
+      "sply_ty": "INTRA",
+      "pos": "27",
+      "typ": "OE",
+      "txval": 500.00,
+      "rt": 18,
+      "camt": 45.00,
+      "samt": 45.00,
+      "csamt": 0.00
+    }
+  ],
+  "hsn": {
+    "hsn_b2b": [
+      {
+        "num": 1,
+        "hsn_sc": "7318",
+        "desc": "Steel Bolt",
+        "uqc": "NOS",
+        "qty": 10,
+        "rt": 18,
+        "txval": 125.00,
+        "iamt": 0.00,
+        "camt": 11.25,
+        "samt": 11.25,
+        "csamt": 0.00
+      }
+    ],
+    "hsn_b2c": [
+      {
+        "num": 1,
+        "hsn_sc": "",
+        "desc": "Fitting Service",
+        "uqc": "NA",
+        "qty": 0,
+        "rt": 18,
+        "txval": 150500.00,
+        "iamt": 27000.00,
+        "camt": 45.00,
+        "samt": 45.00,
+        "csamt": 0.00
+      }
+    ]
+  },
+  "doc_issue": {
+    "doc_det": [
+      {
+        "doc_num": 1,
+        "docs": [
+          {
+            "num": 1,
+            "from": "INV-0001",
+            "to": "INV-0003",
+            "totnum": 3,
+            "cancel": 0,
+            "net_issue": 3
+          }
+        ]
+      }
+    ]
+  }
+}
+--- stderr

@@ -210,4 +210,34 @@ class CliTest {
         assertContentEquals(before, db.readBytes())
         assertTrue(dataDir.listFiles()!!.none { it.name.startsWith("restore-safety-") || it.name.startsWith(".restore-") })
     }
+
+    @Test
+    fun reportsGstr1AndTallyGoldens() {
+        seed()
+        val db = openBillDatabase(File(dataDir, "openbill.db").absolutePath)
+        val at = Instant.fromEpochMilliseconds(1_780_000_000_000L)
+        runBlocking {
+            val r = db.roomRepositories()
+            r.parties.saveParty(Party(id = "P3", firmId = "F1", name = "Kiran Traders", type = PartyType.CUSTOMER, gstin = "27AAAPL1234C1ZE", stateCode = "27", createdAt = at, updatedAt = at))
+            r.parties.saveParty(Party(id = "P4", firmId = "F1", name = "Ravi Kumar", type = PartyType.CUSTOMER, stateCode = "29", createdAt = at, updatedAt = at))
+        }
+        db.close()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        ok("invoice", "create", "--party", "Kiran Traders", "--date", "2026-09-05", "--line", "BOLT:10", "--post")
+        ok("invoice", "create", "--party", "Ravi Kumar", "--date", "2026-09-06", "--place-of-supply", "29", "--line", "SVC:1@150000.00", "--post")
+        ok("invoice", "create", "--party", "Acme Stores", "--date", "2026-09-07", "--line", "SVC:1@500.00", "--post")
+        val sep = arrayOf("--from", "2026-09-01", "--to", "2026-09-30")
+        assertGolden("gst-gstr1-json", run("gst", "gstr1", "--period", "2026-09"))
+        assertGolden("report-sales-register", run("report", "sales-register", *sep))
+        assertGolden("report-gstr3b-csv", run("report", "run", "gstr3b", "--format", "csv", *sep))
+        assertGolden("report-profit-loss-json", run("--json", "report", "profit-loss", *sep))
+        assertGolden("tally-export", run("export", "tally", *sep))
+        assertEquals(run("export", "tally", *sep).out, run("tally", "export", *sep).out)
+        assertEquals(2, run("report", "party-statement", *sep).code) // needs --party
+        assertEquals(0, run("report", "party-statement", "--party", "Kiran Traders", *sep).code)
+        assertTrue(run("audit", "list").out.contains("voucher.posted"))
+        val out = File(root, "gstr1.json")
+        assertEquals(0, run("gst", "gstr1", "--period", "2026-09", "--out", out.path).code)
+        assertTrue(out.readText().startsWith("{"))
+    }
 }
