@@ -1,5 +1,6 @@
 package app.openbill.ui
 
+import androidx.compose.runtime.key
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -181,8 +182,17 @@ fun OpenBillApp(container: AppContainer, backHandler: BackHandlerSlot? = null) {
                                 backHandler = slot,
                             )
                             LaunchStage.SETUP -> SetupScreen(container)
-                            LaunchStage.APP -> list?.firstOrNull()?.let { FirmShell(container, it, slot, if (keyboardShell) keyBack else null) }
-                                ?: LoadingState()
+                            LaunchStage.APP -> {
+                                val activeId by container.activeFirm.firmId.collectAsState()
+                                val adding by container.activeFirm.adding.collectAsState()
+                                val firm = list?.let { l -> l.firstOrNull { it.id == activeId } ?: l.firstOrNull() }
+                                when {
+                                    adding -> SetupScreen(container, onCancel = { container.activeFirm.adding.value = false })
+                                    // Keyed so switching business starts a fresh navigation stack.
+                                    firm != null -> key(firm.id) { FirmShell(container, firm, slot, if (keyboardShell) keyBack else null) }
+                                    else -> LoadingState()
+                                }
+                            }
                         }
                     }
                 }

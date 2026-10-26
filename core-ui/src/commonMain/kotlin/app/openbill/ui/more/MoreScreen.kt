@@ -12,7 +12,9 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -118,6 +120,23 @@ fun MoreScreen(
                         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)),
                         modifier = Modifier.clickable(role = Role.Button, onClick = onEditBusiness),
+                    )
+                    HorizontalDivider()
+                    val firms by remember { container.repositories.firms.observeFirms() }.collectAsState(initial = emptyList())
+                    firms.filter { it.id != firm.id }.forEach { other ->
+                        ListItem(
+                            headlineContent = { Text("Switch to ${other.name}") },
+                            leadingContent = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)),
+                            modifier = Modifier.clickable(role = Role.Button) { container.activeFirm.select(other.id) },
+                        )
+                    }
+                    ListItem(
+                        headlineContent = { Text("Add another business") },
+                        supportingContent = { Text("Each business has its own parties, items, invoices and numbering") },
+                        leadingContent = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)),
+                        modifier = Modifier.clickable(role = Role.Button) { container.activeFirm.adding.value = true },
                     )
                 }
 

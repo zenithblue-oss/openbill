@@ -1,5 +1,6 @@
 package app.openbill.ui.setup
 
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.Image
@@ -117,7 +118,7 @@ fun BusinessFields(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupScreen(container: AppContainer) {
+fun SetupScreen(container: AppContainer, onCancel: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     val model = remember { FirmSetupModel(container, scope) }
     val form by model.state.collectAsState()
@@ -132,7 +133,13 @@ fun SetupScreen(container: AppContainer) {
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = { LargeTopAppBar(title = { Text("Set up your business") }, scrollBehavior = scrollBehavior) },
+        topBar = {
+            LargeTopAppBar(
+                title = { Text(if (onCancel == null) "Set up your business" else "Add a business") },
+                navigationIcon = { onCancel?.let { TextButton(onClick = it) { Text("Cancel") } } },
+                scrollBehavior = scrollBehavior,
+            )
+        },
     ) { padding ->
         CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
             FormColumn(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = pageGutter)) {

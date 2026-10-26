@@ -186,6 +186,7 @@ class FirmSetupModel(private val container: AppContainer, private val scope: Cor
                 signature.value?.let { container.platform.saveFirmImage(firmId, ImageKind.SIGNATURE, it) }
                 if (logo.value != null || signature.value != null) container.invoiceStyles.imageVersion.value++
                 ensureDefaults(container, firmId)
+                container.activeFirm.select(firmId)
             }.onFailure { e ->
                 _state.update { it.copy(saving = false, failure = e.message ?: "Could not save") }
             }

@@ -107,6 +107,9 @@ class AppContainer(
     /** Whether the first-run introduction was finished or skipped (device setting). */
     val onboarding: OnboardingController by lazy { OnboardingController(platform.settingsStore) }
 
+    /** Business switcher state (device setting). */
+    val activeFirm by lazy { app.openbill.ui.settings.ActiveFirmController(platform.settingsStore) }
+
     /** Per-firm invoice template, accent and print options (device settings, not the database). */
     val invoiceStyles: InvoiceStyleController by lazy { InvoiceStyleController(platform.settingsStore) }
 

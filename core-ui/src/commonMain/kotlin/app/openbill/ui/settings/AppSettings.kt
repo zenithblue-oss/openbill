@@ -67,6 +67,22 @@ class AppearanceController(private val store: SettingsStore) {
     fun setReduceMotion(enabled: Boolean) = update { it.copy(reduceMotion = enabled) }
 }
 
+/** The business shown on this device (null: the first one), and whether "Add business" is open. */
+class ActiveFirmController(private val store: SettingsStore) {
+    val firmId = MutableStateFlow(runCatching { store.getString(KEY) }.getOrNull())
+    val adding = MutableStateFlow(false)
+
+    fun select(id: String) {
+        adding.value = false
+        firmId.value = id
+        runCatching { store.putString(KEY, id) }
+    }
+
+    private companion object {
+        const val KEY = "firm.active"
+    }
+}
+
 /**
  * Remembers whether the first-run introduction has been finished or skipped on this device.
  * Read once; [markCompleted] persists immediately so a restart never shows it again.
