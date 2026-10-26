@@ -10,6 +10,8 @@ import app.openbill.ui.pdf.LogoImage
 import app.openbill.ui.pdf.PrintOptions
 import app.openbill.ui.pdf.SampleInvoice
 import app.openbill.ui.pdf.encodeQr
+import app.openbill.ui.pdf.PdfBoxPainter
+import app.openbill.ui.pdf.PdfFonts
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
@@ -92,7 +94,7 @@ class DesktopPdfSamplesTest {
 
     @Test
     fun unsupportedGlyphsBecomeQuestionMarks() {
-        assertEquals("Ram ????", app.openbill.desktop.PdfFonts.sanitize("Ram राम्", app.openbill.ui.pdf.FontRole.REGULAR).let { it.substring(0, 4) + it.substring(4).replace(Regex("\\?+"), "????") })
+        assertEquals("Ram ????", PdfFonts.sanitize("Ram राम्", app.openbill.ui.pdf.FontRole.REGULAR).let { it.substring(0, 4) + it.substring(4).replace(Regex("\\?+"), "????") })
         assertTrue(PdfFonts.metrics.width("₹1,000.00", app.openbill.ui.pdf.FontRole.BOLD, 10f) > 30f)
     }
 }

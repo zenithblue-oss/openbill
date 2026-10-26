@@ -38,3 +38,6 @@ object InvoicePdf {
     suspend fun share(container: AppContainer, firmId: String, doc: InvoiceDocument, style: InvoiceStyle = container.invoiceStyles.style(firmId).value): String? =
         container.platform.invoicePdfAction(doc, layout(container, firmId, doc, style), PdfAction.SHARE)
 }
+
+/** Decodes PNG/JPEG bytes for on-screen display (logo previews). */
+expect fun decodeImageBitmap(bytes: ByteArray): androidx.compose.ui.graphics.ImageBitmap?

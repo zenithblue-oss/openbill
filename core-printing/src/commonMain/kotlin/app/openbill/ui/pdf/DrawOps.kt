@@ -87,6 +87,3 @@ class LogoImage(val bytes: ByteArray, val widthPx: Int, val heightPx: Int) {
         return DrawOp.Image(x + (w - fw) * alignX, y + (h - fh) / 2f, fw, fh, kind)
     }
 }
-
-/** Decodes PNG/JPEG bytes for on-screen display (logo previews). */
-expect fun decodeImageBitmap(bytes: ByteArray): androidx.compose.ui.graphics.ImageBitmap?

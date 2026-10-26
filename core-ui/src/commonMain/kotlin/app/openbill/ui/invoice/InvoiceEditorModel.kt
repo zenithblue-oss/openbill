@@ -72,7 +72,7 @@ object LineRules {
         quantity = line.quantity.format(),
         rate = line.rate.format(),
         discount = when {
-            line.discountPercent != null -> Fmt.percent(line.discountPercent) + "%"
+            line.discountPercent != null -> Fmt.percent(line.discountPercent!!) + "%"
             line.discount.paise == 0L -> ""
             else -> line.discount.format()
         },

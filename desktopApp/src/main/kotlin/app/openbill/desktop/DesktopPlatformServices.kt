@@ -9,6 +9,8 @@ import app.openbill.ui.pdf.ImageKind
 import app.openbill.ui.pdf.InvoiceLayout
 import app.openbill.ui.pdf.LogoImage
 import app.openbill.ui.pdf.PdfAction
+import app.openbill.ui.pdf.PdfBoxPainter
+import app.openbill.ui.pdf.PdfFonts
 import java.awt.Desktop
 import java.awt.EventQueue
 import java.awt.FileDialog

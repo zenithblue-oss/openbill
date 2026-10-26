@@ -1,10 +1,5 @@
-package app.openbill.desktop
+package app.openbill.ui.pdf
 
-import app.openbill.ui.pdf.DrawOp
-import app.openbill.ui.pdf.FontMetrics
-import app.openbill.ui.pdf.FontRole
-import app.openbill.ui.pdf.ImageKind
-import app.openbill.ui.pdf.InvoiceLayout
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
@@ -21,10 +16,10 @@ import org.apache.pdfbox.rendering.ImageType
 import org.apache.pdfbox.rendering.PDFRenderer
 
 /**
- * The bundled Noto Sans files (OFL) read from the classpath (core-ui's pdf-assets), with
+ * The bundled Noto Sans files (OFL) read from the classpath (core-printing pdf-assets), with
  * glyph-advance metrics that match what PDFBox draws (PDFBox applies no kerning).
  */
-internal object PdfFonts {
+object PdfFonts {
     private val bytes = FontRole.entries.associateWith { role ->
         (PdfFonts::class.java.classLoader.getResourceAsStream(role.assetPath)
             ?: error("Missing font resource ${role.assetPath}")).use { it.readBytes() }
@@ -68,7 +63,7 @@ internal object PdfFonts {
 }
 
 /** Paints an [InvoiceLayout] with PDFBox: embedded font subsets, vector shapes, PNG/JPEG images. */
-internal object PdfBoxPainter {
+object PdfBoxPainter {
     fun toPdf(layout: InvoiceLayout): ByteArray = document(layout).use { doc ->
         ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
     }
