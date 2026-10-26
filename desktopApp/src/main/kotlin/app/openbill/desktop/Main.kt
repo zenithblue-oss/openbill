@@ -28,9 +28,21 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.file.StandardOpenOption
 import kotlin.system.exitProcess
 
+/**
+ * Portable mode (docs/07-desktop.md section 5): a `portable.flag` (or `openbill.portable`) file
+ * beside the executable keeps all data in `openbill-data/` next to it. [exe] is the jpackage
+ * launcher or, for an AppImage, the image itself (its mount is read-only).
+ */
+internal fun portableDataDir(exe: String? = System.getenv("APPIMAGE") ?: System.getProperty("jpackage.app-path")): File? {
+    val dir = exe?.takeIf { it.isNotBlank() }?.let { File(it).absoluteFile.parentFile } ?: return null
+    if (listOf("portable.flag", "openbill.portable").none { File(dir, it).isFile }) return null
+    return File(dir, "openbill-data").apply { mkdirs() }
+}
+
 /** docs/07-desktop.md section 5: `${XDG_DATA_HOME:-$HOME/.local/share}/openbill` on Linux. */
 internal fun dataDirectory(): File {
     System.getProperty("openbill.dataDir")?.takeIf { it.isNotBlank() }?.let { return File(it).apply { mkdirs() } }
+    portableDataDir()?.let { return it }
     val os = System.getProperty("os.name").lowercase()
     val home = System.getProperty("user.home")
     val base = when {
