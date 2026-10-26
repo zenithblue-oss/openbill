@@ -96,7 +96,27 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    /**
+     * Inventory: item barcodes, inward unit cost on movements (weighted-average valuation),
+     * per-line batch number/expiry, serial numbers and transfer destination, and the
+     * supplier's bill number on vouchers. All nullable; existing rows keep their meaning
+     * (movements without a cost are valued at the running average).
+     */
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `items` ADD COLUMN `barcode` TEXT DEFAULT NULL")
+            connection.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_items_firmId_barcode` ON `items` (`firmId`, `barcode`)",
+            )
+            connection.execSQL("ALTER TABLE `stock_movements` ADD COLUMN `unitCost` INTEGER DEFAULT NULL")
+            for (column in listOf("batchNumber", "expiryDate", "serialNumbers", "toGodownId")) {
+                connection.execSQL("ALTER TABLE `voucher_lines` ADD COLUMN `$column` TEXT DEFAULT NULL")
+            }
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `referenceNumber` TEXT DEFAULT NULL")
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
     fun migrationsFor(
         startVersion: Int,

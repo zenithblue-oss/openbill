@@ -70,6 +70,7 @@ data class VoucherEntity(
     val cancelledAt: Long?,
     val restoredAt: Long?,
     @Embedded val sync: SyncMetadata,
+    @ColumnInfo(defaultValue = "NULL") val referenceNumber: String? = null,
 )
 
 @Entity(
@@ -128,6 +129,11 @@ data class VoucherLineEntity(
     val batchId: String?,
     val stockDirection: String?,
     @Embedded val sync: SyncMetadata,
+    @ColumnInfo(defaultValue = "NULL") val batchNumber: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val expiryDate: String? = null,
+    /** Newline-separated serial/IMEI numbers. */
+    @ColumnInfo(defaultValue = "NULL") val serialNumbers: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val toGodownId: String? = null,
 )
 
 @Entity(

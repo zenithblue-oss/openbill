@@ -30,6 +30,13 @@ data class VoucherLine(
     val godownId: String? = null,
     val batchId: String? = null,
     val stockDirection: StockDirection? = null,
+    /** Batch number for batch-tracked items; resolved to a batch row of [godownId] on posting. */
+    val batchNumber: String? = null,
+    val expiryDate: LocalDate? = null,
+    /** Serial/IMEI numbers for serial-tracked items; one per unit of [quantity]. */
+    val serialNumbers: List<String> = emptyList(),
+    /** Destination godown of a stock-transfer line ([godownId] is the source). */
+    val toGodownId: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "VoucherLine id cannot be blank" }
@@ -41,6 +48,10 @@ data class VoucherLine(
         require(taxable >= Money.ZERO) { "VoucherLine taxable cannot be negative" }
         require(tax >= Money.ZERO) { "VoucherLine tax cannot be negative" }
         require(total >= Money.ZERO) { "VoucherLine total cannot be negative" }
+        require(serialNumbers.none { it.isBlank() }) { "VoucherLine serial numbers cannot be blank" }
+        require(serialNumbers.distinct().size == serialNumbers.size) {
+            "VoucherLine serial numbers must be unique"
+        }
     }
 }
 
@@ -193,6 +204,8 @@ data class Voucher(
     val dueDate: LocalDate? = null,
     val partyId: String? = null,
     val referenceVoucherId: String? = null,
+    /** The supplier's own bill number on a purchase bill or the party's document number. */
+    val referenceNumber: String? = null,
     val status: VoucherStatus = VoucherStatus.DRAFT,
     val placeOfSupplyStateCode: String,
     val lines: List<VoucherLine> = emptyList(),

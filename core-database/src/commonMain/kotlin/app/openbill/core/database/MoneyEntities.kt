@@ -1,6 +1,7 @@
 package app.openbill.core.database
 
 import androidx.room.Embedded
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -104,6 +105,7 @@ data class StockMovementEntity(
     val date: String,
     val quantity: Long,
     val createdAt: Long,
+    @ColumnInfo(defaultValue = "NULL") val unitCost: Long? = null,
 )
 
 @Entity(

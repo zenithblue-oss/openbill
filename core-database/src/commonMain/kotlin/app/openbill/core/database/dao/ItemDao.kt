@@ -15,6 +15,12 @@ interface ItemDao {
     @Update
     suspend fun update(item: ItemEntity)
 
+    @Query(
+        "SELECT * FROM items WHERE firmId = :firmId AND deletedAt IS NULL " +
+            "AND (barcode = :code OR sku = :code) ORDER BY barcode = :code DESC, id LIMIT 1",
+    )
+    suspend fun findByBarcode(firmId: String, code: String): ItemEntity?
+
     @Query("SELECT * FROM items WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): ItemEntity?
 
@@ -28,7 +34,8 @@ interface ItemDao {
         "SELECT * FROM items WHERE firmId = :firmId AND deletedAt IS NULL " +
             "AND (name LIKE '%' || :query || '%' " +
             "OR sku LIKE '%' || :query || '%' " +
-            "OR hsnSac LIKE '%' || :query || '%') " +
+            "OR hsnSac LIKE '%' || :query || '%' " +
+            "OR barcode LIKE '%' || :query || '%') " +
             "ORDER BY name COLLATE NOCASE, id",
     )
     suspend fun search(firmId: String, query: String): List<ItemEntity>

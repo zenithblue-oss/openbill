@@ -18,6 +18,9 @@ interface CatalogRepository {
 
     suspend fun searchItems(firmId: String, query: String): List<Item>
 
+    /** Exact barcode match (then SKU) among the firm's active items, for scanners. */
+    suspend fun findItemByBarcode(firmId: String, code: String): Item?
+
     fun observeCategories(firmId: String): Flow<List<ItemCategory>>
 
     suspend fun findCategory(id: String): ItemCategory?

@@ -1,5 +1,6 @@
 package app.openbill.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -222,6 +223,7 @@ data class GodownEntity(
     indices = [
         Index(value = ["firmId", "name"]),
         Index(value = ["firmId", "sku"]),
+        Index(value = ["firmId", "barcode"]),
         Index(value = ["firmId", "hsnSac"]),
         Index(value = ["categoryId"]),
         Index(value = ["unitId"]),
@@ -249,6 +251,7 @@ data class ItemEntity(
     val lowStockLevel: Long?,
     val notes: String?,
     @Embedded val sync: SyncMetadata,
+    @ColumnInfo(defaultValue = "NULL") val barcode: String? = null,
 )
 
 @Entity(

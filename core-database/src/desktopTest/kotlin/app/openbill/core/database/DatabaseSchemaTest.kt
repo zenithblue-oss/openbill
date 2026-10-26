@@ -48,14 +48,15 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(5, OPENBILL_DATABASE_VERSION)
+        assertEquals(6, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/4.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/5.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/6.json").exists())
 
-        helper.createDatabase(5).use { connection ->
+        helper.createDatabase(6).use { connection ->
             val tables = mutableListOf<String>()
             connection.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -255,9 +256,67 @@ class DatabaseSchemaTest {
     }
 
     @Test
+    fun schemaV5MigratesToV6AndKeepsInventoryRows() {
+        helper.createDatabase(5).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO financial_years (id, firmId, startDate, endDate, createdAt, updatedAt) " +
+                    "VALUES ('fy-1', 'firm-1', '2026-04-01', '2027-03-31', 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO units (id, firmId, name, symbol, decimalPlaces, createdAt, updatedAt, revision) " +
+                    "VALUES ('unit-1', 'firm-1', 'Pieces', 'pcs', 0, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO godowns (id, firmId, name, isDefault, createdAt, updatedAt, revision) " +
+                    "VALUES ('g-1', 'firm-1', 'Main', 1, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO items (id, firmId, name, sku, unitId, isService, taxRateUnits, cessRateUnits, " +
+                    "salePrice, purchasePrice, trackInventory, trackBatch, trackSerial, createdAt, updatedAt, revision) " +
+                    "VALUES ('item-1', 'firm-1', 'Widget', 'W1', 'unit-1', 0, 0, 0, 1000, 800, 1, 0, 0, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO vouchers (id, firmId, financialYearId, type, date, status, " +
+                    "placeOfSupplyStateCode, subtotal, discount, taxable, tax, roundOff, total, " +
+                    "createdAt, updatedAt, revision) VALUES ('voucher-1', 'firm-1', 'fy-1', 'purchase', " +
+                    "'2026-05-10', 'draft', '27', 8000, 0, 8000, 0, 0, 8000, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO stock_movements (id, firmId, itemId, godownId, voucherId, date, quantity, createdAt) " +
+                    "VALUES ('m-1', 'firm-1', 'item-1', 'g-1', 'voucher-1', '2026-05-10', 100000, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(
+            OPENBILL_DATABASE_VERSION,
+            DatabaseMigrations.migrationsFor(5),
+        ).use { connection ->
+            connection.prepare("SELECT quantity, unitCost FROM stock_movements WHERE id = 'm-1'").use {
+                assertTrue(it.step())
+                assertEquals(100000L, it.getLong(0))
+                assertTrue(it.isNull(1))
+            }
+            connection.prepare("SELECT sku, barcode FROM items WHERE id = 'item-1'").use {
+                assertTrue(it.step())
+                assertEquals("W1", it.getText(0))
+                assertTrue(it.isNull(1))
+            }
+            connection.execSQL("UPDATE items SET barcode = 'OB123' WHERE id = 'item-1'")
+            connection.execSQL("UPDATE vouchers SET referenceNumber = 'SUP-9' WHERE id = 'voucher-1'")
+            connection.prepare("SELECT referenceNumber FROM vouchers WHERE id = 'voucher-1'").use {
+                assertTrue(it.step())
+                assertEquals("SUP-9", it.getText(0))
+            }
+        }
+    }
+
+    @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(4, migrations.size)
+        assertEquals(5, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -266,7 +325,8 @@ class DatabaseSchemaTest {
         assertEquals(4, migrations[2].endVersion)
         assertEquals(4, migrations[3].startVersion)
         assertEquals(5, migrations[3].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(5).isEmpty())
+        assertEquals(6, migrations[4].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(6).isEmpty())
     }
 
     @Test

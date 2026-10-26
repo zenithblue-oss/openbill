@@ -1,6 +1,8 @@
 package app.openbill.core.data
 
 import app.openbill.core.database.OpenBillDatabase
+import app.openbill.core.domain.model.Batch
+import app.openbill.core.domain.model.SerialNumber
 import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.repository.StockRepository
 import app.openbill.core.model.Quantity
@@ -31,4 +33,16 @@ class RoomStockRepository(
     override fun observeMovements(voucherId: String): Flow<List<StockMovement>> =
         movements.observeMovementsForVoucher(voucherId)
             .map { values -> values.map { it.toDomain() } }
+
+    override fun observeFirmMovements(firmId: String): Flow<List<StockMovement>> =
+        movements.observeForFirm(firmId).map { values -> values.map { it.toDomain() } }
+
+    override fun observeItemMovements(firmId: String, itemId: String): Flow<List<StockMovement>> =
+        movements.observeForItem(firmId, itemId).map { values -> values.map { it.toDomain() } }
+
+    override fun observeBatches(itemId: String): Flow<List<Batch>> =
+        database.batchDao().observeForItem(itemId).map { values -> values.map { it.toDomain() } }
+
+    override fun observeSerials(itemId: String): Flow<List<SerialNumber>> =
+        database.serialNumberDao().observeForItem(itemId).map { values -> values.map { it.toDomain() } }
 }

@@ -6,7 +6,12 @@ import app.openbill.core.database.FirmEntity
 import app.openbill.core.database.FirmSettingsEntity
 import app.openbill.core.database.GodownEntity
 import app.openbill.core.database.ItemCategoryEntity
+import app.openbill.core.database.BatchEntity
 import app.openbill.core.database.ItemEntity
+import app.openbill.core.database.SerialNumberEntity
+import app.openbill.core.domain.model.Batch
+import app.openbill.core.domain.model.SerialNumber
+import app.openbill.core.domain.model.SerialStatus
 import app.openbill.core.database.JournalEntryEntity
 import app.openbill.core.database.PartyAddressEntity
 import app.openbill.core.database.PartyEntity
@@ -310,6 +315,7 @@ internal fun ItemEntity.toDomain(): Item = Item(
     firmId = firmId,
     name = name,
     sku = sku,
+    barcode = barcode,
     categoryId = categoryId,
     unitId = unitId,
     hsnSac = hsnSac,
@@ -335,6 +341,7 @@ internal fun Item.toEntity(existing: ItemEntity?): ItemEntity = ItemEntity(
     firmId = firmId,
     name = name,
     sku = sku,
+    barcode = barcode,
     categoryId = categoryId,
     unitId = unitId,
     hsnSac = hsnSac,
@@ -367,6 +374,7 @@ internal fun VoucherEntity.toDomain(
     dueDate = dueDate?.let(LocalDate::parse),
     partyId = partyId,
     referenceVoucherId = referenceVoucherId,
+    referenceNumber = referenceNumber,
     status = decodeEnum<VoucherStatus>(status, "voucher status"),
     placeOfSupplyStateCode = placeOfSupplyStateCode,
     lines = lines.map { it.toDomain() },
@@ -401,6 +409,7 @@ internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = Voucher
     dueDate = dueDate?.toString(),
     partyId = partyId,
     referenceVoucherId = referenceVoucherId,
+    referenceNumber = referenceNumber,
     status = status.name.lowercase(),
     placeOfSupplyStateCode = placeOfSupplyStateCode,
     subtotal = subtotal.paise,
@@ -438,6 +447,10 @@ internal fun VoucherLineEntity.toDomain(): VoucherLine = VoucherLine(
     stockDirection = stockDirection?.let {
         decodeEnum<StockDirection>(it, "stock direction")
     },
+    batchNumber = batchNumber,
+    expiryDate = expiryDate?.let(LocalDate::parse),
+    serialNumbers = serialNumbers?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
+    toGodownId = toGodownId,
 )
 
 internal fun VoucherLine.toEntity(
@@ -464,6 +477,10 @@ internal fun VoucherLine.toEntity(
     godownId = godownId,
     batchId = batchId,
     stockDirection = this.stockDirection?.name?.lowercase(),
+    batchNumber = batchNumber,
+    expiryDate = expiryDate?.toString(),
+    serialNumbers = serialNumbers.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+    toGodownId = toGodownId,
     sync = syncFor(
         createdAt = voucher.createdAt,
         updatedAt = voucher.updatedAt,
@@ -547,6 +564,7 @@ internal fun StockMovementEntity.toDomain(): StockMovement = StockMovement(
     date = LocalDate.parse(date),
     quantity = Quantity.ofScaledUnits(quantity),
     createdAt = createdAt.toInstant(),
+    unitCost = unitCost?.let(Money::of),
 )
 
 internal fun StockMovement.toEntity(): StockMovementEntity = StockMovementEntity(
@@ -560,6 +578,7 @@ internal fun StockMovement.toEntity(): StockMovementEntity = StockMovementEntity
     date = date.toString(),
     quantity = quantity.scaledUnits,
     createdAt = createdAt.toEpochMillis(),
+    unitCost = unitCost?.paise,
 )
 
 internal fun AccountEntity.toDomain(): Account = Account(
@@ -660,4 +679,20 @@ internal fun PaymentAllocation.toEntity(): PaymentAllocationEntity = PaymentAllo
     amount = amount.paise,
     createdAt = createdAt.toEpochMillis(),
     updatedAt = updatedAt.toEpochMillis(),
+)
+
+internal fun BatchEntity.toDomain(): Batch = Batch(
+    id = id,
+    itemId = itemId,
+    godownId = godownId,
+    batchNumber = batchNumber,
+    expiryDate = expiryDate?.let(LocalDate::parse),
+)
+
+internal fun SerialNumberEntity.toDomain(): SerialNumber = SerialNumber(
+    id = id,
+    itemId = itemId,
+    serialNumber = serialNumber,
+    status = decodeEnum<SerialStatus>(status, "serial status"),
+    voucherLineId = voucherLineId,
 )

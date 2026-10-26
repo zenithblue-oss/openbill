@@ -63,6 +63,8 @@ data class Item(
     val firmId: String,
     val name: String,
     val sku: String? = null,
+    /** Code128 payload printed on labels and matched by scanners; unique per firm when set. */
+    val barcode: String? = null,
     val categoryId: String? = null,
     val unitId: String,
     val hsnSac: String? = null,

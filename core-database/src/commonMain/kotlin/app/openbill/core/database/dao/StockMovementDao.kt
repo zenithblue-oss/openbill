@@ -29,6 +29,18 @@ interface StockMovementDao {
     )
     suspend fun movementsForItem(firmId: String, itemId: String): List<StockMovementEntity>
 
+    @Query("SELECT * FROM stock_movements WHERE firmId = :firmId")
+    fun observeForFirm(firmId: String): Flow<List<StockMovementEntity>>
+
+    @Query(
+        "SELECT * FROM stock_movements WHERE firmId = :firmId AND itemId = :itemId " +
+            "ORDER BY date DESC, createdAt DESC, id DESC",
+    )
+    fun observeForItem(firmId: String, itemId: String): Flow<List<StockMovementEntity>>
+
+    @Query("SELECT COALESCE(SUM(quantity), 0) FROM stock_movements WHERE batchId = :batchId")
+    suspend fun balanceForBatch(batchId: String): Long
+
     @Query(
         "SELECT COALESCE(SUM(quantity), 0) FROM stock_movements " +
             "WHERE firmId = :firmId AND itemId = :itemId AND godownId = :godownId",

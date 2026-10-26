@@ -25,7 +25,9 @@ class PostVoucher(private val vouchers: VoucherRepository) {
         require(voucher.placeOfSupplyStateCode.length == 2) {
             "Voucher place of supply state code must have two characters"
         }
-        require(voucher.total > Money.ZERO) { "Voucher total must be positive" }
+        if (voucher.type !in STOCK_ONLY_TYPES) {
+            require(voucher.total > Money.ZERO) { "Voucher total must be positive" }
+        }
         if (voucher.type.postsLedger()) {
             require(voucher.partyId != null) { "Voucher must have a party to post to the ledger" }
         }
@@ -42,5 +44,6 @@ class PostVoucher(private val vouchers: VoucherRepository) {
 
     private companion object {
         val CONVERTIBLE_TYPES = setOf(VoucherType.QUOTATION, VoucherType.PROFORMA)
+        val STOCK_ONLY_TYPES = setOf(VoucherType.STOCK_ADJUSTMENT, VoucherType.STOCK_TRANSFER)
     }
 }

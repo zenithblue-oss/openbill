@@ -26,6 +26,10 @@ class InMemoryCatalogRepository : CatalogRepository {
     override suspend fun findItem(id: String): Item? = items.value.firstOrNull { it.id == id }
 
     override suspend fun saveItem(item: Item) {
+        item.barcode?.let { code ->
+            val clash = items.value.firstOrNull { it.firmId == item.firmId && it.id != item.id && it.deletedAt == null && it.barcode == code }
+            require(clash == null) { "Barcode $code is already used by ${clash?.name}" }
+        }
         items.update { current -> current.filterNot { it.id == item.id } + item }
     }
 
@@ -48,10 +52,17 @@ class InMemoryCatalogRepository : CatalogRepository {
             .filter { item ->
                 item.firmId == firmId &&
                     item.deletedAt == null &&
-                    listOfNotNull(item.name, item.sku, item.hsnSac)
+                    listOfNotNull(item.name, item.sku, item.hsnSac, item.barcode)
                         .any { it.lowercase().contains(needle) }
             }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    }
+
+    override suspend fun findItemByBarcode(firmId: String, code: String): Item? {
+        val c = code.trim()
+        if (c.isEmpty()) return null
+        val active = items.value.filter { it.firmId == firmId && it.deletedAt == null }
+        return active.firstOrNull { it.barcode == c } ?: active.firstOrNull { it.sku == c }
     }
 
     override fun observeCategories(firmId: String): Flow<List<ItemCategory>> =

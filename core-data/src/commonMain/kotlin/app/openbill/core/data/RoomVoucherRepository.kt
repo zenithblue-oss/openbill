@@ -1,6 +1,11 @@
 package app.openbill.core.data
 
 import app.openbill.core.database.AuditEventEntity
+import app.openbill.core.database.BatchEntity
+import app.openbill.core.database.SerialNumberEntity
+import app.openbill.core.domain.model.Item
+import app.openbill.core.domain.model.SerialStatus
+import app.openbill.core.domain.service.InventoryRules
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.database.VoucherEntity
@@ -40,6 +45,8 @@ class RoomVoucherRepository(
     private val items get() = database.itemDao()
     private val stockMovements get() = database.stockMovementDao()
     private val paymentDetails get() = database.paymentDetailsDao()
+    private val batches get() = database.batchDao()
+    private val serials get() = database.serialNumberDao()
     private val derivation = StockMovementDerivation()
     private val ledgerDerivation = LedgerJournalDerivation()
 
@@ -145,6 +152,7 @@ class RoomVoucherRepository(
         val firmSettings = settingsFor(entity.firmId)
         val movements = derivePosted(voucher, firmSettings, at)
         enforceStock(movements, firmSettings)
+        applySerials(voucher, firmSettings, at, reverse = false)
 
         val type = decodeEnum<VoucherType>(entity.type, "voucher type")
         val number = allocateNumber(entity, type, at)
@@ -191,6 +199,7 @@ class RoomVoucherRepository(
             .map { it.toDomain() }
         val reversals = derivation.deriveCancellation(voucher, originalMovements, at)
         enforceStock(reversals, firmSettings)
+        applySerials(voucher, firmSettings, at, reverse = true)
         val journalReversals = deriveJournalCancelled(voucher, at)
 
         val atMillis = at.toEpochMillis()
@@ -244,6 +253,7 @@ class RoomVoucherRepository(
         val restoreDate = at.toLocalDateTime(TimeZone.UTC).date
         val movements = derivePosted(posted, firmSettings, at).map { it.copy(date = restoreDate) }
         enforceStock(movements, firmSettings)
+        applySerials(posted, firmSettings, at, reverse = false)
         val journalEntries = deriveJournalPosted(posted, at).map { it.copy(date = restoreDate) }
 
         val atMillis = at.toEpochMillis()
@@ -386,18 +396,92 @@ class RoomVoucherRepository(
     private suspend fun settingsFor(firmId: String): FirmSettings =
         settings.findByFirm(firmId)?.toDomain() ?: FirmSettings(firmId = firmId)
 
+    private suspend fun itemsOf(voucher: Voucher): Map<String, Item> =
+        voucher.lines.mapNotNull { it.itemId }.distinct()
+            .mapNotNull { itemId -> items.findById(itemId)?.let { item -> itemId to item.toDomain() } }
+            .toMap()
+
     private suspend fun derivePosted(
         voucher: Voucher,
         settings: FirmSettings,
         at: Instant,
     ): List<StockMovement> {
-        val itemIds = voucher.lines.mapNotNull { it.itemId }.distinct()
-        val itemsById = itemIds
-            .mapNotNull { itemId ->
-                items.findById(itemId)?.let { item -> itemId to item.toDomain() }
+        val itemsById = itemsOf(voucher)
+        // Batch rows are created on demand (per item, godown and batch number) inside the
+        // posting transaction, so a rejected posting leaves none behind.
+        val batchIds = mutableMapOf<Triple<String, String, String>, String>()
+        for (line in voucher.lines) {
+            val item = line.itemId?.let { itemsById[it] } ?: continue
+            val number = line.batchNumber?.trim()?.ifEmpty { null } ?: continue
+            if (!item.trackInventory || item.isService) continue
+            val godowns = listOfNotNull(line.godownId ?: settings.defaultGodownId, line.toGodownId)
+            for (godown in godowns) {
+                val key = Triple(item.id, godown, number)
+                if (key in batchIds) continue
+                val existing = batches.findByNumber(item.id, godown, number)
+                batchIds[key] = existing?.id ?: Ulid.create(at.toEpochMilliseconds()).toString().also { id ->
+                    batches.insert(
+                        BatchEntity(
+                            id = id,
+                            itemId = item.id,
+                            godownId = godown,
+                            batchNumber = number,
+                            expiryDate = line.expiryDate?.toString(),
+                            sync = syncFor(at, at, null, null),
+                        ),
+                    )
+                }
             }
-            .toMap()
-        return derivation.derivePosted(voucher, itemsById, settings, at)
+        }
+        return derivation.derivePosted(voucher, itemsById, settings, at) { line, godown ->
+            line.batchNumber?.trim()?.let { batchIds[Triple(line.itemId!!, godown, it)] } ?: line.batchId
+        }
+    }
+
+    /** Moves each serial number in or out of stock; [reverse] undoes a posting (cancellation). */
+    private suspend fun applySerials(voucher: Voucher, settings: FirmSettings, at: Instant, reverse: Boolean) {
+        val itemsById = itemsOf(voucher)
+        for (line in voucher.lines) {
+            val item = line.itemId?.let { itemsById[it] } ?: continue
+            if (!item.trackSerial || line.serialNumbers.isEmpty()) continue
+            val direction = StockMovementDerivation.directionOf(voucher.type, line) ?: continue
+            val inward = when (direction) {
+                StockMovementDerivation.LineDirection.INWARD -> !reverse
+                StockMovementDerivation.LineDirection.OUTWARD -> reverse
+                StockMovementDerivation.LineDirection.TRANSFER -> null
+            }
+            for (raw in line.serialNumbers) {
+                val serial = raw.trim()
+                val existing = serials.findByNumber(item.id, serial)
+                val next = InventoryRules.serialTransition(
+                    item.name,
+                    serial,
+                    existing?.let { decodeEnum<SerialStatus>(it.status, "serial status") },
+                    inward,
+                    allowUnknown = settings.negativeStockAllowed,
+                ).name.lowercase()
+                if (existing == null) {
+                    serials.insert(
+                        SerialNumberEntity(
+                            id = Ulid.create(at.toEpochMilliseconds()).toString(),
+                            itemId = item.id,
+                            serialNumber = serial,
+                            status = next,
+                            voucherLineId = line.id,
+                            sync = syncFor(at, at, null, null),
+                        ),
+                    )
+                } else {
+                    serials.update(
+                        existing.copy(
+                            status = next,
+                            voucherLineId = line.id,
+                            sync = existing.sync.copy(updatedAt = at.toEpochMillis(), revision = existing.sync.revision + 1),
+                        ),
+                    )
+                }
+            }
+        }
     }
 
     private suspend fun enforceStock(
@@ -407,19 +491,24 @@ class RoomVoucherRepository(
         if (settings.negativeStockAllowed) return
         val balances = mutableMapOf<StockKey, Quantity>()
         for (movement in movements) {
-            val key = StockKey(movement.firmId, movement.itemId, movement.godownId)
+            // Batch stock is checked per batch; everything else per item and godown.
+            val key = StockKey(movement.firmId, movement.itemId, movement.godownId, movement.batchId)
             val current = balances.getOrPut(key) {
                 Quantity.ofScaledUnits(
-                    stockMovements.balanceForItemGodown(
-                        movement.firmId,
-                        movement.itemId,
-                        movement.godownId,
-                    ),
+                    movement.batchId?.let { stockMovements.balanceForBatch(it) }
+                        ?: stockMovements.balanceForItemGodown(
+                            movement.firmId,
+                            movement.itemId,
+                            movement.godownId,
+                        ),
                 )
             }
             val next = current + movement.quantity
             require(next >= Quantity.of(0)) {
-                "Insufficient stock for item ${movement.itemId} in godown ${movement.godownId}"
+                val name = runCatching { items.findById(movement.itemId)?.name }.getOrNull() ?: movement.itemId
+                val godown = runCatching { database.catalogDao().findGodownById(movement.godownId)?.name }.getOrNull() ?: movement.godownId
+                "Insufficient stock for $name in $godown (available ${current.format()}); " +
+                    "allow negative stock in settings to override"
             }
             balances[key] = next
         }
@@ -487,6 +576,7 @@ class RoomVoucherRepository(
         val firmId: String,
         val itemId: String,
         val godownId: String,
+        val batchId: String?,
     )
 
     private companion object {

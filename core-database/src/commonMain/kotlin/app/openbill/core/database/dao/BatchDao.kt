@@ -15,6 +15,12 @@ interface BatchDao {
     @Update
     suspend fun update(batch: BatchEntity)
 
+    @Query(
+        "SELECT * FROM batches WHERE itemId = :itemId AND godownId = :godownId " +
+            "AND batchNumber = :batchNumber LIMIT 1",
+    )
+    suspend fun findByNumber(itemId: String, godownId: String, batchNumber: String): BatchEntity?
+
     @Query("SELECT * FROM batches WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): BatchEntity?
 

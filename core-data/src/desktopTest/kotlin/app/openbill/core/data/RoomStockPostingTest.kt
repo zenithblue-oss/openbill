@@ -8,6 +8,8 @@ import app.openbill.core.domain.model.StockDirection
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.model.Quantity
+import app.openbill.core.domain.model.SerialStatus
+import kotlinx.datetime.LocalDate
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -289,6 +291,86 @@ class RoomStockPostingTest {
 
         assertTrue(movements(draft.id).isEmpty())
         assertEquals(Quantity.of(0), balance())
+    }
+
+    @Test
+    fun serialNumbersMoveInAndOutAndDuplicatesAreRejected(): Unit = runBlocking {
+        seedMasterData()
+        catalog.saveItem(testItem().copy(trackSerial = true))
+        val purchase = voucher(
+            VoucherType.PURCHASE,
+            id = "p1",
+            line = testLine(id = "p1l", itemId = ITEM_ID, quantity = Quantity.of(2)).copy(serialNumbers = listOf("IMEI1", "IMEI2")),
+        )
+        repository.saveDraft(purchase)
+        repository.post(purchase.id, POSTED_AT)
+        val again = voucher(
+            VoucherType.PURCHASE,
+            id = "p2",
+            line = testLine(id = "p2l", itemId = ITEM_ID, quantity = Quantity.of(1)).copy(serialNumbers = listOf("IMEI2")),
+        )
+        repository.saveDraft(again)
+        assertIs<IllegalArgumentException>(runCatching { repository.post(again.id, POSTED_AT) }.exceptionOrNull())
+        assertEquals(VoucherStatus.DRAFT, repository.findVoucher(again.id)?.status)
+
+        val sale = voucher(
+            VoucherType.SALE,
+            id = "s1",
+            line = testLine(id = "s1l", itemId = ITEM_ID, quantity = Quantity.of(1)).copy(serialNumbers = listOf("IMEI1")),
+        )
+        repository.saveDraft(sale)
+        repository.post(sale.id, POSTED_AT)
+        val statuses = { runBlocking { stock.observeSerials(ITEM_ID).first().associate { it.serialNumber to it.status } } }
+        assertEquals(mapOf("IMEI1" to SerialStatus.OUT, "IMEI2" to SerialStatus.IN_STOCK), statuses())
+        assertEquals(Quantity.of(1), balance())
+
+        repository.cancel(sale.id, "Customer request", POSTED_AT)
+        assertEquals(SerialStatus.IN_STOCK, statuses()["IMEI1"])
+    }
+
+    @Test
+    fun batchesAreCreatedPerGodownAndCheckedPerBatch(): Unit = runBlocking {
+        seedMasterData()
+        catalog.saveGodown(testGodown(id = "godown-2", name = "Shop").copy(isDefault = false))
+        catalog.saveItem(testItem().copy(trackBatch = true))
+        val purchase = voucher(
+            VoucherType.PURCHASE,
+            id = "p1",
+            line = testLine(id = "p1l", itemId = ITEM_ID, quantity = Quantity.of(5))
+                .copy(batchNumber = "B1", expiryDate = LocalDate(2027, 1, 31)),
+        )
+        repository.saveDraft(purchase)
+        repository.post(purchase.id, POSTED_AT)
+        val batch = stock.observeBatches(ITEM_ID).first().single()
+        assertEquals("B1", batch.batchNumber)
+        assertEquals(LocalDate(2027, 1, 31), batch.expiryDate)
+        assertEquals(batch.id, movements(purchase.id).single().batchId)
+
+        val wrongBatch = voucher(
+            VoucherType.SALE,
+            id = "s1",
+            line = testLine(id = "s1l", itemId = ITEM_ID, quantity = Quantity.of(1)).copy(batchNumber = "B2"),
+        )
+        repository.saveDraft(wrongBatch)
+        assertIs<IllegalArgumentException>(runCatching { repository.post(wrongBatch.id, POSTED_AT) }.exceptionOrNull())
+        assertEquals(1, stock.observeBatches(ITEM_ID).first().size)
+
+        val transfer = testVoucher(
+            id = "t1",
+            type = VoucherType.STOCK_TRANSFER,
+            lines = listOf(
+                testLine(id = "t1l", itemId = ITEM_ID, quantity = Quantity.of(2), godownId = "godown-1")
+                    .copy(batchNumber = "B1", toGodownId = "godown-2"),
+            ),
+            charges = emptyList(),
+        ).copy(partyId = null)
+        repository.saveDraft(transfer)
+        repository.post(transfer.id, POSTED_AT)
+        assertEquals(Quantity.of(3), balance())
+        assertEquals(Quantity.of(2), stock.balance("firm-1", ITEM_ID, "godown-2"))
+        assertEquals(2, stock.observeBatches(ITEM_ID).first().size)
+        // Purchase cost carries into the movement for valuation.
+        assertTrue(movements(purchase.id).single().unitCost != null)
     }
 
     private suspend fun seedMasterData(

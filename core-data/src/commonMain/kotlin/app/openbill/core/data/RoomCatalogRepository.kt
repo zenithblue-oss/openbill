@@ -26,6 +26,12 @@ class RoomCatalogRepository(
     override suspend fun saveItem(item: Item) {
         transactions.write {
             val existing = items.findById(item.id)
+            item.barcode?.let { code ->
+                val clash = items.findByBarcode(item.firmId, code)
+                require(clash == null || clash.id == item.id || clash.barcode != code) {
+                    "Barcode $code is already used by ${clash?.name}"
+                }
+            }
             val entity = item.toEntity(existing)
             if (existing == null) {
                 items.insert(entity)
@@ -50,6 +56,9 @@ class RoomCatalogRepository(
         if (needle.isEmpty()) return emptyList()
         return items.search(firmId, needle).map { it.toDomain() }
     }
+
+    override suspend fun findItemByBarcode(firmId: String, code: String): Item? =
+        code.trim().takeIf { it.isNotEmpty() }?.let { items.findByBarcode(firmId, it)?.toDomain() }
 
     override fun observeCategories(firmId: String): Flow<List<ItemCategory>> =
         catalog.observeCategories(firmId).map { values -> values.map { it.toDomain() } }

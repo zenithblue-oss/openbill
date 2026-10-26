@@ -120,9 +120,8 @@ class StockMovementDerivationTest {
     }
 
     @Test
-    fun untrackedVoucherTypesAndTransfersProduceNoMovements(): Unit {
+    fun untrackedVoucherTypesProduceNoMovements(): Unit {
         for (type in listOf(
-            VoucherType.STOCK_TRANSFER,
             VoucherType.QUOTATION,
             VoucherType.PROFORMA,
             VoucherType.PAYMENT_IN,
@@ -131,6 +130,22 @@ class StockMovementDerivationTest {
         )) {
             assertTrue(derive(type, line()).isEmpty(), "Expected no movements for $type")
         }
+    }
+
+    @Test
+    fun transferMovesOutOfSourceAndIntoDestination(): Unit {
+        val moves = derive(VoucherType.STOCK_TRANSFER, line(quantity = Quantity.of(4), godownId = "godown-1").copy(toGodownId = "godown-2"))
+        assertEquals(listOf("godown-1" to Quantity.of(-4), "godown-2" to Quantity.of(4)), moves.map { it.godownId to it.quantity })
+        assertFailsWith<IllegalArgumentException> {
+            derive(VoucherType.STOCK_TRANSFER, line(godownId = "godown-1").copy(toGodownId = "godown-1"))
+        }
+    }
+
+    @Test
+    fun purchaseCarriesTaxableUnitCostAndSaleHasNone(): Unit {
+        val purchase = derive(VoucherType.PURCHASE, line(quantity = Quantity.of(4)).copy(taxable = Money.of(10_000))).single()
+        assertEquals(Money.of(2_500), purchase.unitCost)
+        assertEquals(null, derive(VoucherType.SALE, line()).single().unitCost)
     }
 
     @Test
