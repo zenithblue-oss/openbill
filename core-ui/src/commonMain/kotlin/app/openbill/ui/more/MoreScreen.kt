@@ -249,6 +249,7 @@ fun MoreScreen(
                     leadingContent = { Image(rememberVectorPainter(BrandLogo.Mark), contentDescription = null, modifier = Modifier.size(40.dp)) },
                     colors = listColors,
                 )
+                LicensesItem(container.platform.appVersion, listColors)
                 ListItem(
                     headlineContent = { Text("View introduction") },
                     supportingContent = { Text("A short tour of what OpenBill does") },
