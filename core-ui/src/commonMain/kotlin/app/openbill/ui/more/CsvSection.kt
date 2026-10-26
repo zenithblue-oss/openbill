@@ -153,9 +153,9 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
                     TextButton(onClick = {
                         preview = null
                         run {
-                            // shortcut: rows are saved one by one, not in one transaction; the dry run above
-                            // makes a mid-way failure unlikely. Upgrade when repositories expose transactions.
-                            result.valid.forEach { if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item) }
+                            repos.transaction {
+                                result.valid.forEach { if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item) }
+                            }
                             "Imported ${result.valid.size} $entity"
                         }
                     }) { Text("Import") }

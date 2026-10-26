@@ -9,4 +9,6 @@ data class Repositories(
     val ledger: LedgerRepository,
     val payments: PaymentRepository,
     val audit: AuditRepository = app.openbill.core.domain.fake.InMemoryAuditRepository(),
+    /** Runs [block] in one database transaction; repository writes inside it roll back together. */
+    val transaction: suspend (block: suspend () -> Unit) -> Unit = { it() },
 )
