@@ -1,5 +1,6 @@
 package app.openbill.ui.money
 
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -102,6 +103,8 @@ fun MoneyEditorScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     var open by remember { mutableStateOf<List<OutstandingInvoice>>(emptyList()) }
     val alloc = remember { mutableStateMapOf<String, String>() }
+    // Split tender: further modes for the same payment, each saved as its own payment voucher.
+    val extra = remember { mutableStateListOf<Tender>() }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var pick by remember { mutableStateOf<String?>(null) }
@@ -111,7 +114,7 @@ fun MoneyEditorScreen(
     val account = moneyAccounts.firstOrNull { it.id == accountId }
         ?: moneyAccounts.firstOrNull { it.code == AccountCode.CASH }
     val party = parties.firstOrNull { it.id == partyId }
-    val amountMoney = Parse.money(amount)
+    val amountMoney = Parse.money(amount)?.let { a -> extra.fold(a) { t, x -> t + (Parse.money(x.amount) ?: Money.ZERO) } }
     val allocated = alloc.values.fold(Money.ZERO) { t, s -> t + (Parse.money(s) ?: Money.ZERO) }
 
     LaunchedEffect(partyId) {
@@ -134,7 +137,7 @@ fun MoneyEditorScreen(
     }
 
     fun submit() {
-        val amt = amountMoney?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero"; return }
+        val amt = Parse.money(amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero"; return }
         val acc = account ?: run { error = "Choose an account"; return }
         val fy = session.financialYearFor(date) ?: run { error = "No financial year covers this date"; return }
         if (type.isPayment() && party == null) { error = "Choose a party"; return }
@@ -144,33 +147,41 @@ fun MoneyEditorScreen(
         val tax = Parse.money(gst) ?: run { error = "Enter a valid GST amount"; return }
         val requests = alloc.mapNotNull { (id, s) -> Parse.money(s)?.takeIf { it > Money.ZERO }?.let { AllocationRequest(id, it) } }
         if (alloc.values.any { Parse.money(it) == null }) { error = "Check the allocated amounts"; return }
+        val tenders = listOf(Tender(amount, acc.id, method, refNo)) + extra
+        val amounts = tenders.map { t -> Parse.money(t.amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero for each mode"; return } }
+        tenders.forEach { t ->
+            if (t.accountId == null) { error = "Choose an account for each mode"; return }
+            if (t.method != PaymentMethod.CASH && t.ref.isBlank()) { error = "Enter the ${refLabel(t.method).lowercase()}"; return }
+        }
+        val split = MoneyVouchers.splitAcross(requests, amounts)
         busy = true
         error = null
-        val id = container.newId()
+        val ids = tenders.map { container.newId() }
+        val id = ids.first()
         scope.launch {
-            runCatching {
+            runCatching { repos.transaction { tenders.forEachIndexed { i, t ->
                 MoneyVouchers(repos.vouchers, repos.payments, repos.ledger, container.postVoucher).record(
                     MoneyVoucherInput(
                         type = type,
-                        id = id,
+                        id = ids[i],
                         firmId = firmId,
                         financialYearId = fy.id,
                         stateCode = session.firm.stateCode,
                         date = date,
-                        amount = amt,
-                        accountId = acc.id,
-                        method = method,
+                        amount = amounts[i],
+                        accountId = t.accountId!!,
+                        method = t.method,
                         partyId = partyId.takeIf { type.isPayment() },
                         ledgerAccountId = if (type == VoucherType.EXPENSE) categoryId else toAccountId.takeIf { type == VoucherType.CONTRA },
                         inputTax = if (type == VoucherType.EXPENSE) tax else Money.ZERO,
-                        instrumentNumber = refNo.takeIf { method != PaymentMethod.CASH },
-                        instrumentDate = date.takeIf { method == PaymentMethod.CHEQUE || method == PaymentMethod.BANK },
+                        instrumentNumber = t.ref.takeIf { t.method != PaymentMethod.CASH },
+                        instrumentDate = date.takeIf { t.method == PaymentMethod.CHEQUE || t.method == PaymentMethod.BANK },
                         notes = notes,
-                        allocations = requests,
+                        allocations = split[i],
                     ),
                     container.now(),
                 )
-            }.onSuccess {
+            } } }.onSuccess {
                 messages?.show("${moneyTitle(type)} recorded")
                 onDone(id)
             }.onFailure { e ->
@@ -223,6 +234,21 @@ fun MoneyEditorScreen(
                     }
                 }
                 if (method != PaymentMethod.CASH) FormField(refLabel(method) + " *", refNo, { refNo = it })
+                if (type.isPayment()) {
+                    extra.forEachIndexed { i, t ->
+                        SectionHeader("Also paid by") { TextButton(onClick = { extra.removeAt(i) }) { Text("Remove") } }
+                        FormField("Amount *", t.amount, { v -> extra[i] = t.copy(amount = v); error = null }, keyboardType = KeyboardType.Decimal, prefix = "₹")
+                        PickerField("Account *", moneyAccounts.firstOrNull { it.id == t.accountId }?.name.orEmpty(), { pick = "tender:$i" })
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            PaymentMethod.entries.forEach { m ->
+                                SelectableChip(m.name.lowercase().replaceFirstChar { it.uppercase() }.replace("Upi", "UPI"), t.method == m, { extra[i] = t.copy(method = m) })
+                            }
+                        }
+                        if (t.method != PaymentMethod.CASH) FormField(refLabel(t.method) + " *", t.ref, { v -> extra[i] = t.copy(ref = v) })
+                    }
+                    TextButton(onClick = { extra.add(Tender(accountId = account?.id)) }) { Text("Split: add another payment mode") }
+                    if (extra.isNotEmpty()) Text("Total ${Fmt.inr(amountMoney ?: Money.ZERO)}", style = MaterialTheme.typography.titleMedium)
+                }
                 FormField("Notes", notes, { notes = it }, singleLine = false)
 
                 if (type.isPayment() && open.isNotEmpty()) {
@@ -304,6 +330,16 @@ fun MoneyEditorScreen(
             onSelect = { categoryId = it.id; pick = null },
             onDismiss = { pick = null },
         )
+        else -> pick?.removePrefix("tender:")?.toIntOrNull()?.takeIf { it in extra.indices }?.let { i -> PickerSheet(
+            title = "Account",
+            options = moneyAccounts,
+            label = { it.name },
+            supporting = { if (it.type == AccountType.CASH) "Cash" else "Bank" },
+            selected = { it.id == extra[i].accountId },
+            key = { it.id },
+            onSelect = { a: Account -> extra[i] = extra[i].copy(accountId = a.id); pick = null },
+            onDismiss = { pick = null },
+        ) }
     }
     newCategory?.let { text ->
         var catError by remember { mutableStateOf<String?>(null) }
@@ -335,3 +371,5 @@ private fun refLabel(m: PaymentMethod): String = when (m) {
     PaymentMethod.BANK -> "Bank reference"
     PaymentMethod.CASH -> "Reference"
 }
+
+private data class Tender(val amount: String = "", val accountId: String? = null, val method: PaymentMethod = PaymentMethod.UPI, val ref: String = "")

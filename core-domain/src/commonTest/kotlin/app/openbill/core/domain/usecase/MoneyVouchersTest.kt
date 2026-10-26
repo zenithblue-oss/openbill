@@ -5,6 +5,7 @@ import app.openbill.core.domain.fake.InMemoryPartyRepository
 import app.openbill.core.domain.fake.InMemoryPaymentRepository
 import app.openbill.core.domain.fake.InMemoryVoucherRepository
 import app.openbill.core.domain.model.Account
+import app.openbill.core.domain.model.AllocationRequest
 import app.openbill.core.domain.model.AccountType
 import app.openbill.core.domain.model.OpeningBalanceType
 import app.openbill.core.domain.model.Party
@@ -72,6 +73,16 @@ class MoneyVouchersTest {
         type = type, id = id, firmId = "f1", financialYearId = "fy", stateCode = "27",
         date = LocalDate(2026, 6, 1), amount = Money.of(amount), accountId = account,
     )
+
+    @Test
+    fun splitTenderSharesAllocationsInOrder() {
+        val parts = MoneyVouchers.splitAcross(
+            listOf(AllocationRequest("a", Money.of(700)), AllocationRequest("b", Money.of(500))),
+            listOf(Money.of(1_000), Money.of(400)),
+        )
+        assertEquals(listOf(AllocationRequest("a", Money.of(700)), AllocationRequest("b", Money.of(300))), parts[0])
+        assertEquals(listOf(AllocationRequest("b", Money.of(200))), parts[1])
+    }
 
     @Test
     fun paymentInAllocatesFifoAndKeepsRemainderAsAdvance(): Unit = runBlocking {

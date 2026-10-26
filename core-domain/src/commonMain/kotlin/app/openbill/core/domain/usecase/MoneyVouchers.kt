@@ -109,6 +109,26 @@ class MoneyVouchers(
         fun invoiceTypeFor(paymentType: VoucherType): VoucherType =
             if (paymentType == VoucherType.PAYMENT_OUT) VoucherType.PURCHASE else VoucherType.SALE
 
+        /**
+         * Split tender: one payment voucher per mode. Hands [requests] to the tenders in order, each
+         * taking allocations up to its own amount; returns one allocation list per tender.
+         */
+        fun splitAcross(requests: List<AllocationRequest>, amounts: List<Money>): List<List<AllocationRequest>> {
+            val queue = ArrayDeque(requests)
+            return amounts.map { amount ->
+                var left = amount
+                buildList {
+                    while (left > Money.ZERO && queue.isNotEmpty()) {
+                        val r = queue.removeFirst()
+                        val take = if (r.amount < left) r.amount else left
+                        add(AllocationRequest(r.invoiceVoucherId, take))
+                        left -= take
+                        if (take < r.amount) queue.addFirst(AllocationRequest(r.invoiceVoucherId, r.amount - take))
+                    }
+                }
+            }
+        }
+
         /** Oldest-first allocation of [amount] across [open] invoices. */
         fun fifo(open: List<OutstandingInvoice>, amount: Money): List<AllocationRequest> {
             var left = amount
