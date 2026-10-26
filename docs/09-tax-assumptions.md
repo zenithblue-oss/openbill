@@ -391,7 +391,79 @@ before constructing these types and present typed GSTIN results rather than exce
 - Money and rate tests cover decimal parsing, formatting, overflow, and fixed-point
   behavior. Fixtures use decimal strings or integer paise; no binary floating point is used.
 
-## 15. Open questions for accountant review
+## 15. Reports, GSTR-1 JSON and Tally XML (Phase 6)
+
+Source: `core-domain/.../report/` (`Reports`, `Gstr1`, `TallyXml`, `TaxBreakdown`). Reports
+read a snapshot of posted vouchers, the journal and stock movements; they never recompute
+tax.
+
+**GST heads.** Each stored line and charge portion is split into heads from its stored tax:
+cess is the cess rate on the taxable value (capped at the stored tax), the remainder is GST;
+intra-state GST is CGST/SGST with any odd paisa on CGST (the engine's tie-break), inter-state
+GST is IGST. Heads always sum to the stored tax. An expense voucher without lines is one
+header row.
+
+**Ledger tie-out.** Sales and purchase registers count credit and debit notes negative, so
+register taxable value equals the net Sales (Purchases) account movement and register total
+equals the net receivable (payable) movement for the period. Cancelled vouchers are excluded
+from registers and returns; their journal reversals net to zero. Profit and loss is built
+from journal lines dated in the period plus opening and closing stock at moving weighted
+average; it is a working statement, not a statutory one.
+
+**GSTR-1 JSON.** Layout follows the GSTN offline tool / portal upload JSON (public schema as
+published with the offline utility; field names `gstin`, `fp` (MMYYYY), `b2b[].ctin/inv[]`
+with `inum`, `idt` (dd-mm-yyyy), `val`, `pos`, `rchrg`, `inv_typ`, `itms[].num/itm_det`
+(`txval`, `rt`, `iamt` or `camt`/`samt`, `csamt`); `b2cl[].pos/inv[]`; `b2cs[]` with
+`sply_ty`, `pos`, `typ` "OE", `rt`, `txval`; `cdnr[].ctin/nt[]` with `ntty` "C", `nt_num`,
+`nt_dt`; `hsn`; `doc_issue.doc_det[].docs[]`). Assumptions:
+
+- Registered = the party's current GSTIN passes the checksum; the GSTIN is read from the
+  party master at export time, not frozen on the invoice.
+- B2CL = unregistered, inter-state, invoice value above INR 1,00,000 from 1 Aug 2024
+  (Notification 12/2024-CT), INR 2,50,000 before. Everything else unregistered is B2CS,
+  aggregated by supply type, place of supply and rate; unregistered credit notes reduce B2CS
+  (no CDNUR).
+- Item `num` is the 1-based position within the invoice. Money values are numbers with two
+  decimals; rates are plain percent numbers.
+- Only TAXABLE and ZERO_RATED rows go to B2B/B2CL/B2CS/CDNR. An invoice with only nil,
+  exempt or non-GST rows is left out and reported as a warning; table 8 (nil/exempt) is not
+  exported in 1.0.
+- HSN (table 12) includes taxable, zero, nil and exempt rows, credit notes negative, grouped
+  by HSN, UQC and rate. From return period April 2025 it is written as `hsn.hsn_b2b` and
+  `hsn.hsn_b2c` (registered vs unregistered recipient); earlier periods use `hsn.data`. UQC
+  is mapped from the unit symbol (pcs/nos to NOS, kg to KGS, ...; unknown to OTH); services
+  use `NA` with quantity 0. Rows without an HSN are exported blank and flagged; the portal
+  rejects them.
+- Document summary (table 13): nature 1 (invoices) and 5 (credit notes), one range per
+  nature from the lowest to the highest number, with cancelled counts.
+- Not supported: exports (EXP), SEZ, deemed exports, reverse charge, e-commerce operators,
+  amendments, advances (AT/ATADJ), CDNUR, `gt`/`cur_gt`, and the offline tool's `hash`.
+
+**GSTR-3B summary.** 3.1(a) taxable outward, 3.1(b) zero rated, 3.1(c) nil/exempt, 3.1(e)
+non-GST; 4(A)(5) all other ITC from purchases, debit notes (negative) and expense input
+GST; tax payable is output minus ITC per head, without cross-head set-off. Working only.
+
+**Tally XML.** One `ENVELOPE` / `IMPORTDATA` with `REPORTNAME` "Vouchers": ledger masters
+(`LEDGER ACTION="Create"`, `PARENT`, `PARTYGSTIN`, GST `TAXTYPE`/`GSTDUTYHEAD`) then
+`VOUCHER` messages (`DATE` yyyymmdd, `VOUCHERTYPENAME`, `VOUCHERNUMBER`, `PARTYLEDGERNAME`,
+`ALLLEDGERENTRIES.LIST` with `ISDEEMEDPOSITIVE` Yes for debits and debit amounts negative).
+Each voucher is its journal lines netted per account, so it balances and ties to the
+ledger. Mapping: receivable/payable control lines go to the party's own ledger (Sundry
+Debtors, or Sundry Creditors for suppliers); Output/Input GST is split into "Output CGST",
+"Output SGST", "Output IGST", "Output Cess" (and Input ...) under Duties & Taxes; Sales,
+Purchase, Round Off (Indirect Expenses), Cash (Tally's predefined ledger, not re-created),
+bank accounts (Bank Accounts), expense categories (Indirect Expenses). Voucher types:
+Sales, Purchase, Credit Note, Debit Note, Receipt, Payment (payments and expenses), Contra.
+Accounting-voucher view only: no stock items, bill-wise allocations or GST rate details on
+the voucher; Tally recomputes nothing.
+
+**Books lock.** A firm lock date and closed financial years block posting, cancelling and
+restoring vouchers dated on or before the later of the two (enforced in the Room
+repository). Closing a year creates the next one if missing; it can be reopened until a
+voucher dated after the year is posted after the close. Balances need no carry-forward
+because the ledger is continuous. Lock and close changes are written to the audit log.
+
+## 16. Open questions for accountant review
 
 - **Cess for specific goods.** 1.0 uses one explicit percentage rate per line, with no
   schedule or HSN mapping. Is a user-entered rate sufficient, or is a compensation-cess
