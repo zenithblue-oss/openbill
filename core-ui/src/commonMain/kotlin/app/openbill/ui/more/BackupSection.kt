@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import app.openbill.ui.components.LocalAppMessages
 import app.openbill.ui.components.SectionHeader
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 
 /** What a verified backup contains, shown before restoring. [handle] is platform-private. */
@@ -36,15 +38,20 @@ class BackupSummary(
     val createdAt: String,
     val appVersion: String,
     val counts: Map<String, Long>,
+    /** Password of an encrypted archive, kept for the restore step. */
+    val password: String? = null,
 )
 
 /** Backup and restore through the platform's file dialogs (SAF on Android, AWT on desktop). */
 interface BackupService {
     /** Asks where to save, then writes a verified archive. A message for the user; null if cancelled. */
-    suspend fun createBackup(): String?
+    suspend fun createBackup(password: String? = null): String?
 
-    /** Asks for an archive and verifies it; null if cancelled. Throws with a user-facing message if invalid. */
-    suspend fun pickBackup(): BackupSummary?
+    /**
+     * Asks for an archive and verifies it, calling [askPassword] when it is encrypted; null if
+     * cancelled. Throws with a user-facing message if invalid or the password is wrong.
+     */
+    suspend fun pickBackup(askPassword: suspend () -> String?): BackupSummary?
 
     /** Replaces all local data with the archive (keeping a safety copy), then restarts or closes the app. */
     suspend fun restore(summary: BackupSummary)
@@ -60,6 +67,9 @@ fun BackupSection(listColors: ListItemColors) {
     val messages = LocalAppMessages.current
     var busy by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<BackupSummary?>(null) }
+    // Open password prompt: (creating?, answer); the answer is null when cancelled.
+    var prompt by remember { mutableStateOf<Pair<Boolean, CompletableDeferred<String?>>?>(null) }
+    suspend fun askPassword(creating: Boolean): String? = CompletableDeferred<String?>().also { prompt = creating to it }.await()
 
     fun run(block: suspend () -> String?) {
         busy = true
@@ -76,7 +86,9 @@ fun BackupSection(listColors: ListItemColors) {
         supportingContent = { Text("Save all businesses, invoices and logos to a single file") },
         leadingContent = { Icon(Icons.Outlined.Create, contentDescription = null) },
         colors = listColors,
-        modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { run { service.createBackup() } },
+        modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
+            run { askPassword(creating = true)?.let { service.createBackup(it.ifEmpty { null }) } }
+        },
     )
     ListItem(
         headlineContent = { Text("Restore from backup") },
@@ -84,9 +96,36 @@ fun BackupSection(listColors: ListItemColors) {
         leadingContent = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
         colors = listColors,
         modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
-            run { service.pickBackup()?.let { pending = it }; null }
+            run { service.pickBackup { askPassword(creating = false) }?.let { pending = it }; null }
         },
     )
+
+    prompt?.let { (creating, answer) ->
+        var text by remember { mutableStateOf("") }
+        fun close(value: String?) {
+            prompt = null
+            answer.complete(value)
+        }
+        AlertDialog(
+            onDismissRequest = { close(null) },
+            title = { Text(if (creating) "Encrypt the backup?" else "Backup password") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text(
+                        if (creating) "Optional. With a password the file is encrypted (AES-256); it cannot be restored without it."
+                        else "This backup is encrypted. Enter the password it was created with.",
+                    )
+                    FormField("Password", text, { text = it }, keyboardType = androidx.compose.ui.text.input.KeyboardType.Password, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None, visualTransformation = PasswordVisualTransformation())
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = creating || text.isNotEmpty(), onClick = { close(text) }) {
+                    Text(if (!creating) "Open" else if (text.isEmpty()) "Save without password" else "Save encrypted")
+                }
+            },
+            dismissButton = { TextButton(onClick = { close(null) }) { Text("Cancel") } },
+        )
+    }
 
     pending?.let { summary ->
         AlertDialog(

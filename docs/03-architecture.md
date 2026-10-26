@@ -482,8 +482,10 @@ Threat model:
 Controls:
 
 - App sandbox on Android; per-user data directory with restrictive permissions on desktop.
-- App lock using platform authentication is a post-1.0 enhancement; 1.0 relies on the OS
-  device lock, the Android app sandbox, and per-user desktop permissions.
+- Optional app lock: a PIN stored as a salted PBKDF2-HMAC-SHA256 hash in device settings,
+  asked at start and after a minute in the background; Android also offers fingerprint or
+  face through androidx.biometric. It guards the screen only; the database file relies on the
+  OS device lock, the Android app sandbox, and per-user desktop permissions.
 - Secrets stored in the platform secure store, never in preferences or logs.
 - TLS required for all network calls; cleartext traffic disabled.
 - No advertising ID, no contact upload, no analytics SDK by default.
@@ -535,7 +537,12 @@ Rules:
 - Restore keeps a pre-restore safety copy until the user confirms success.
 - Backups are forward-compatible through migrations; older app versions refuse newer
   schemas with a clear message.
-- Encryption envelope is versioned and optional in 1.0.
+- Encryption envelope is versioned and optional in 1.0. An encrypted archive is the whole
+  zip sealed as `OPENBILL-ENC1`, PBKDF2 iteration count, 16-byte salt, 8-byte nonce prefix,
+  then 64 KiB AES-256-GCM segments (nonce = prefix + counter, final-segment flag as
+  associated data, so truncation fails). JDK crypto only. Verify and restore decrypt to a
+  temporary file next to the staging directory and delete it afterwards. Automatic and
+  pre-migration backups stay unencrypted on the device.
 
 ## 15. Build and release engineering
 

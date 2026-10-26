@@ -165,7 +165,8 @@ fun OpenBillApp(container: AppContainer, backHandler: BackHandlerSlot? = null) {
     val appearance by container.appearance.settings.collectAsState()
     OpenBillTheme(appearance) {
         Surface(Modifier.fillMaxSize()) {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            val locked by container.appLock.locked.collectAsState()
+            if (locked) app.openbill.ui.settings.LockScreen(container) else BoxWithConstraints(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(LocalWidthClass provides WidthClass.of(maxWidth.value)) {
                     val firms by remember { container.repositories.firms.observeFirms() }.collectAsState(initial = null)
                     val onboardingDone by container.onboarding.completed.collectAsState()

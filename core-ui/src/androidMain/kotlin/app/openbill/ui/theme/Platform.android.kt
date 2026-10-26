@@ -85,3 +85,9 @@ actual val platformPrefersKeyboard: Boolean = false
 
 /** Android supplies a SharedPreferences-backed store through PlatformServices; this is the fallback. */
 actual fun defaultSettingsStore(): SettingsStore = InMemorySettingsStore()
+
+actual fun pbkdf2(password: CharArray, salt: ByteArray, iterations: Int): ByteArray =
+    javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        .generateSecret(javax.crypto.spec.PBEKeySpec(password, salt, iterations, 256)).encoded
+
+actual fun secureRandomBytes(size: Int): ByteArray = ByteArray(size).also { java.security.SecureRandom().nextBytes(it) }

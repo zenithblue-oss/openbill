@@ -23,7 +23,11 @@ import android.print.PrintManager
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.fragment.app.FragmentActivity
 import app.openbill.core.backup.AttachmentStore
 import app.openbill.ui.PlatformServices
 import app.openbill.ui.invoice.InvoiceDocument
@@ -38,7 +42,9 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.UUID
+import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 /** Hooks the current activity provides for flows that need activity results. */
@@ -83,6 +89,31 @@ class AndroidPlatformServices(
     }
 
     private fun requireHooks() = hooks ?: error("The app window is not ready")
+
+    override val supportsBiometric: Boolean
+        get() = BiometricManager.from(context).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
+
+    override suspend fun biometricUnlock(): Boolean {
+        val activity = requireHooks().activity as? FragmentActivity ?: return false
+        return suspendCancellableCoroutine { cont ->
+            val prompt = BiometricPrompt(activity, ContextCompat.getMainExecutor(context), object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    if (cont.isActive) cont.resume(true)
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    if (cont.isActive) cont.resume(false)
+                }
+            })
+            prompt.authenticate(
+                BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("Unlock OpenBill")
+                    .setNegativeButtonText("Use PIN")
+                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                    .build(),
+            )
+            cont.invokeOnCancellation { prompt.cancelAuthentication() }
+        }
+    }
 
     override val supportsThermalPrint: Boolean get() = context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH)
 

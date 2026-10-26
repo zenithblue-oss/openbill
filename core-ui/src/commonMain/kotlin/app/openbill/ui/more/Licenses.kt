@@ -27,7 +27,7 @@ import androidx.compose.ui.semantics.Role
 internal val OPEN_SOURCE_LICENSES: List<Pair<String, String>> = listOf(
     "Kotlin standard library, kotlinx.coroutines, kotlinx-datetime, kotlinx.serialization (JetBrains)" to "Apache-2.0",
     "Compose Multiplatform, Material 3 and Material icons (JetBrains, Google)" to "Apache-2.0",
-    "AndroidX Activity, Room, SQLite, CameraX, WorkManager (Google)" to "Apache-2.0",
+    "AndroidX Activity, Fragment, Biometric, Room, SQLite, CameraX, WorkManager (Google)" to "Apache-2.0",
     "Apache PDFBox (desktop PDF output and printing)" to "Apache-2.0",
     "ZXing core (QR and barcodes)" to "Apache-2.0",
     "Clikt (command-line interface)" to "Apache-2.0",

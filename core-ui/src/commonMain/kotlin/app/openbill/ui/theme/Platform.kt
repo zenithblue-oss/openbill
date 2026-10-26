@@ -27,3 +27,9 @@ expect val platformPrefersKeyboard: Boolean
 
 /** Default per-device settings store for the platform. */
 expect fun defaultSettingsStore(): SettingsStore
+
+/** PBKDF2-HMAC-SHA256 (32 bytes) from the platform JDK, for the app-lock PIN. */
+expect fun pbkdf2(password: CharArray, salt: ByteArray, iterations: Int): ByteArray
+
+/** Bytes from the platform's SecureRandom. */
+expect fun secureRandomBytes(size: Int): ByteArray

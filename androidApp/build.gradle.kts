@@ -109,4 +109,6 @@ dependencies {
     implementation(project(":core-backup"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.biometric) // app lock; AOSP, no Play Services
+    implementation(libs.androidx.fragment) // FragmentActivity for BiometricPrompt; 1.3+ for activity results
 }

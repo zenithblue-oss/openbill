@@ -108,6 +108,10 @@ interface PlatformServices {
     suspend fun openAttachment(ownerId: String, name: String): String? = null
     suspend fun deleteAttachment(ownerId: String, name: String) {}
 
+    /** Android: fingerprint or face through androidx.biometric; true when the user passed. */
+    val supportsBiometric: Boolean get() = false
+    suspend fun biometricUnlock(): Boolean = false
+
     /** Per-device UI preferences (theme). Platforms override this with persistent storage. */
     val settingsStore: SettingsStore get() = defaultSettingsStore()
 }
@@ -128,6 +132,9 @@ class AppContainer(
 
     /** Whether the first-run introduction was finished or skipped (device setting). */
     val onboarding: OnboardingController by lazy { OnboardingController(platform.settingsStore) }
+
+    /** Optional PIN lock shown before any data (device setting). */
+    val appLock by lazy { app.openbill.ui.settings.AppLockController(platform.settingsStore) }
 
     /** Business switcher state (device setting). */
     val activeFirm by lazy { app.openbill.ui.settings.ActiveFirmController(platform.settingsStore) }

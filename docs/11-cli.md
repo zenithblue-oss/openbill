@@ -108,7 +108,7 @@ server host.
 | `export tally --from --to [--out]` | Same as `tally export`. |
 | `audit list [--limit N]` | Newest audit events (post, cancel, restore, lock, year close). |
 | `import csv items --file F.csv [--mapping M.toml] --dry-run` | Validates every row and reports errors with row numbers; no writes in dry-run. Without `--dry-run`, imports in one transaction or not at all. |
-| `backup create [--out DIR] [--passphrase-file F]` | Snapshot via SQLite backup API, verified before the final rename. Prints the archive path. |
+| `backup create [--out DIR]` | Snapshot via SQLite backup API, verified before the final rename. Prints the archive path. With `OPENBILL_BACKUP_PASSWORD` set, the archive is encrypted (AES-256-GCM); `backup verify`/`restore` and `--backup` read the same variable. |
 | `backup verify FILE` | Manifest, checksums, schema version, and `integrity_check` on a temporary copy. |
 | `backup restore FILE --yes` | Validates, keeps a pre-restore safety copy, then replaces local data. |
 | `db check` | Integrity check, foreign keys, ledger invariants (journal balance, allocation bounds, stock sums, FTS counts), and audit trigger presence. |

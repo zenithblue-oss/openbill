@@ -3,18 +3,18 @@ package app.openbill.android
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.fragment.app.FragmentActivity
 import app.openbill.ui.OpenBillApp
 import app.openbill.ui.more.LocalBackupService
 import kotlinx.coroutines.CompletableDeferred
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private var pendingPick: CompletableDeferred<Uri?>? = null
     private var pendingCreate: CompletableDeferred<Uri?>? = null
 
@@ -142,6 +142,17 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    // App lock: relock after a minute away (short trips to a picker or share sheet do not count).
+    override fun onStart() {
+        super.onStart()
+        (application as OpenBillApplication).container.appLock.onForeground(System.currentTimeMillis())
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) (application as OpenBillApplication).container.appLock.onBackground(System.currentTimeMillis())
     }
 
     override fun onDestroy() {

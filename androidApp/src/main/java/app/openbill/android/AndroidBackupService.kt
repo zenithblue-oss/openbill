@@ -3,6 +3,7 @@ package app.openbill.android
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import app.openbill.core.backup.BackupCrypto
 import app.openbill.core.backup.DataLocation
 import app.openbill.core.backup.OpenBillBackup
 import app.openbill.core.database.OPENBILL_DATABASE_VERSION
@@ -33,13 +34,13 @@ class AndroidBackupService(
 ) : BackupService {
     private val stage get() = File(context.cacheDir, "backup").apply { mkdirs() }
 
-    override suspend fun createBackup(): String? {
+    override suspend fun createBackup(password: String?): String? {
         val name = OpenBillBackup.defaultFileName("openbill", Instant.now())
         val uri = createDocument(name) ?: return null
         withContext(Dispatchers.IO) {
             val tmp = File(stage, name)
             try {
-                OpenBillBackup.create(androidDataLocation(context, databaseName), tmp, appVersion)
+                OpenBillBackup.create(androidDataLocation(context, databaseName), tmp, appVersion, password = password?.toCharArray())
                 context.contentResolver.openOutputStream(uri, "wt")?.use { out -> tmp.inputStream().use { it.copyTo(out) } }
                     ?: error("Could not open the chosen location")
             } finally {
@@ -49,26 +50,30 @@ class AndroidBackupService(
         return "Backup saved"
     }
 
-    override suspend fun pickBackup(): BackupSummary? {
+    override suspend fun pickBackup(askPassword: suspend () -> String?): BackupSummary? {
         val uri = openDocument() ?: return null
-        return withContext(Dispatchers.IO) {
+        val file = withContext(Dispatchers.IO) {
             stage.listFiles()?.forEach { it.delete() }
             val file = File(stage, "restore.openbill.zip")
             context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                 ?: error("Could not read the chosen file")
-            val m = runCatching { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION) }
+            file
+        }
+        val password = if (BackupCrypto.isEncrypted(file)) askPassword() ?: run { file.delete(); return null } else null
+        return withContext(Dispatchers.IO) {
+            val m = runCatching { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, password?.toCharArray()) }
                 .getOrElse { file.delete(); throw it }
-            BackupSummary(file, m.firms.map { it.name }, m.createdAt, m.appVersion, m.recordCounts)
+            BackupSummary(file, m.firms.map { it.name }, m.createdAt, m.appVersion, m.recordCounts, password)
         }
     }
 
     override suspend fun restore(summary: BackupSummary) {
         val file = summary.handle as File
-        withContext(Dispatchers.IO) { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION) }
+        withContext(Dispatchers.IO) { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, summary.password?.toCharArray()) }
         closeDatabase()
         withContext(Dispatchers.IO) {
             // On failure the swap is rolled back; either way the process restarts on a fresh database handle.
-            runCatching { OpenBillBackup.restore(file, androidDataLocation(context, databaseName), OPENBILL_DATABASE_VERSION) }
+            runCatching { OpenBillBackup.restore(file, androidDataLocation(context, databaseName), OPENBILL_DATABASE_VERSION, password = summary.password?.toCharArray()) }
             file.delete()
         }
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)

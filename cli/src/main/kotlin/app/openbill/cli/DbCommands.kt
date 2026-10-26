@@ -36,7 +36,7 @@ class DbCheck(private val cli: CliState) : CliktCommand("check") {
             // Check a consistent snapshot so the running app is never blocked.
             val db = File(tmp, "openbill.db")
             if (cli.backup != null) {
-                OpenBillBackup.extract(cli.backup!!, tmp, OPENBILL_DATABASE_VERSION).databaseFile.copyTo(db)
+                OpenBillBackup.extract(cli.backup!!, tmp, OPENBILL_DATABASE_VERSION, cli.env.backupPassword).databaseFile.copyTo(db)
             } else {
                 val live = cli.location().databaseFile
                 if (!live.isFile) fail(Exit.NOT_FOUND, "No OpenBill database in ${live.parentFile}")

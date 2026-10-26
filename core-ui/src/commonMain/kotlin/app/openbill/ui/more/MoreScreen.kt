@@ -267,6 +267,7 @@ fun MoreScreen(
 
                 ReminderTemplateItem(container, firm.id, listColors)
                 CsvSection(container, session, listColors)
+                app.openbill.ui.settings.AppLockItem(container, listColors)
                 BackupSection(listColors)
                 // shortcut: the firm is soft-deleted (hidden; its rows stay in the database file) because
                 // audit_events is append-only and some foreign keys restrict deletes. Add a trigger-aware

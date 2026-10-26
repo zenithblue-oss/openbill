@@ -58,8 +58,9 @@ object OpenBillBackup {
     /**
      * Writes a verified archive to [out]: snapshot with `VACUUM INTO` (safe while the app has the
      * database open), zip to a temporary file next to [out], verify it, then rename atomically.
+     * With a [password] the verified zip is sealed by [BackupCrypto] before the rename.
      */
-    fun create(source: DataLocation, out: File, appVersion: String, now: Instant = Instant.now()): BackupManifest {
+    fun create(source: DataLocation, out: File, appVersion: String, now: Instant = Instant.now(), password: CharArray? = null): BackupManifest {
         require(source.databaseFile.isFile) { "No database at ${source.databaseFile}" }
         val dir = out.absoluteFile.parentFile.apply { mkdirs() }
         val work = Files.createTempDirectory(dir.toPath(), ".openbill-backup").toFile()
@@ -88,7 +89,10 @@ object OpenBillBackup {
                 zip.closeEntry()
             }
             verify(tmp, Int.MAX_VALUE)
-            Files.move(tmp.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            val sealed = if (password == null || password.isEmpty()) tmp else File(work, "archive.enc").also { enc ->
+                tmp.inputStream().buffered().use { i -> enc.outputStream().buffered().use { BackupCrypto.encrypt(i, it, password) } }
+            }
+            Files.move(sealed.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
             return manifest
         } finally {
             work.deleteRecursively()
@@ -99,19 +103,31 @@ object OpenBillBackup {
      * Checks the manifest, every checksum, the schema version against [currentSchemaVersion], and
      * `integrity_check` on a temporary copy of the database. Returns the manifest.
      */
-    fun verify(archive: File, currentSchemaVersion: Int): BackupManifest {
+    fun verify(archive: File, currentSchemaVersion: Int, password: CharArray? = null): BackupManifest {
         val staging = Files.createTempDirectory("openbill-verify").toFile()
         try {
-            return extract(archive, staging, currentSchemaVersion).manifest
+            return extract(archive, staging, currentSchemaVersion, password).manifest
         } finally {
             staging.deleteRecursively()
         }
     }
 
-    /** Verifies [archive] and extracts it into [stagingDir] (created; must be empty). */
-    fun extract(archive: File, stagingDir: File, currentSchemaVersion: Int): PreparedRestore {
+    /**
+     * Verifies [archive] and extracts it into [stagingDir] (created; must be empty). An encrypted
+     * archive needs its [password]; it is decrypted to a temporary file beside [stagingDir].
+     */
+    fun extract(archive: File, stagingDir: File, currentSchemaVersion: Int, password: CharArray? = null): PreparedRestore {
         if (!archive.isFile) throw BackupException(BackupFailure.INVALID, "No such file: $archive")
         stagingDir.mkdirs()
+        val plain = BackupCrypto.plain(archive, password, stagingDir.absoluteFile.parentFile)
+        try {
+            return extractPlain(plain, stagingDir, currentSchemaVersion)
+        } finally {
+            if (plain != archive) plain.delete()
+        }
+    }
+
+    private fun extractPlain(archive: File, stagingDir: File, currentSchemaVersion: Int): PreparedRestore {
         val root = stagingDir.canonicalFile
         var manifest: BackupManifest? = null
         val actual = mutableMapOf<String, String>()
@@ -168,13 +184,13 @@ object OpenBillBackup {
      * system), then [commit]. Validation failures leave the current data untouched. The caller
      * must have closed the database. Returns the safety copy directory.
      */
-    fun restore(archive: File, target: DataLocation, currentSchemaVersion: Int, now: Instant = Instant.now()): File {
+    fun restore(archive: File, target: DataLocation, currentSchemaVersion: Int, now: Instant = Instant.now(), password: CharArray? = null): File {
         val dataDir = target.databaseFile.absoluteFile.parentFile.apply { mkdirs() }
         val needed = archive.length() * 3
         if (dataDir.usableSpace in 1 until needed) throw BackupException(BackupFailure.NO_SPACE, "Not enough free space to restore")
         val staging = Files.createTempDirectory(dataDir.toPath(), ".restore-").toFile()
         try {
-            return commit(extract(archive, staging, currentSchemaVersion), target, now)
+            return commit(extract(archive, staging, currentSchemaVersion, password), target, now)
         } finally {
             staging.deleteRecursively()
         }

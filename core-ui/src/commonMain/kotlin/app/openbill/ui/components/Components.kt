@@ -205,9 +205,11 @@ fun FormField(
     suffix: String? = null,
     imeAction: ImeAction = if (singleLine) ImeAction.Next else ImeAction.Default,
     onImeAction: (() -> Unit)? = null,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
 ) {
     OutlinedTextField(
         value = value,
+        visualTransformation = visualTransformation,
         onValueChange = onValueChange,
         label = { Text(label) },
         modifier = modifier.fillMaxWidth(),

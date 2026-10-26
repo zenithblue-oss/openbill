@@ -54,6 +54,32 @@ class OpenBillBackupTest {
     }
 
     @Test
+    fun encryptedArchiveNeedsItsPasswordToVerifyAndRestore() {
+        val a = location(File(root, "a"), "Alpha")
+        val zip = File(root, "out/a.openbill.zip")
+        OpenBillBackup.create(a, zip, "1.0", password = "s3cret".toCharArray())
+        assertContentEquals("OPENBILL-ENC1".toByteArray(), zip.readBytes().copyOf(13))
+        assertTrue(BackupCrypto.isEncrypted(zip))
+        assertFailsWith<BackupException> { OpenBillBackup.verify(zip, 5) }
+        assertFailsWith<BackupException> { OpenBillBackup.verify(zip, 5, "wrong".toCharArray()) }
+        assertEquals(listOf("Alpha"), OpenBillBackup.verify(zip, 5, "s3cret".toCharArray()).firms.map { it.name })
+        val b = location(File(root, "b"), "Beta")
+        OpenBillBackup.restore(zip, b, 5, password = "s3cret".toCharArray())
+        assertEquals("Alpha", firmName(b.databaseFile))
+        assertTrue(File(root, "out").list()!!.all { it == "a.openbill.zip" }, "no decrypted copy left behind")
+    }
+
+    @Test
+    fun envelopeRejectsTamperingAndTruncationAtSegmentBoundaries() {
+        val plain = ByteArray(2 * 64 * 1024) { it.toByte() } // exact multiple: ends with an empty final segment
+        val sealed = java.io.ByteArrayOutputStream().also { BackupCrypto.encrypt(plain.inputStream(), it, "pw".toCharArray()) }.toByteArray()
+        fun open(bytes: ByteArray) = java.io.ByteArrayOutputStream().also { BackupCrypto.decrypt(bytes.inputStream(), it, "pw".toCharArray()) }.toByteArray()
+        assertContentEquals(plain, open(sealed))
+        assertFailsWith<BackupException> { open(sealed.copyOf(sealed.size - 16)) } // drops the empty final segment
+        assertFailsWith<BackupException> { open(sealed.copyOf().also { it[100] = (it[100] + 1).toByte() }) }
+    }
+
+    @Test
     fun roundTrip() {
         val a = location(File(root, "a"), "Alpha")
         val zip = File(root, "out/a.openbill.zip")

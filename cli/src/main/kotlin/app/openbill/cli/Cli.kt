@@ -51,6 +51,8 @@ class CliEnv(
     val readLine: () -> String? = { readlnOrNull() },
     val appVersion: String = CliEnv::class.java.`package`?.implementationVersion ?: "dev",
     val defaultDataDir: () -> File = ::desktopDataDirectory,
+    /** OPENBILL_BACKUP_PASSWORD: encrypts `backup create` and opens encrypted archives (kept out of argv). */
+    val backupPassword: CharArray? = System.getenv("OPENBILL_BACKUP_PASSWORD")?.takeIf { it.isNotEmpty() }?.toCharArray(),
 )
 
 /** Global options, filled by the root command before a subcommand runs. */
@@ -92,7 +94,7 @@ class CliState(val env: CliEnv) {
             if (write) fail(Exit.DENIED, "A backup file is read-only; writes are rejected")
             val tmp = Files.createTempDirectory("openbill-cli").toFile()
             try {
-                val prepared = OpenBillBackup.extract(archive, tmp, OPENBILL_DATABASE_VERSION)
+                val prepared = OpenBillBackup.extract(archive, tmp, OPENBILL_DATABASE_VERSION, env.backupPassword)
                 return open(prepared.databaseFile, File(tmp, "attachments"), block)
             } finally {
                 tmp.deleteRecursively()
