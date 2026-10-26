@@ -30,4 +30,10 @@ NotoSans-Bold.ttf are Noto Sans, Copyright 2022 The Noto Project Authors
 Open Font License, Version 1.1 (core-printing/pdf-assets/fonts/NotoSans-OFL.txt).
 They are embedded in generated invoice PDFs.
 
+Bundled HSN/SAC list: core-ui/src/commonMain/kotlin/app/openbill/ui/items/HsnCodes.kt holds
+common HSN headings and SAC codes from the Customs Tariff of India (First Schedule to the
+Customs Tariff Act, 1975) and the GST scheme of classification of services, both published by
+the Central Board of Indirect Taxes and Customs (CBIC), Government of India. The codes are
+public classification data; the short descriptions are OpenBill's own paraphrases.
+
 Project repository: https://github.com/zenithblue-oss/openbill

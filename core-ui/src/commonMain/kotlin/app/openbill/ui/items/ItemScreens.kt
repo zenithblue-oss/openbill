@@ -1,5 +1,9 @@
 package app.openbill.ui.items
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -490,6 +494,33 @@ fun ItemEditScreen(
                     keyboardType = KeyboardType.Number,
                     supporting = "4 to 8 digits",
                 )
+                var hsnSearch by remember { mutableStateOf(false) }
+                TextButton(onClick = { hsnSearch = true }) { Text("Search HSN/SAC codes (offline)") }
+                if (hsnSearch) {
+                    var q by remember { mutableStateOf(form.hsnSac) }
+                    AlertDialog(
+                        onDismissRequest = { hsnSearch = false },
+                        title = { Text("HSN/SAC codes") },
+                        text = {
+                            Column {
+                                FormField("Code or description", q, { q = it })
+                                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                                    HsnCodes.search(q).forEach { (code, desc) ->
+                                        ListItem(
+                                            headlineContent = { Text(code) },
+                                            supportingContent = { Text(desc) },
+                                            modifier = Modifier.clickable(role = Role.Button) {
+                                                model.edit { it.copy(hsnSac = code) }
+                                                hsnSearch = false
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = { TextButton(onClick = { hsnSearch = false }) { Text("Close") } },
+                    )
+                }
                 PickerField("GST rate", "${Fmt.percent(form.gstRate)}%", { pickRate = true })
                 FormField(
                     "Sale price (before GST)",
