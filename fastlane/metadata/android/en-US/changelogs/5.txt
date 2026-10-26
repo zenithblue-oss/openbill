@@ -1,0 +1,1 @@
+Inventory with batches, serials, godowns and barcodes. Purchase bills, returns, quotations and challans. Money tab: payments (split tender), expenses, ageing, reminders. Reports, GSTR-1 JSON, Tally XML, books lock. CSV import/export, attachments, daily auto backups, multiple businesses, openbill CLI.

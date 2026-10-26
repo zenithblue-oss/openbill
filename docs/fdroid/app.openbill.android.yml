@@ -12,6 +12,13 @@ RepoType: git
 Repo: https://github.com/zenithblue-oss/openbill.git
 
 Builds:
+  - versionName: 0.2.0-alpha
+    versionCode: 5
+    commit: v0.2.0-alpha
+    subdir: androidApp
+    gradle:
+      - yes
+
   - versionName: 0.1.3-alpha
     versionCode: 4
     commit: v0.1.3-alpha
@@ -21,5 +28,5 @@ Builds:
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9.]+-alpha$
-CurrentVersionCode: 4
-CurrentVersion: 0.1.3-alpha
+CurrentVersionCode: 5
+CurrentVersion: 0.2.0-alpha

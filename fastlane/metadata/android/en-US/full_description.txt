@@ -9,6 +9,11 @@ Features
 • 12 original A4, A5 and thermal receipt templates with live previews
 • Your logo, signature, accent colour, bank details, and a UPI QR code made on-device
 • Built-in PDF viewer; share invoices as PDF
+• Inventory: batches, serials, godowns, transfers, valuation and barcode labels
+• Purchase bills, returns, quotations, proforma invoices and challans
+• Payments with split tender, expenses, ageing and payment reminders
+• Reports, GSTR-1 JSON, GSTR-3B, HSN summary, Tally XML export and books lock
+• CSV import and export, voucher attachments, daily automatic backups, several businesses
 • Material 3 design with light, dark and dynamic colour themes
 
 Privacy
