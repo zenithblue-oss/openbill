@@ -138,7 +138,7 @@ fun InvoicePdfScreen(
                 Box {
                     IconButton(onClick = { menu = true }, enabled = layout != null) { Icon(Icons.Filled.MoreVert, contentDescription = "More actions") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        listOf(PdfAction.PRINT, PdfAction.SAVE, PdfAction.OPEN).forEach { a ->
+                        listOf(PdfAction.IMAGE, PdfAction.PRINT, PdfAction.SAVE, PdfAction.OPEN).forEach { a ->
                             DropdownMenuItem(text = { Text(a.label) }, onClick = { menu = false; run(a) }, enabled = !busy)
                         }
                     }

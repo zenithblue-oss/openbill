@@ -11,6 +11,8 @@ enum class PdfAction(val label: String) {
     PRINT("Print"),
     SAVE("Save as"),
     OPEN("Open in another app"),
+    /** First page as a PNG, for chat apps that preview images but not PDFs. */
+    IMAGE("Share as image"),
 }
 
 /** Glue between settings, firm images and the layout engine; shared by share and preview. */

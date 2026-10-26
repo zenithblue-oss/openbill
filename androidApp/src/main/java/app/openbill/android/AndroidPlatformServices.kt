@@ -136,6 +136,25 @@ class AndroidPlatformServices(
                 context.startActivity(chooser)
                 return null
             }
+            PdfAction.IMAGE -> {
+                val file = withContext(Dispatchers.Default) {
+                    val bmp = painter.renderBitmap(layout, 0, 1240)
+                    File(File(context.cacheDir, "shared").apply { mkdirs() }, "$stem.png").also { f ->
+                        FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    }
+                }
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "image/png"
+                    putExtra(Intent.EXTRA_STREAM, uriFor(file))
+                    putExtra(Intent.EXTRA_SUBJECT, title)
+                    text?.let { putExtra(Intent.EXTRA_TEXT, it) }
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(
+                    Intent.createChooser(send, "Share $title").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                )
+                return null
+            }
             PdfAction.OPEN -> {
                 val uri = uriFor(writeCachedPdf(stem, layout))
                 val view = Intent(Intent.ACTION_VIEW).apply {

@@ -38,7 +38,7 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
 
     override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? {
         val msg = pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action) ?: return null
-        if (action != PdfAction.SHARE) return msg
+        if (action != PdfAction.SHARE && action != PdfAction.IMAGE) return msg
         shareText("Summary", document.shareSummary())
         return "$msg; summary copied to the clipboard"
     }
@@ -63,6 +63,19 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
                         tmp.toPath(), target.toPath(),
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     )
+                    revealInFolder(target)
+                }
+                "Saved ${target.name}"
+            }
+        }
+        PdfAction.IMAGE -> {
+            val image = withContext(Dispatchers.Default) { PdfBoxPainter.preview(layout, 0, 1240) }
+            val target = withContext(Dispatchers.IO) { chooseSaveFile("$stem.png") }
+            if (target == null) {
+                null
+            } else {
+                withContext(Dispatchers.IO) {
+                    ImageIO.write(image, "png", target)
                     revealInFolder(target)
                 }
                 "Saved ${target.name}"
