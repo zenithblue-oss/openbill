@@ -7,6 +7,7 @@ import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyAddress
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherStatus
+import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.model.Money
 import app.openbill.core.model.Rate
 import app.openbill.core.tax.TaxKind
@@ -282,10 +283,10 @@ data class InvoiceDocument(
             }
             val totalQty = voucher.lines.fold(0L) { a, l -> a + l.quantity.scaledUnits }
             return InvoiceDocument(
-                fileStem = "Invoice-" + number.replace(Regex("[^A-Za-z0-9_-]"), "_"),
-                title = if (firm.gstin.isNullOrBlank()) "Invoice" else "Tax Invoice",
+                fileStem = pdfTitle(voucher.type, firm.gstin).replace(" ", "") + "-" + number.replace(Regex("[^A-Za-z0-9_-]"), "_"),
+                title = pdfTitle(voucher.type, firm.gstin),
                 statusNote = when (voucher.status) {
-                    VoucherStatus.DRAFT -> "DRAFT - not a valid tax invoice"
+                    VoucherStatus.DRAFT -> if (voucher.type == VoucherType.SALE) "DRAFT - not a valid tax invoice" else "DRAFT"
                     VoucherStatus.CANCELLED -> "CANCELLED" + (voucher.cancellationReason?.let { ": $it" } ?: "")
                     VoucherStatus.POSTED -> null
                 },
@@ -316,4 +317,16 @@ data class InvoiceDocument(
             )
         }
     }
+}
+
+/** Printed heading of a document; GST names for notes and bills. */
+fun pdfTitle(type: VoucherType, gstin: String?): String = when (type) {
+    VoucherType.SALE -> if (gstin.isNullOrBlank()) "Invoice" else "Tax Invoice"
+    VoucherType.PURCHASE -> "Purchase Bill"
+    VoucherType.CREDIT_NOTE -> "Credit Note"
+    VoucherType.DEBIT_NOTE -> "Debit Note"
+    VoucherType.QUOTATION -> "Quotation"
+    VoucherType.PROFORMA -> "Proforma Invoice"
+    VoucherType.DELIVERY_CHALLAN -> "Delivery Challan"
+    else -> type.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
 }

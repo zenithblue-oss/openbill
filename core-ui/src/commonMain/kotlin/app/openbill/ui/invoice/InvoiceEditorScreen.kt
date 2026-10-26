@@ -143,7 +143,7 @@ fun InvoiceEditorScreen(
         if (state.rejectedSaves > 0) scroll.animateScrollTo(0)
     }
     val finished: (String, Boolean) -> Unit = { id, posted ->
-        messages?.show(if (posted) "${doc.title} posted" else "Draft saved")
+        messages?.show(if (posted) "${doc.title} ${if (state.type.isIssueOnly()) "issued" else "posted"}" else "Draft saved")
         onFinished(id, posted)
     }
     val wide = LocalWidthClass.current != WidthClass.COMPACT
@@ -192,12 +192,12 @@ fun InvoiceEditorScreen(
                     val supplyNote = if (state.placeOfSupply == session.firm.stateCode) "Intra-state: CGST + SGST" else "Inter-state: IGST"
                     if (wide) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            DateField("Invoice date", date, { model.setDate(it.toString()) }, Modifier.weight(1f), error = state.errors["date"])
+                            DateField("${doc.title} date", date, { model.setDate(it.toString()) }, Modifier.weight(1f), error = state.errors["date"])
                             PickerField("Place of supply", Fmt.stateName(state.placeOfSupply), { pickPos = true }, Modifier.weight(1f), supporting = supplyNote)
                         }
                     } else {
                         // Stacked on phones so a long state name never wraps inside a half-width field.
-                        DateField("Invoice date", date, { model.setDate(it.toString()) }, error = state.errors["date"])
+                        DateField("${doc.title} date", date, { model.setDate(it.toString()) }, error = state.errors["date"])
                         PickerField("Place of supply", Fmt.stateName(state.placeOfSupply), { pickPos = true }, supporting = supplyNote)
                     }
 
@@ -258,8 +258,12 @@ fun InvoiceEditorScreen(
                     FormField("Notes / terms (printed on ${doc.noun})", state.notes, model::setNotes, singleLine = false)
                     state.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Text(
-                        "The ${doc.noun} number is assigned when you post." +
-                            if (state.type != VoucherType.SALE || godowns.isNotEmpty()) " Posting updates stock." else "",
+                        "The ${doc.noun} number is assigned when you ${if (state.type.isIssueOnly()) "issue" else "post"}." +
+                            when {
+                                state.type.isIssueOnly() -> " It does not affect stock or accounts."
+                                state.type != VoucherType.SALE || godowns.isNotEmpty() -> " Posting updates stock."
+                                else -> ""
+                            },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -521,7 +525,7 @@ private fun TotalsBar(
                     Text("Save draft", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 PrimaryButton(
-                    "Save & post",
+                    if (state.type.isIssueOnly()) "Save & issue" else "Save & post",
                     onPost,
                     Modifier.weight(1f),
                     enabled = canSave || state.saving,
@@ -648,5 +652,12 @@ internal fun docLabels(type: VoucherType): DocLabels = when (type) {
     VoucherType.PURCHASE -> DocLabels("Purchase bill", "purchase bill")
     VoucherType.DEBIT_NOTE -> DocLabels("Purchase return", "purchase return")
     VoucherType.CREDIT_NOTE -> DocLabels("Sales return", "sales return")
+    VoucherType.QUOTATION -> DocLabels("Quotation", "quotation")
+    VoucherType.PROFORMA -> DocLabels("Proforma invoice", "proforma invoice")
+    VoucherType.DELIVERY_CHALLAN -> DocLabels("Delivery challan", "delivery challan")
     else -> DocLabels("Invoice", "invoice")
 }
+
+/** Non-posting documents: numbered when issued, no stock or ledger effect. */
+internal fun VoucherType.isIssueOnly(): Boolean =
+    this == VoucherType.QUOTATION || this == VoucherType.PROFORMA || this == VoucherType.DELIVERY_CHALLAN

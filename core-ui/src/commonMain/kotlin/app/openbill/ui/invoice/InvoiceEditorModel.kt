@@ -212,20 +212,26 @@ class InvoiceEditorModel(
         val repos = container.repositories
         val found = repos.vouchers.findVoucher(id)
         val v = if (asReturn && found != null) {
+            // A quotation/proforma/challan converts to an invoice; a bill or invoice to its return.
+            val convert = found.type.isIssueOnly()
             if (found.status != VoucherStatus.POSTED) {
-                _state.update { it.copy(loaded = true, failure = "Only posted documents can be returned") }
+                _state.update { it.copy(loaded = true, failure = if (convert) "Issue the document before converting it" else "Only posted documents can be returned") }
                 return
             }
             found.copy(
-                type = if (found.type == VoucherType.PURCHASE) VoucherType.DEBIT_NOTE else VoucherType.CREDIT_NOTE,
+                type = when {
+                    convert -> VoucherType.SALE
+                    found.type == VoucherType.PURCHASE -> VoucherType.DEBIT_NOTE
+                    else -> VoucherType.CREDIT_NOTE
+                },
                 referenceVoucherId = found.id,
-                referenceNumber = found.number,
+                referenceNumber = if (convert) null else found.number,
                 status = VoucherStatus.DRAFT,
                 number = null,
                 date = container.today(),
                 lines = found.lines.map { it.copy(id = container.newId()) },
-                charges = emptyList(),
-                notes = null,
+                charges = if (convert) found.charges.map { it.copy(id = container.newId()) } else emptyList(),
+                notes = if (convert) found.notes else null,
             )
         } else {
             found
