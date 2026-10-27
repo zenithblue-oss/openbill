@@ -38,7 +38,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index(value = ["firmId", "date"]),
         Index(value = ["firmId", "type", "status"]),
-        Index(value = ["firmId", "partyId"]),
+        Index(value = ["firmId", "partyId", "type", "status", "date"]),
         Index(value = ["financialYearId"]),
         Index(value = ["partyId"]),
         Index(value = ["referenceVoucherId"]),

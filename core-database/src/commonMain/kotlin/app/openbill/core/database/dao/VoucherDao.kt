@@ -11,6 +11,8 @@ import app.openbill.core.database.VoucherEntity
 import app.openbill.core.database.VoucherLineEntity
 import kotlinx.coroutines.flow.Flow
 
+data class VoucherStatRow(val status: String, val count: Int, val total: Long)
+
 @Dao
 interface VoucherDao {
     @Insert
@@ -30,6 +32,47 @@ interface VoucherDao {
 
     @Query("SELECT * FROM vouchers WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): VoucherEntity?
+
+    /**
+     * One list page, newest first. `+v.type` keeps the planner on the (firmId, date) index so
+     * the scan stops after [limit] rows instead of sorting every voucher of the types.
+     */
+    @Query(
+        "SELECT v.* FROM vouchers v LEFT JOIN parties p ON p.id = v.partyId " +
+            "WHERE v.firmId = :firmId AND v.deletedAt IS NULL AND +v.type IN (:types) " +
+            "AND (:status IS NULL OR v.status = :status) " +
+            "AND (:query = '' OR v.number LIKE '%' || :query || '%' " +
+            "OR v.referenceNumber LIKE '%' || :query || '%' OR p.name LIKE '%' || :query || '%') " +
+            "ORDER BY v.date DESC, v.createdAt DESC, v.id LIMIT :limit",
+    )
+    fun observePage(
+        firmId: String,
+        types: List<String>,
+        status: String?,
+        query: String,
+        limit: Int,
+    ): Flow<List<VoucherEntity>>
+
+    @Query(
+        "SELECT status, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total FROM vouchers " +
+            "WHERE firmId = :firmId AND deletedAt IS NULL AND type IN (:types) " +
+            "AND date >= :fromDate AND date <= :toDate GROUP BY status",
+    )
+    fun observeStats(
+        firmId: String,
+        types: List<String>,
+        fromDate: String,
+        toDate: String,
+    ): Flow<List<VoucherStatRow>>
+
+    @Query("SELECT * FROM voucher_lines WHERE voucherId IN (:voucherIds) ORDER BY voucherId, lineNumber")
+    suspend fun linesForAll(voucherIds: List<String>): List<VoucherLineEntity>
+
+    @Query("SELECT * FROM voucher_charges WHERE voucherId IN (:voucherIds) ORDER BY voucherId, sortOrder")
+    suspend fun chargesForAll(voucherIds: List<String>): List<VoucherChargeEntity>
+
+    @Query("SELECT * FROM voucher_charge_portions WHERE voucherId IN (:voucherIds) ORDER BY voucherId, chargeId, portionIndex")
+    suspend fun portionsForAll(voucherIds: List<String>): List<VoucherChargePortionEntity>
 
     @Query("SELECT * FROM vouchers WHERE id = :id LIMIT 1")
     fun observeById(id: String): Flow<VoucherEntity?>

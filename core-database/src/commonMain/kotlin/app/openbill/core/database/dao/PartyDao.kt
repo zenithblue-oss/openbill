@@ -37,6 +37,16 @@ interface PartyDao {
     )
     suspend fun search(firmId: String, query: String): List<PartyEntity>
 
+    /** One list page by name; rows of [types] matching [query] on name, phone or GSTIN. */
+    @Query(
+        "SELECT * FROM parties WHERE firmId = :firmId AND deletedAt IS NULL AND type IN (:types) " +
+            "AND (:query = '' OR name LIKE '%' || :query || '%' " +
+            "OR phone LIKE '%' || :query || '%' " +
+            "OR gstin LIKE '%' || :query || '%') " +
+            "ORDER BY name COLLATE NOCASE, id LIMIT :limit",
+    )
+    fun observePage(firmId: String, types: List<String>, query: String, limit: Int): Flow<List<PartyEntity>>
+
     @Query(
         "UPDATE parties SET deletedAt = :deletedAt, updatedAt = :updatedAt, revision = revision + 1 " +
             "WHERE id = :id AND deletedAt IS NULL",

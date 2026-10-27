@@ -48,7 +48,7 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(9, OPENBILL_DATABASE_VERSION)
+        assertEquals(10, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
@@ -58,6 +58,7 @@ class DatabaseSchemaTest {
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/7.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/8.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/9.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/10.json").exists())
 
         helper.createDatabase(9).use { connection ->
             val tables = mutableListOf<String>()
@@ -319,7 +320,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(8, migrations.size)
+        assertEquals(9, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -332,7 +333,8 @@ class DatabaseSchemaTest {
         assertEquals(7, migrations[5].endVersion)
         assertEquals(8, migrations[6].endVersion)
         assertEquals(9, migrations[7].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(9).isEmpty())
+        assertEquals(10, migrations[8].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(10).isEmpty())
     }
 
     @Test
@@ -408,6 +410,33 @@ class DatabaseSchemaTest {
             connection.prepare("SELECT COUNT(*) FROM firms").use { assertTrue(it.step()); assertEquals(1L, it.getLong(0)) }
             connection.execSQL("UPDATE party_addresses SET gstin = NULL")
             connection.execSQL("UPDATE items SET alternateUnitId = NULL, alternateUnitFactor = NULL")
+        }
+    }
+
+    @Test
+    fun schemaV9MigratesToV10WithScaleIndexes() {
+        helper.createDatabase(9).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(10, DatabaseMigrations.migrationsFor(9)).use { connection ->
+            val names = mutableListOf<String>()
+            connection.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'index_%' ORDER BY name").use {
+                while (it.step()) names += it.getText(0)
+            }
+            assertTrue("index_vouchers_firmId_partyId_type_status_date" in names)
+            assertTrue("index_journal_entries_accountId_date_createdAt" in names)
+            assertTrue("index_vouchers_firmId_partyId" !in names)
+            assertTrue("index_journal_entries_accountId" !in names)
+            connection.prepare(
+                "EXPLAIN QUERY PLAN SELECT * FROM vouchers WHERE firmId = 'f' AND partyId = 'p' " +
+                    "AND type = 'sale' AND status = 'posted' AND deletedAt IS NULL ORDER BY date",
+            ).use { s ->
+                assertTrue(s.step())
+                assertTrue("index_vouchers_firmId_partyId_type_status_date" in s.getText(3), s.getText(3))
+            }
         }
     }
 

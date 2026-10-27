@@ -162,7 +162,7 @@ data class AccountEntity(
     indices = [
         Index(value = ["firmId", "date"]),
         Index(value = ["voucherId"]),
-        Index(value = ["accountId"]),
+        Index(value = ["accountId", "date", "createdAt"]),
     ],
 )
 data class JournalEntryEntity(

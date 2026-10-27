@@ -40,6 +40,18 @@ interface ItemDao {
     )
     suspend fun search(firmId: String, query: String): List<ItemEntity>
 
+    /** One list page by name; [services] null for all, matching [query] like [search]. */
+    @Query(
+        "SELECT * FROM items WHERE firmId = :firmId AND deletedAt IS NULL " +
+            "AND (:services IS NULL OR isService = :services) " +
+            "AND (:query = '' OR name LIKE '%' || :query || '%' " +
+            "OR sku LIKE '%' || :query || '%' " +
+            "OR hsnSac LIKE '%' || :query || '%' " +
+            "OR barcode LIKE '%' || :query || '%') " +
+            "ORDER BY name COLLATE NOCASE, id LIMIT :limit",
+    )
+    fun observePage(firmId: String, services: Boolean?, query: String, limit: Int): Flow<List<ItemEntity>>
+
     @Query(
         "UPDATE items SET deletedAt = :deletedAt, updatedAt = :updatedAt, revision = revision + 1 " +
             "WHERE id = :id AND deletedAt IS NULL",

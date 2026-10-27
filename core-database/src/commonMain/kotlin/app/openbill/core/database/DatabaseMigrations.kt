@@ -143,7 +143,27 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+    /**
+     * Scale indexes (docs/14-performance.md): a party's vouchers by type and status in date order
+     * (outstanding invoices, party ledgers), and an account's journal lines in date order (paged
+     * account ledger). Each replaces an index that is its prefix.
+     */
+    private val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("DROP INDEX IF EXISTS `index_vouchers_firmId_partyId`")
+            connection.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_vouchers_firmId_partyId_type_status_date` " +
+                    "ON `vouchers` (`firmId`, `partyId`, `type`, `status`, `date`)",
+            )
+            connection.execSQL("DROP INDEX IF EXISTS `index_journal_entries_accountId`")
+            connection.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_journal_entries_accountId_date_createdAt` " +
+                    "ON `journal_entries` (`accountId`, `date`, `createdAt`)",
+            )
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
 
     fun migrationsFor(
         startVersion: Int,
