@@ -223,7 +223,7 @@ fun InvoiceEditorScreen(
                         }
                         state.lines.forEachIndexed { index, line ->
                             val result = state.summary?.lineResults?.getOrNull(index)
-                            DraftLineCard(line, result?.totalAmount) { lineForm = LineRules.fromDraft(line, items.firstOrNull { it.id == line.itemId }) }
+                            DraftLineCard(line, result?.totalAmount) { lineForm = items.firstOrNull { it.id == line.itemId }.let { item -> LineRules.fromDraft(line, item, item?.alternateUnitId?.let { unitSymbol[it] }) } }
                         }
                     }
                     state.errors["lines"]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
