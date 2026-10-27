@@ -220,11 +220,24 @@ data class PartyForm(
     val pincode: String = "",
     val openingBalance: String = "",
     val openingType: OpeningBalanceType = OpeningBalanceType.DEBIT,
+    val notes: String = "",
+    /** Delivery sites; the first is the default ship-to on documents. */
+    val shipping: List<ShipForm> = emptyList(),
     val errors: Map<String, String> = emptyMap(),
     val saving: Boolean = false,
     val failure: String? = null,
     /** Bumped on each rejected save so the screen can scroll the first error into view. */
     val rejectedSaves: Int = 0,
+)
+
+/** One shipping address with its own GSTIN (blank = unregistered site). */
+data class ShipForm(
+    val id: String? = null,
+    val line1: String = "",
+    val city: String = "",
+    val pincode: String = "",
+    val stateCode: String? = null,
+    val gstin: String = "",
 )
 
 object PartyRules {
@@ -246,6 +259,13 @@ object PartyRules {
             if (form.addressLine1.isBlank()) put("address", "Add the street address or clear the city")
             if (form.city.isBlank()) put("city", "City is required with an address")
             if (form.stateCode == null) put("state", "Choose a state for the address")
+        }
+        form.shipping.forEachIndexed { i, s ->
+            if (s.line1.isBlank()) put("ship$i.address", "Street address is required")
+            if (s.city.isBlank()) put("ship$i.city", "City is required")
+            Validation.gstinError(s.gstin)?.let { put("ship$i.gstin", it) }
+                ?: Validation.gstinStateMismatch(s.gstin, s.stateCode)?.let { put("ship$i.gstin", it) }
+            if (s.stateCode == null) put("ship$i.state", "Choose a state")
         }
     }
 }
@@ -287,6 +307,10 @@ class PartyEditorModel(
                         pincode = a?.pincode.orEmpty(),
                         openingBalance = if (p.openingBalance.paise == 0L) "" else p.openingBalance.format(),
                         openingType = p.openingBalanceType,
+                        notes = p.notes.orEmpty(),
+                        shipping = p.addresses.filter { it.kind == AddressKind.SHIPPING }.sortedByDescending { it.isDefault }.map {
+                            ShipForm(it.id, it.line1, it.city, it.pincode.orEmpty(), it.stateCode, it.gstin.orEmpty())
+                        },
                     )
                     baseline = _state.value
                 } else {
@@ -345,7 +369,19 @@ class PartyEditorModel(
                 } else {
                     null
                 }
-                val otherAddresses = old?.addresses.orEmpty().filter { it.kind != AddressKind.BILLING }
+                val shipping = form.shipping.mapIndexed { i, s ->
+                    PartyAddress(
+                        id = s.id ?: container.newId(),
+                        kind = AddressKind.SHIPPING,
+                        line1 = s.line1.trim(),
+                        city = s.city.trim(),
+                        stateCode = s.stateCode!!,
+                        pincode = s.pincode.trim().ifBlank { null },
+                        isDefault = i == 0,
+                        gstin = Validation.normalizedGstin(s.gstin),
+                    )
+                }
+                val otherAddresses = shipping + old?.addresses.orEmpty().filter { it.kind == AddressKind.OTHER }
                     .map { it.copy(isDefault = false) }
                 val party = Party(
                     id = old?.id ?: container.newId(),
@@ -359,7 +395,7 @@ class PartyEditorModel(
                     openingBalance = Parse.money(form.openingBalance) ?: Money.ZERO,
                     openingBalanceType = form.openingType,
                     addresses = listOfNotNull(address) + otherAddresses,
-                    notes = old?.notes,
+                    notes = form.notes.trim().ifBlank { null },
                     creditLimit = old?.creditLimit,
                     createdAt = old?.createdAt ?: now,
                     updatedAt = now,
@@ -405,6 +441,7 @@ fun PartyEditScreen(
     val scroll = rememberScrollState()
     LaunchedEffect(form.rejectedSaves) { if (form.rejectedSaves > 0) scroll.animateScrollTo(0) }
     var pickState by remember { mutableStateOf(false) }
+    var pickShipState by remember { mutableStateOf<Int?>(null) }
     val messages = LocalAppMessages.current
     val onRemoved = rememberPartyRemovedMessage(container)
     val dirty = PartyRules.hasChanges(model.baseline, form) && !form.saving
@@ -444,6 +481,27 @@ fun PartyEditScreen(
                 FormField("City", form.city, { v -> model.edit { it.copy(city = v) } }, error = form.errors["city"], capitalization = KeyboardCapitalization.Words)
                 FormField("PIN code", form.pincode, { v -> model.edit { it.copy(pincode = v.filter(Char::isDigit).take(6)) } }, keyboardType = KeyboardType.Number)
 
+                SectionHeader("Shipping addresses")
+                form.shipping.forEachIndexed { i, s ->
+                    fun ship(change: (ShipForm) -> ShipForm) = model.edit { f -> f.copy(shipping = f.shipping.toMutableList().also { it[i] = change(it[i]) }) }
+                    Text(if (i == 0) "Default delivery site" else "Delivery site ${i + 1}", style = MaterialTheme.typography.labelLarge)
+                    FormField("Street address", s.line1, { v -> ship { it.copy(line1 = v) } }, error = form.errors["ship$i.address"])
+                    FormField("City", s.city, { v -> ship { it.copy(city = v) } }, error = form.errors["ship$i.city"], capitalization = KeyboardCapitalization.Words)
+                    FormField("PIN code", s.pincode, { v -> ship { it.copy(pincode = v.filter(Char::isDigit).take(6)) } }, keyboardType = KeyboardType.Number)
+                    FormField(
+                        "Ship-to GSTIN", s.gstin,
+                        { v -> ship { it.copy(gstin = v.uppercase(), stateCode = Validation.stateFromGstin(v.uppercase()) ?: it.stateCode) } },
+                        error = form.errors["ship$i.gstin"], capitalization = KeyboardCapitalization.Characters,
+                        supporting = "Leave blank for an unregistered site",
+                    )
+                    PickerField("State", s.stateCode?.let { Fmt.stateName(it) } ?: "", { pickShipState = i }, error = form.errors["ship$i.state"], placeholder = "Choose a state")
+                    TextButton(onClick = { model.edit { f -> f.copy(shipping = f.shipping.filterIndexed { j, _ -> j != i }) } }) { Text("Remove delivery site") }
+                }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { model.edit { it.copy(shipping = it.shipping + ShipForm(stateCode = it.stateCode)) } },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Add shipping address") }
+
                 SectionHeader("Opening balance")
                 FormField(
                     "Amount",
@@ -458,6 +516,9 @@ fun PartyEditScreen(
                     SelectableChip("They owe me (Dr)", form.openingType == OpeningBalanceType.DEBIT, { model.edit { it.copy(openingType = OpeningBalanceType.DEBIT) } })
                     SelectableChip("I owe them (Cr)", form.openingType == OpeningBalanceType.CREDIT, { model.edit { it.copy(openingType = OpeningBalanceType.CREDIT) } })
                 }
+                SectionHeader("Notes")
+                FormField("Notes", form.notes, { v -> model.edit { it.copy(notes = v) } }, singleLine = false)
+                if (partyId != null && container.platform.supportsAttachments) app.openbill.ui.invoice.AttachmentsSection(container, partyId)
                 form.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(Spacing.sm))
                 PrimaryButton("Save party", { save() }, Modifier.fillMaxWidth(), busy = form.saving, busyText = "Saving…")
@@ -498,6 +559,13 @@ fun PartyEditScreen(
             selected = form.stateCode,
             onPick = { code -> model.edit { it.copy(stateCode = code) }; pickState = false },
             onDismiss = { pickState = false },
+        )
+    }
+    pickShipState?.let { i ->
+        StatePickerSheet(
+            selected = form.shipping.getOrNull(i)?.stateCode,
+            onPick = { code -> model.edit { f -> f.copy(shipping = f.shipping.mapIndexed { j, s -> if (j == i) s.copy(stateCode = code) else s }) }; pickShipState = null },
+            onDismiss = { pickShipState = null },
         )
     }
 }

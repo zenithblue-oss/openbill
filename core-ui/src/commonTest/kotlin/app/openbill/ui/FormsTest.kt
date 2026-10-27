@@ -114,6 +114,14 @@ class FormsTest {
     }
 
     @Test
+    fun shippingAddressNeedsStreetCityStateAndAValidShipToGstin() {
+        val ok = app.openbill.ui.parties.ShipForm(line1 = "Plot 4", city = "Pune", stateCode = "27")
+        assertTrue(PartyRules.validate(PartyForm(name = "X", shipping = listOf(ok))).isEmpty())
+        val e = PartyRules.validate(PartyForm(name = "X", shipping = listOf(ok, app.openbill.ui.parties.ShipForm(gstin = "BAD"))))
+        assertTrue(listOf("ship1.address", "ship1.city", "ship1.gstin", "ship1.state").all { it in e }, e.toString())
+    }
+
+    @Test
     fun indianFormattingAndWords() {
         assertEquals("₹1,23,45,678.90", Fmt.inr(Money.parse("12345678.90")))
         assertEquals("₹999.00", Fmt.inr(Money.parse("999")))

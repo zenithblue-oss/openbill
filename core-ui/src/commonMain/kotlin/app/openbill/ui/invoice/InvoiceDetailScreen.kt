@@ -415,9 +415,9 @@ private fun LineCard(line: VoucherLine, unit: String?) {
     }
 }
 
-/** Images and PDFs attached to a voucher; stored beside the database and carried in backups. */
+/** Images and PDFs attached to a voucher or party; stored beside the database and carried in backups. */
 @Composable
-private fun AttachmentsSection(container: AppContainer, voucherId: String) {
+internal fun AttachmentsSection(container: AppContainer, voucherId: String) {
     val platform = container.platform
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current

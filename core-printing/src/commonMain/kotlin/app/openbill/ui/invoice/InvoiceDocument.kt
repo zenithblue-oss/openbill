@@ -174,9 +174,9 @@ data class InvoiceDocument(
                     email = p.email?.takeIf { it.isNotBlank() },
                 )
             }
-            val shipping = party?.addresses?.firstOrNull { it.kind == AddressKind.SHIPPING }
-            val shipTo = if (party != null && shipping != null && addressLines(shipping) != addressLines(billing)) {
-                PartyBlock(party.name, addressLines(shipping), null, shipping.stateCode?.let { Fmt.stateName(it) }, null)
+            val shipping = party?.addresses?.filter { it.kind == AddressKind.SHIPPING }?.let { list -> list.firstOrNull { it.isDefault } ?: list.firstOrNull() }
+            val shipTo = if (party != null && shipping != null && (addressLines(shipping) != addressLines(billing) || shipping.gstin != null)) {
+                PartyBlock(party.name, addressLines(shipping), shipping.gstin?.takeIf { it.isNotBlank() }, shipping.stateCode?.let { Fmt.stateName(it) }, null)
             } else {
                 null
             }
