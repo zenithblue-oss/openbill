@@ -200,6 +200,7 @@ private val REPORT_HINTS = mapOf(
     ReportKind.OUTSTANDING to "Receivables and payables with ageing",
     ReportKind.PARTY_STATEMENT to "One party's ledger with running balance",
     ReportKind.STOCK_SUMMARY to "Opening, in, out, closing and value",
+    ReportKind.LOW_STOCK to "Items at or below their low-stock level",
     ReportKind.ITEM_PROFIT to "Sales, weighted-average cost and margin per item",
     ReportKind.PROFIT_LOSS to "Trading and profit and loss from the ledger",
     ReportKind.GSTR1 to "B2B, B2CL, B2CS, credit notes, HSN and documents",

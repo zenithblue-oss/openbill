@@ -25,6 +25,7 @@ enum class ReportKind(val key: String, val title: String, val group: ReportGroup
     OUTSTANDING("outstanding", "Party-wise outstanding", ReportGroup.PARTIES),
     PARTY_STATEMENT("party-statement", "Party statement", ReportGroup.PARTIES, needsParty = true),
     STOCK_SUMMARY("stock-summary", "Stock summary", ReportGroup.STOCK),
+    LOW_STOCK("low-stock", "Low-stock report", ReportGroup.STOCK),
     ITEM_PROFIT("item-profit", "Item-wise profit", ReportGroup.STOCK),
     PROFIT_LOSS("profit-loss", "Profit and loss", ReportGroup.STOCK),
     GSTR1("gstr1", "GSTR-1 summary", ReportGroup.GST),
@@ -53,6 +54,7 @@ object Reports {
         ReportKind.OUTSTANDING -> outstanding(data)
         ReportKind.PARTY_STATEMENT -> partyStatement(data, partyId ?: throw IllegalArgumentException("Party statement needs a party"))
         ReportKind.STOCK_SUMMARY -> stockSummary(data)
+        ReportKind.LOW_STOCK -> lowStock(data)
         ReportKind.ITEM_PROFIT -> itemProfit(data)
         ReportKind.PROFIT_LOSS -> profitLoss(data)
         ReportKind.GSTR1 -> Gstr1.build(data).summaryTable()
@@ -245,6 +247,24 @@ object Reports {
             rows,
             listOf("Total", "", "", "", "", "", "", totalValue.cell()),
             notes = listOf("Closing as of ${data.to}; moving weighted-average cost across godowns."),
+        )
+    }
+
+    /** Items at or below their low-stock level as of the period end, shortest first (same rule as the dashboard card). */
+    fun lowStock(data: ReportData): ReportTable {
+        val byItem = data.stock.filter { it.date <= data.to }.groupBy { it.itemId }
+        val rows = data.items.filter { it.trackInventory && !it.isService && it.lowStockLevel != null }.mapNotNull { item ->
+            val level = item.lowStockLevel!!
+            val onHand = Quantity.ofScaledUnits(byItem[item.id].orEmpty().sumOf { it.quantity.scaledUnits })
+            if (onHand > level) null else Triple(item, onHand, level)
+        }.sortedWith(compareBy({ it.second.scaledUnits - it.third.scaledUnits }, { it.first.name.lowercase() }))
+        return ReportTable(
+            "Low-stock report",
+            listOf(col("item", "Item"), col("unit", "Unit"), col("on_hand", "On hand", ColumnKind.QUANTITY), col("level", "Low-stock level", ColumnKind.QUANTITY), col("short", "Short by", ColumnKind.QUANTITY)),
+            rows.map { (item, onHand, level) ->
+                listOf(item.name, data.unitById[item.unitId]?.symbol.orEmpty(), onHand.format(), level.format(), Quantity.ofScaledUnits(level.scaledUnits - onHand.scaledUnits).format())
+            },
+            notes = listOf("As of ${data.to}; all godowns. Set an item's low-stock level in the item form."),
         )
     }
 

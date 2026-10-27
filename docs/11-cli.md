@@ -104,7 +104,7 @@ server host.
 | `gst gstr1 --period 2026-09 --format json\|csv --out DIR` | GSTR-1 export in the published schema for supported document types. |
 | `gst hsn --from --to` and `gst gstr3b --period 2026-09` | Summary data for return preparation; filing is out of scope. `gstr3b` follows the GSTR-3B working report (P1 in [01-feature-inventory.md](01-feature-inventory.md)) and is not in the 1.0 C3 set. |
 | `tally export --from --to --out FILE.xml` | Tally-compatible XML export. |
-| `report NAME [--from] [--to] [--format table\|csv\|json] [--out] [--party]` | Shorthand for `report run NAME`; dates default to the current financial year. Names: `sales-register`, `purchase-register`, `day-book`, `cash-bank-book`, `expenses`, `outstanding`, `party-statement`, `stock-summary`, `item-profit`, `profit-loss`, `gstr1`, `gstr3b`, `hsn-summary`. |
+| `report NAME [--from] [--to] [--format table\|csv\|json] [--out] [--party]` | Shorthand for `report run NAME`; dates default to the current financial year. Names: `sales-register`, `purchase-register`, `day-book`, `cash-bank-book`, `expenses`, `outstanding`, `party-statement`, `stock-summary`, `low-stock`, `item-profit`, `profit-loss`, `gstr1`, `gstr3b`, `hsn-summary`. |
 | `export tally --from --to [--out]` | Same as `tally export`. |
 | `audit list [--limit N]` | Newest audit events (post, cancel, restore, lock, year close). |
 | `import csv items --file F.csv [--mapping M.toml] --dry-run` | Validates every row and reports errors with row numbers; no writes in dry-run. Without `--dry-run`, imports in one transaction or not at all. |

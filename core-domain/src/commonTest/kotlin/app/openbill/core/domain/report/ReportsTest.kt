@@ -4,6 +4,7 @@ import app.openbill.core.domain.model.AccountCode
 import app.openbill.core.domain.model.booksLockedThrough
 import app.openbill.core.domain.model.requireBooksOpen
 import app.openbill.core.model.Money
+import app.openbill.core.model.Quantity
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -50,6 +51,9 @@ class ReportsTest {
         assertEquals(Money.parse("120950.00"), pl.total("amount"))
         val stock = Reports.run(ReportKind.STOCK_SUMMARY, data)
         assertEquals(listOf("Steel Bolt", "pcs", "0", "21", "10", "11", "50.00", "550.00"), stock.rows.single())
+        assertEquals(emptyList<List<String>>(), Reports.run(ReportKind.LOW_STOCK, data).rows, "no level set")
+        val low = ReportData(data.firm, data.settings, data.period, data.vouchers, data.parties, data.items.map { it.copy(lowStockLevel = Quantity.of(12)) }, data.units, data.accounts, data.journal, data.stock, data.partyMovements)
+        assertEquals(listOf("Steel Bolt", "pcs", "11", "12", "1"), Reports.run(ReportKind.LOW_STOCK, low).rows.single())
     }
 
     @Test
