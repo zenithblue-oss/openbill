@@ -52,7 +52,7 @@ android {
     buildToolsVersion = libs.versions.build.tools.get()
 
     defaultConfig {
-        applicationId = "app.openbill.android"
+        applicationId = "com.zenithblue.openbill"
         minSdk = libs.versions.min.sdk.get().toInt()
         targetSdk = libs.versions.target.sdk.get().toInt()
         versionCode = 5

@@ -24,10 +24,12 @@ files are listed with `SHA256SUMS`).
 
 Builds are unsigned for Windows/Linux and the app is alpha: back up anything you care about.
 
+**0.2.x alpha users:** the Android app is now a new package (`com.zenithblue.openbill`), so reinstall it; the old app keeps its own data. Migrate with Backup in the old app, then restore in the new one.
+
 ## Coming to F-Droid
 
 An F-Droid listing is being prepared (metadata in `fastlane/` and `docs/fdroid/`).
-Once accepted, a badge will appear here: `https://f-droid.org/packages/app.openbill.android/`.
+Once accepted, a badge will appear here: `https://f-droid.org/packages/com.zenithblue.openbill/`.
 
 ## Screenshots
 
