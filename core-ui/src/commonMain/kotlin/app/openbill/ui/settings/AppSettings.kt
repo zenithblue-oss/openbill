@@ -7,6 +7,10 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Device setting: "true" sends Print straight to the default printer (desktop). */
 const val KEY_SILENT_PRINT = "print.silent"
 
+/** Device setting: serial thermal printer speed set with `stty` on Linux; blank = leave the port as is. */
+const val KEY_THERMAL_BAUD = "print.thermalBaud"
+val THERMAL_BAUD_CHOICES = listOf("", "9600", "19200", "38400", "115200")
+
 enum class ThemeMode(val label: String) {
     SYSTEM("System"),
     LIGHT("Light"),

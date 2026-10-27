@@ -119,15 +119,23 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
 
     override val supportsThermalPrint: Boolean get() = true
 
-    // shortcut: serial ports are listed on Linux only (/dev); Windows thermal printers go through their print service.
+    // Windows lists print services only: COM-port receipt printers are installed as Windows printers.
     override suspend fun thermalPrinters(): List<String> = withContext(Dispatchers.IO) {
-        PrintServiceLookup.lookupPrintServices(null, null).map { it.name } +
+        val services = PrintServiceLookup.lookupPrintServices(null, null).map { it.name }
+        if (System.getProperty("os.name").startsWith("Windows")) return@withContext services
+        services +
             File("/dev").listFiles { f -> Regex("ttyUSB\\d+|ttyACM\\d+|rfcomm\\d+").matches(f.name) }.orEmpty().map { it.path }.sorted() +
             File("/dev/usb").listFiles { f -> f.name.startsWith("lp") }.orEmpty().map { it.path }.sorted()
     }
 
     override suspend fun thermalPrint(printer: String, bytes: ByteArray): String? = withContext(Dispatchers.IO) {
         if (printer.startsWith("/dev/")) {
+            val baud = settingsStore.getString(app.openbill.ui.settings.KEY_THERMAL_BAUD).orEmpty()
+            if (baud.isNotEmpty() && !printer.startsWith("/dev/usb/")) {
+                val stty = ProcessBuilder("stty", "-F", printer, baud, "raw", "-echo").redirectErrorStream(true).start()
+                val out = stty.inputStream.bufferedReader().readText()
+                check(stty.waitFor() == 0) { "Could not set $baud baud on $printer: ${out.trim()}" }
+            }
             File(printer).outputStream().use { it.write(bytes) }
         } else {
             val service = PrintServiceLookup.lookupPrintServices(null, null).firstOrNull { it.name == printer } ?: error("$printer is not available")

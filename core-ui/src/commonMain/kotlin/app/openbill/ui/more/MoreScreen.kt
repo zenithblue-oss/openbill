@@ -158,6 +158,19 @@ fun MoreScreen(
                         silent = it
                         store.putString(KEY_SILENT_PRINT, it.toString())
                     })
+                    if (container.platform.supportsThermalPrint) {
+                        var baud by remember { mutableStateOf(store.getString(app.openbill.ui.settings.KEY_THERMAL_BAUD).orEmpty()) }
+                        ListItem(
+                            headlineContent = { Text("Serial printer speed") },
+                            supportingContent = { Text(if (baud.isEmpty()) "Port default (Linux serial thermal printers)" else "$baud baud (Linux serial thermal printers)") },
+                            colors = listColors,
+                            modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Change") {
+                                val choices = app.openbill.ui.settings.THERMAL_BAUD_CHOICES
+                                baud = choices[(choices.indexOf(baud) + 1) % choices.size]
+                                store.putString(app.openbill.ui.settings.KEY_THERMAL_BAUD, baud)
+                            },
+                        )
+                    }
                 }
 
                 SectionHeader("Reports and compliance")
