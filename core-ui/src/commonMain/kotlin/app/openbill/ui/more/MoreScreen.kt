@@ -298,6 +298,7 @@ fun MoreScreen(
                     colors = listColors,
                 )
                 LicensesItem(container.platform.appVersion, listColors)
+                app.openbill.ui.settings.UpdateItems(container, listColors)
                 ListItem(
                     headlineContent = { Text("View introduction") },
                     supportingContent = { Text("A short tour of what OpenBill does") },

@@ -39,6 +39,16 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
 
     override val pdfFontMetrics: FontMetrics get() = PdfFonts.metrics
 
+    override val supportsUpdateCheck: Boolean get() = true
+
+    override suspend fun httpGet(url: String): String? = withContext(Dispatchers.IO) {
+        val client = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(10))
+            .followRedirects(java.net.http.HttpClient.Redirect.NORMAL).build()
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI(url)).timeout(java.time.Duration.ofSeconds(15))
+            .header("Accept", "application/vnd.github+json").header("User-Agent", "OpenBill/$appVersion").build()
+        client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString()).takeIf { it.statusCode() == 200 }?.body()
+    }
+
     override suspend fun invoicePdfAction(document: InvoiceDocument, layout: InvoiceLayout, action: PdfAction): String? {
         val msg = pdfAction(document.fileStem, "${document.title} ${document.number}", layout, action) ?: return null
         if (action != PdfAction.SHARE && action != PdfAction.IMAGE) return msg

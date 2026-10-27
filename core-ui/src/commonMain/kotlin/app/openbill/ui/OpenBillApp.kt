@@ -198,7 +198,9 @@ fun OpenBillApp(container: AppContainer, backHandler: BackHandlerSlot? = null) {
                             }
                         }
                     }
+                    app.openbill.ui.settings.WhatsNewOnLaunch(container, list)
                 }
+                app.openbill.ui.settings.UpdateBanner(container, Modifier.align(Alignment.BottomCenter))
             }
         }
     }

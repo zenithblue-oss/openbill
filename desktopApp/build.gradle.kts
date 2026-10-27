@@ -48,7 +48,7 @@ compose.desktop {
 
             // Equivalent of suggestRuntimeModules for this app: SQLite/Room (java.sql),
             // Compose/Skiko native loading (jdk.unsupported), plus logging/crypto/desktop basics.
-            modules("java.sql", "jdk.unsupported", "java.naming", "java.management", "jdk.crypto.ec")
+            modules("java.sql", "jdk.unsupported", "java.naming", "java.management", "jdk.crypto.ec", "java.net.http")
 
             linux {
                 iconFile.set(project.rootProject.file("branding/icons/openbill.png"))

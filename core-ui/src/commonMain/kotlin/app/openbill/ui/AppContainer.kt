@@ -113,6 +113,13 @@ interface PlatformServices {
     val supportsBiometric: Boolean get() = false
     suspend fun biometricUnlock(): Boolean = false
 
+    /**
+     * Desktop: GET [url] as text, for the optional update check; null on any non-200 reply.
+     * Android has no INTERNET permission, so it keeps [supportsUpdateCheck] false.
+     */
+    val supportsUpdateCheck: Boolean get() = false
+    suspend fun httpGet(url: String): String? = null
+
     /** Per-device UI preferences (theme). Platforms override this with persistent storage. */
     val settingsStore: SettingsStore get() = defaultSettingsStore()
 }
@@ -136,6 +143,12 @@ class AppContainer(
 
     /** Optional PIN lock shown before any data (device setting). */
     val appLock by lazy { app.openbill.ui.settings.AppLockController(platform.settingsStore) }
+
+    /** "New version" banner and its setting (device setting; on by default where supported). */
+    val updates by lazy { app.openbill.ui.settings.UpdateController(platform.settingsStore, platform.supportsUpdateCheck) }
+
+    /** Version whose "What's new" was last seen (device setting). */
+    val whatsNew by lazy { app.openbill.ui.settings.WhatsNewController(platform.settingsStore) }
 
     /** Business switcher state (device setting). */
     val activeFirm by lazy { app.openbill.ui.settings.ActiveFirmController(platform.settingsStore) }

@@ -7,6 +7,21 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+// CHANGELOG.md bundled as a Kotlin constant for the in-app "What's new" dialog.
+val generateChangelog by tasks.registering {
+    val source = rootProject.file("CHANGELOG.md")
+    val outDir = layout.buildDirectory.dir("generated/changelog")
+    inputs.file(source)
+    outputs.dir(outDir)
+    doLast {
+        val text = source.readText().replace("\r", "").replace("\\", "\\\\").replace("\"", "\\\"")
+            .replace("$", "\\$").replace("\n", "\\n")
+        val out = outDir.get().file("app/openbill/ui/settings/Changelog.kt").asFile
+        out.parentFile.mkdirs()
+        out.writeText("package app.openbill.ui.settings\n\n// Generated from CHANGELOG.md by :core-ui:generateChangelog.\ninternal const val CHANGELOG: String = \"$text\"\n")
+    }
+}
+
 kotlin {
     androidTarget {
         compilerOptions {
@@ -26,6 +41,7 @@ kotlin {
             // marked experimental; the design system opts in once here.
             languageSettings.optIn("androidx.compose.material3.ExperimentalMaterial3Api")
         }
+        commonMain { kotlin.srcDir(generateChangelog) }
         commonMain.dependencies {
             api(project(":core-model"))
             api(project(":core-domain"))
