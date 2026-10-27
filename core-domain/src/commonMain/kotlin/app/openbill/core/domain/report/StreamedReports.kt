@@ -1,6 +1,7 @@
 package app.openbill.core.domain.report
 
 import app.openbill.core.domain.model.AccountTransaction
+import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.repository.Repositories
 import app.openbill.core.domain.model.VoucherStatus
 import kotlinx.coroutines.flow.first
@@ -39,22 +40,57 @@ suspend fun Repositories.forEachReportSlice(
     days: Int = 7,
     block: suspend (ReportData) -> Unit,
 ) {
+    masters.period.slices(days).forEach { block(loadSlice(masters, it, withJournal)) }
+}
+
+private suspend fun Repositories.loadSlice(masters: ReportData, slice: ReportPeriod, withJournal: Boolean): ReportData {
     val accountOrder = masters.accounts.withIndex().associate { it.value.id to it.index }
-    masters.period.slices(days).forEach { slice ->
-        val list = vouchers.observeVouchers(masters.firm.id, slice.from, slice.to).first().filter { it.deletedAt == null }
-        val journal = if (!withJournal) emptyList() else {
-            val byId = list.associateBy { it.id }
-            ledger.journalEntriesForVouchers(list.filter { it.status == VoucherStatus.POSTED }.map { it.id })
-                .sortedBy { accountOrder[it.accountId] ?: Int.MAX_VALUE }
-                .map { e -> byId.getValue(e.voucherId).let { AccountTransaction(e, it.type, it.number, it.partyId) } }
-        }
-        block(
-            ReportData(
-                masters.firm, masters.settings, slice, list, masters.parties, masters.items, masters.units,
-                masters.accounts, journal, emptyList(), emptyList(),
-            ),
-        )
+    val list = vouchers.observeVouchers(masters.firm.id, slice.from, slice.to).first().filter { it.deletedAt == null }
+    val journal = if (!withJournal) emptyList() else {
+        val byId = list.associateBy { it.id }
+        ledger.journalEntriesForVouchers(list.filter { it.status == VoucherStatus.POSTED }.map { it.id })
+            .sortedBy { accountOrder[it.accountId] ?: Int.MAX_VALUE }
+            .map { e -> byId.getValue(e.voucherId).let { AccountTransaction(e, it.type, it.number, it.partyId) } }
     }
+    return ReportData(
+        masters.firm, masters.settings, slice, list, masters.parties, masters.items, masters.units,
+        masters.accounts, journal, emptyList(), emptyList(),
+    )
+}
+
+/**
+ * Register rows a page at a time for the on-screen table: only the current week's vouchers are
+ * loaded, and the rows come out exactly as in [Reports.register]. Not thread-safe.
+ */
+class RegisterPager internal constructor(private val repos: Repositories, private val masters: ReportData, sales: Boolean) {
+    private val register = Reports.Register(masters, sales)
+    val title get() = register.title
+    val columns get() = register.columns
+    private val slices = masters.period.slices().iterator()
+    private val pending = ArrayDeque<Voucher>()
+    val exhausted get() = pending.isEmpty() && !slices.hasNext()
+
+    suspend fun next(limit: Int = REGISTER_PAGE): List<List<String>> {
+        while (pending.size < limit && slices.hasNext()) {
+            pending += repos.loadSlice(masters, slices.next(), false).posted.filter { it.type in register.types }
+        }
+        return List(minOf(limit, pending.size)) { register.row(pending.removeFirst()) }
+    }
+}
+
+suspend fun Repositories.registerPager(firmId: String, period: ReportPeriod, sales: Boolean) =
+    RegisterPager(this, reportMasters(firmId, period), sales)
+
+/**
+ * Totals row of the register without keeping any rows; same figures as [Reports.register].
+ * shortcut: tax heads are derived per voucher (rounding, place of supply), so this walks the
+ * period week by week instead of one SQL SUM; swap for SQL if heads are ever stored.
+ */
+suspend fun Repositories.registerTotals(firmId: String, period: ReportPeriod, sales: Boolean): List<String> {
+    val masters = reportMasters(firmId, period)
+    val r = Reports.Register(masters, sales)
+    forEachReportSlice(masters) { slice -> slice.posted.filter { it.type in r.types }.forEach { r.row(it) } }
+    return r.totals()
 }
 
 /** The sales or purchase register of [period] as CSV, exactly as `Reports.register(...).toCsv()`; progress counts weeks. */
@@ -96,5 +132,6 @@ suspend fun Repositories.writeTallyXml(firmId: String, period: ReportPeriod, out
     TallyXml.appendFooter(out)
 }
 
+const val REGISTER_PAGE = 200
 private const val REGISTER_STAGE = "Writing register (weeks)"
 private const val TALLY_STAGE = "Writing Tally XML (weeks, two passes)"

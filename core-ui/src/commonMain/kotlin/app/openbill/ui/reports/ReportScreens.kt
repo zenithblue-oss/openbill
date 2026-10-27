@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -50,6 +53,10 @@ import app.openbill.core.domain.report.ReportKind
 import app.openbill.core.domain.report.ReportPeriod
 import app.openbill.core.domain.report.ReportTable
 import app.openbill.core.domain.report.Reports
+import app.openbill.core.domain.report.RegisterPager
+import app.openbill.core.domain.report.registerPager
+import app.openbill.core.domain.report.registerTotals
+import app.openbill.core.domain.report.writeRegisterCsv
 import app.openbill.core.domain.report.writeTallyXml
 import app.openbill.core.domain.report.loadReportData
 import app.openbill.ui.AppContainer
@@ -237,20 +244,50 @@ fun ReportScreen(
     var period by remember { mutableStateOf(initial) }
     var menu by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<Progress?>(null) }
+    // Registers page their rows (one week of vouchers at a time) instead of holding the whole period.
+    val paged = kind == ReportKind.SALES_REGISTER || kind == ReportKind.PURCHASE_REGISTER
+    var pager by remember(period, partyId) { mutableStateOf<RegisterPager?>(null) }
+    var pageRows by remember(period, partyId) { mutableStateOf<List<List<String>>>(emptyList()) }
+    var pageTotals by remember(period, partyId) { mutableStateOf<List<String>?>(null) }
+    var loadingMore by remember(period, partyId) { mutableStateOf(false) }
     val result by produceState<Result<ReportTable>?>(null, period, partyId) {
         value = null
         progress = null
         // Off the main thread; leaving the screen (Cancel) cancels the coroutine.
         value = withContext(Dispatchers.Default) {
-            runCatching { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind) { progress = it }, partyId) }
+            runCatching {
+                if (paged) {
+                    val p = container.repositories.registerPager(session.firm.id, period, kind == ReportKind.SALES_REGISTER)
+                    pageRows = p.next()
+                    pager = p
+                    ReportTable(p.title, p.columns, emptyList())
+                } else {
+                    Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind) { progress = it }, partyId)
+                }
+            }
+        }
+        // After the first page is on screen: the totals row, from one streamed pass over the period.
+        if (paged) pageTotals = withContext(Dispatchers.Default) { runCatching { container.repositories.registerTotals(session.firm.id, period, kind == ReportKind.SALES_REGISTER) }.getOrNull() }
+    }
+    val table = result?.getOrNull()?.let { if (paged) it.copy(rows = pageRows, totals = pageTotals.takeIf { _ -> pager?.exhausted == true }) else it }
+    val stem = "${kind.key}-${period.from}-${period.to}"
+
+    fun loadMore() {
+        val p = pager ?: return
+        if (loadingMore || p.exhausted) return
+        loadingMore = true
+        scope.launch {
+            pageRows = pageRows + withContext(Dispatchers.Default) { p.next() }
+            loadingMore = false
         }
     }
-    val table = result?.getOrNull()
-    val stem = "${kind.key}-${period.from}-${period.to}"
+    // Exports of a register read the whole period again rather than the loaded page.
+    suspend fun fullTable(t: ReportTable) =
+        if (paged) withContext(Dispatchers.Default) { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind), partyId) } else t
 
     fun act(block: suspend (ReportTable) -> String?) {
         val t = table ?: return
-        scope.launch { (runCatching { block(t) }.getOrElse { it.message ?: "Export failed" })?.let { messages?.show(it) } }
+        scope.launch { (runCatching { block(fullTable(t)) }.getOrElse { it.message ?: "Export failed" })?.let { messages?.show(it) } }
     }
     fun pdf(action: PdfAction) = act { t ->
         container.platform.pdfAction(stem, ReportPdf.layout(t, session.firm.name, periodLabel(period), container.platform.pdfFontMetrics), action)
@@ -261,7 +298,15 @@ fun ReportScreen(
             AppTopBar(table?.title ?: kind.title, onBack = onBack) {
                 IconButton(onClick = { menu = true }, enabled = table != null) { Icon(Icons.Filled.MoreVert, contentDescription = "Export") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Export CSV") }, onClick = { menu = false; act { container.platform.saveTextFile("$stem.csv", it.toCsv()) } })
+                    DropdownMenuItem(text = { Text("Export CSV") }, onClick = {
+                        menu = false
+                        if (paged) {
+                            scope.launch {
+                                val csv = withContext(Dispatchers.Default) { buildString { container.repositories.writeRegisterCsv(session.firm.id, period, kind == ReportKind.SALES_REGISTER, this) } }
+                                container.platform.saveTextFile("$stem.csv", csv)
+                            }
+                        } else act { container.platform.saveTextFile("$stem.csv", it.toCsv()) }
+                    })
                     DropdownMenuItem(text = { Text("Export JSON") }, onClick = {
                         menu = false
                         act { container.platform.saveTextFile("$stem.json", it.toJson(mapOf("from" to period.from.toString(), "to" to period.to.toString()))) }
@@ -281,7 +326,7 @@ fun ReportScreen(
             when {
                 r == null -> ProgressOverlay(progress, "Preparing ${kind.title.lowercase()}", onCancel = onBack)
                 r.isFailure -> Text(r.exceptionOrNull()?.message ?: "Could not run the report", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(pageGutter))
-                else -> ReportTableView(r.getOrThrow())
+                else -> ReportTableView(table ?: r.getOrThrow(), onEnd = if (paged) ::loadMore else null)
             }
         }
     }
@@ -289,7 +334,7 @@ fun ReportScreen(
 
 /** Header, rows and totals in one horizontally scrollable grid; numbers right-aligned. */
 @Composable
-fun ReportTableView(table: ReportTable, modifier: Modifier = Modifier) {
+fun ReportTableView(table: ReportTable, modifier: Modifier = Modifier, onEnd: (() -> Unit)? = null) {
     val cells = remember(table) { table.rows.map { r -> r.mapIndexed { i, c -> reportCell(table.columns[i].kind, c) } } }
     val totals = remember(table) { table.totals?.mapIndexed { i, c -> reportCell(table.columns[i].kind, c) } }
     val widths = remember(table) {
@@ -315,8 +360,14 @@ fun ReportTableView(table: ReportTable, modifier: Modifier = Modifier) {
             }
         }
     }
+    val listState = rememberLazyListState()
+    if (onEnd != null) {
+        // Ask for the next page when the last rows come into view (and again if the page was short).
+        val nearEnd by remember { derivedStateOf { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 } }
+        LaunchedEffect(nearEnd, cells.size) { if (nearEnd >= cells.size - 20) onEnd() }
+    }
     Box(modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
-        LazyColumn(Modifier.width(maxOf(total, 360.dp)), contentPadding = PaddingValues(bottom = Spacing.xl)) {
+        LazyColumn(Modifier.width(maxOf(total, 360.dp)), listState, contentPadding = PaddingValues(bottom = Spacing.xl)) {
             item { line(table.columns.map { it.label }, bold = true, shade = true) }
             if (cells.isEmpty()) item { Text("Nothing in this period", Modifier.padding(Spacing.md), style = MaterialTheme.typography.bodyMedium) }
             items(cells.size) { i ->

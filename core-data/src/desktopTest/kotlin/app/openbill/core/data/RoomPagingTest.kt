@@ -14,6 +14,8 @@ import app.openbill.core.domain.report.Reports
 import app.openbill.core.domain.report.TallyXml
 import app.openbill.core.model.Progress
 import app.openbill.core.domain.report.loadReportData
+import app.openbill.core.domain.report.registerPager
+import app.openbill.core.domain.report.registerTotals
 import app.openbill.core.domain.report.writeRegisterCsv
 import app.openbill.core.domain.report.writeTallyXml
 import app.openbill.core.domain.repository.Repositories
@@ -131,6 +133,20 @@ class RoomPagingTest {
                 assertEquals(Reports.register(full, sales).toCsv(), buildString { repos.writeRegisterCsv("firm-1", period, sales, this) }, "register $sales $period")
             }
             assertEquals(TallyXml.export(full), buildString { repos.writeTallyXml("firm-1", period, this) }, "tally $period")
+        }
+    }
+
+    @Test
+    fun pagedRegisterMatchesTheFullRegister(): Unit = runBlocking {
+        listOf(ReportPeriod.month("2026-05"), ReportPeriod(LocalDate(2026, 5, 11), LocalDate(2026, 5, 13))).forEach { period ->
+            listOf(true, false).forEach { sales ->
+                val full = Reports.register(repos.loadReportData("firm-1", period), sales)
+                val pager = repos.registerPager("firm-1", period, sales)
+                val rows = ArrayList<List<String>>()
+                while (!pager.exhausted) rows += pager.next(1) // one row per page, across week boundaries
+                assertEquals(full.rows, rows, "rows $sales $period")
+                assertEquals(full.totals, repos.registerTotals("firm-1", period, sales), "totals $sales $period")
+            }
         }
     }
 
