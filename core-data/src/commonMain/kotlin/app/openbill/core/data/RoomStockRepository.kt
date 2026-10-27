@@ -14,6 +14,10 @@ import androidx.room.useReaderConnection
 import app.openbill.core.domain.service.StockPosition
 import app.openbill.core.domain.service.StockPeriodTotals
 import kotlinx.datetime.LocalDate
+import app.openbill.core.model.OnProgress
+import app.openbill.core.model.Progress
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import app.openbill.core.domain.service.StockValuation
 
 class RoomStockRepository(
@@ -81,17 +85,27 @@ class RoomStockRepository(
         }
     }
 
-    override suspend fun stockPeriodTotals(firmId: String, from: LocalDate, to: LocalDate): Map<String, StockPeriodTotals> =
+    override suspend fun stockPeriodTotals(firmId: String, from: LocalDate, to: LocalDate, onProgress: OnProgress): Map<String, StockPeriodTotals> =
         database.useReaderConnection { c ->
-            c.usePrepared(
-                "SELECT itemId, date, quantity, unitCost FROM stock_movements WHERE firmId = ? AND date <= ? " +
-                    "ORDER BY itemId, date, createdAt, id",
-            ) { st ->
+            val job = currentCoroutineContext()
+            val total = c.usePrepared("SELECT COUNT(*) FROM stock_movements WHERE firmId = ? AND date <= ?") { st ->
                 st.bindText(1, firmId)
                 st.bindText(2, to.toString())
+                st.step()
+                st.getLong(0)
+            }
+            onProgress(Progress(STOCK_STAGE, 0, total))
+            c.usePrepared(
+                "SELECT itemId, date < ?, quantity, unitCost FROM stock_movements WHERE firmId = ? AND date <= ? " +
+                    "ORDER BY itemId, date, createdAt, id",
+            ) { st ->
+                st.bindText(1, from.toString())
+                st.bindText(2, firmId)
+                st.bindText(3, to.toString())
                 val out = HashMap<String, StockPeriodTotals>()
                 var item: String? = null
                 var walk = StockValuation.PeriodWalk(from, to)
+                var rows = 0L
                 while (st.step()) {
                     val id = st.getText(0)
                     if (id != item) {
@@ -99,9 +113,14 @@ class RoomStockRepository(
                         item = id
                         walk = StockValuation.PeriodWalk(from, to)
                     }
-                    walk.add(LocalDate.parse(st.getText(1)), st.getLong(2), if (st.isNull(3)) null else st.getLong(3))
+                    walk.add(st.getLong(1) != 0L, st.getLong(2), if (st.isNull(3)) null else st.getLong(3))
+                    if (++rows % PROGRESS_ROWS == 0L) {
+                        job.ensureActive()
+                        onProgress(Progress(STOCK_STAGE, rows, total))
+                    }
                 }
                 item?.let { out[it] = walk.result() }
+                onProgress(Progress(STOCK_STAGE, total, total))
                 out
             }
         }
@@ -115,3 +134,6 @@ class RoomStockRepository(
     override fun observeSerials(itemId: String): Flow<List<SerialNumber>> =
         database.serialNumberDao().observeForItem(itemId).map { values -> values.map { it.toDomain() } }
 }
+
+private const val STOCK_STAGE = "Valuing stock movements"
+private const val PROGRESS_ROWS = 50_000L

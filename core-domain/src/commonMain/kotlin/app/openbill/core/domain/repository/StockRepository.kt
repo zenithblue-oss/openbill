@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDate
+import app.openbill.core.model.OnProgress
 import app.openbill.core.domain.service.StockPeriodTotals
 import app.openbill.core.domain.service.StockPosition
 import app.openbill.core.domain.service.StockValuation
@@ -27,7 +28,7 @@ interface StockRepository {
         observeFirmMovements(firmId).map { all -> all.groupBy { it.itemId }.mapValues { (_, own) -> StockValuation.position(own) } }
 
     /** Per-item [StockPeriodTotals] for [from]..[to]; the Room version streams instead of loading movements. */
-    suspend fun stockPeriodTotals(firmId: String, from: LocalDate, to: LocalDate): Map<String, StockPeriodTotals> =
+    suspend fun stockPeriodTotals(firmId: String, from: LocalDate, to: LocalDate, onProgress: OnProgress = {}): Map<String, StockPeriodTotals> =
         observeFirmMovements(firmId).first().groupBy { it.itemId }.mapValues { (_, own) -> StockValuation.periodTotals(own, from, to) }
 
     /** One item's movements, newest first (the item timeline). */

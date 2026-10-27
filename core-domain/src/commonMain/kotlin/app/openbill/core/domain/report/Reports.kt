@@ -5,6 +5,7 @@ import app.openbill.core.domain.model.AccountType
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.domain.service.AgeingSums
 import app.openbill.core.domain.service.PartyAgeing
 import app.openbill.core.domain.service.StockValuation
 import app.openbill.core.model.Money
@@ -81,34 +82,37 @@ object Reports {
 
     /** Sales (with credit notes negative) or purchases (with debit notes negative). */
     fun register(data: ReportData, sales: Boolean): ReportTable {
+        val r = Register(data, sales)
+        return ReportTable(r.title, r.columns, data.posted.filter { it.type in r.types }.map(r::row), r.totals())
+    }
+
+    /** Register rows one voucher at a time, so a streamed register ([writeRegisterCsv]) and [register] print the same. */
+    class Register(private val data: ReportData, private val sales: Boolean) {
         val types = if (sales) setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE) else setOf(VoucherType.PURCHASE, VoucherType.DEBIT_NOTE)
-        val list = data.posted.filter { it.type in types }
-        var sum = TaxAmounts()
-        var roundOff = Money.ZERO
-        var total = Money.ZERO
-        val rows = list.map { v ->
+        val title = if (sales) "Sales register" else "Purchase register"
+        val columns = listOf(col("date", "Date", ColumnKind.DATE), col("type", "Type"), col("number", "Number")) +
+            (if (sales) emptyList() else listOf(col("bill_no", "Supplier bill"))) +
+            listOf(col("party", "Party"), col("gstin", "GSTIN"), col("pos", "POS")) + TAX_COLUMNS +
+            listOf(money("round_off", "Round off"), money("total", "Total"))
+        private var sum = TaxAmounts()
+        private var roundOff = Money.ZERO
+        private var total = Money.ZERO
+
+        /** Row of [v]; adds it to the totals. */
+        fun row(v: Voucher): List<String> {
             val a = amounts(v, data)
             val sign = if (v.type.isReturn()) -1 else 1
             sum += a
             roundOff += v.roundOff * sign
             total += v.total * sign
             val party = v.partyId?.let { data.partyById[it] }
-            listOf(v.date.toString(), typeLabel(v.type), v.number.orEmpty()) +
+            return listOf(v.date.toString(), typeLabel(v.type), v.number.orEmpty()) +
                 (if (sales) emptyList() else listOf(v.referenceNumber.orEmpty())) +
                 listOf(party?.name.orEmpty(), party?.gstin.orEmpty(), v.placeOfSupplyStateCode) +
                 a.cells() + listOf((v.roundOff * sign).cell(), (v.total * sign).cell())
         }
-        val columns = listOf(col("date", "Date", ColumnKind.DATE), col("type", "Type"), col("number", "Number")) +
-            (if (sales) emptyList() else listOf(col("bill_no", "Supplier bill"))) +
-            listOf(col("party", "Party"), col("gstin", "GSTIN"), col("pos", "POS")) + TAX_COLUMNS +
-            listOf(money("round_off", "Round off"), money("total", "Total"))
-        val lead = if (sales) 6 else 7
-        return ReportTable(
-            if (sales) "Sales register" else "Purchase register",
-            columns,
-            rows,
-            listOf("Total") + List(lead - 1) { "" } + sum.cells() + listOf(roundOff.cell(), total.cell()),
-        )
+
+        fun totals(): List<String> = listOf("Total") + List((if (sales) 6 else 7) - 1) { "" } + sum.cells() + listOf(roundOff.cell(), total.cell())
     }
 
     /** Every non-draft voucher of the period by date. */
@@ -179,7 +183,8 @@ object Reports {
     fun outstanding(data: ReportData): ReportTable {
         val byParty = data.partyMovements.groupBy { it.partyId }
         val rows = data.parties.mapNotNull { p ->
-            val ageing = PartyAgeing.of(p.signedOpening, byParty[p.id].orEmpty(), data.to)
+            val ageing = data.partyAgeing?.let { PartyAgeing.fromSums(p.signedOpening, it[p.id] ?: AgeingSums()) }
+                ?: PartyAgeing.of(p.signedOpening, byParty[p.id].orEmpty(), data.to)
             if (ageing.total == Money.ZERO) null else p to ageing
         }.sortedBy { it.first.name.lowercase() }
         fun pos(m: Money) = if (m > Money.ZERO) m else Money.ZERO

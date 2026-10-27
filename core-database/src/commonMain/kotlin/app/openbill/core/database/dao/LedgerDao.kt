@@ -41,6 +41,13 @@ data class AccountBalanceRow(
 
 data class PartyBalanceRow(val partyId: String, val balance: Long)
 
+/** Per party: sums of positive (p*) and negative (n*) AR/AP lines dated 0-30, 31-60, 61-90 and 90+ days before as-of. */
+data class PartyAgeingRow(
+    val partyId: String,
+    val p0: Long, val p1: Long, val p2: Long, val p3: Long,
+    val n0: Long, val n1: Long, val n2: Long, val n3: Long,
+)
+
 data class AccountNetRow(val net: Long, val clearedNet: Long)
 
 data class PartyMovementRow(
@@ -127,6 +134,26 @@ interface LedgerDao {
     )
     fun observePartyBalances(firmId: String, asOf: String): Flow<List<PartyBalanceRow>>
 
+    /** Ageing inputs of every party with posted AR/AP lines through [asOf], summed in SQL; dNN = asOf minus NN days. */
+    @Query(
+        "SELECT partyId, " +
+            "SUM(CASE WHEN n > 0 AND date >= :d30 THEN n ELSE 0 END) AS p0, " +
+            "SUM(CASE WHEN n > 0 AND date < :d30 AND date >= :d60 THEN n ELSE 0 END) AS p1, " +
+            "SUM(CASE WHEN n > 0 AND date < :d60 AND date >= :d90 THEN n ELSE 0 END) AS p2, " +
+            "SUM(CASE WHEN n > 0 AND date < :d90 THEN n ELSE 0 END) AS p3, " +
+            "SUM(CASE WHEN n < 0 AND date >= :d30 THEN n ELSE 0 END) AS n0, " +
+            "SUM(CASE WHEN n < 0 AND date < :d30 AND date >= :d60 THEN n ELSE 0 END) AS n1, " +
+            "SUM(CASE WHEN n < 0 AND date < :d60 AND date >= :d90 THEN n ELSE 0 END) AS n2, " +
+            "SUM(CASE WHEN n < 0 AND date < :d90 THEN n ELSE 0 END) AS n3 " +
+            "FROM (SELECT v.partyId AS partyId, j.date AS date, j.debit - j.credit AS n " +
+            "FROM accounts a CROSS JOIN journal_entries j ON j.accountId = a.id " +
+            "INNER JOIN vouchers v ON v.id = j.voucherId " +
+            "WHERE a.firmId = :firmId AND a.code IN ('AR', 'AP') AND j.date <= :asOf " +
+            "AND v.partyId IS NOT NULL AND v.status = 'posted' AND v.deletedAt IS NULL) " +
+            "GROUP BY partyId",
+    )
+    suspend fun partyAgeingSums(firmId: String, asOf: String, d30: String, d60: String, d90: String): List<PartyAgeingRow>
+
     @Insert
     suspend fun insertAccount(account: AccountEntity)
 
@@ -159,6 +186,9 @@ interface LedgerDao {
             "ORDER BY date, createdAt, id",
     )
     suspend fun entriesForVoucher(voucherId: String): List<JournalEntryEntity>
+
+    @Query("SELECT * FROM journal_entries WHERE voucherId IN (:voucherIds) ORDER BY date, createdAt, id")
+    suspend fun entriesForVouchers(voucherIds: List<String>): List<JournalEntryEntity>
 
     @Query(
         "SELECT COALESCE(SUM(debit), 0) AS debit, COALESCE(SUM(credit), 0) AS credit " +

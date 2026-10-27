@@ -17,24 +17,39 @@ import app.openbill.core.model.Money
  * CGST/SGST/IGST/Cess duty ledgers. Mapping notes: docs/09-tax-assumptions.md section 13.
  */
 object TallyXml {
-    private data class Ledger(val name: String, val parent: String, val gstin: String? = null, val dutyHead: String? = null, val state: String? = null)
+    internal data class Ledger(val name: String, val parent: String, val gstin: String? = null, val dutyHead: String? = null, val state: String? = null)
 
-    private data class Line(val ledger: Ledger, val amount: Money) // positive = debit
+    internal data class Line(val ledger: Ledger, val amount: Money) // positive = debit
 
-    fun export(data: ReportData): String {
-        val byVoucher = data.journal.groupBy { it.entry.voucherId }
+    fun export(data: ReportData): String = buildString {
+        val vouchers = vouchersOf(data)
         val masters = LinkedHashMap<String, Ledger>()
-        val vouchers = data.posted.filter { it.type.postsLedger() }.mapNotNull { v ->
+        collectMasters(vouchers, masters)
+        appendHeader(this, data, masters.values)
+        vouchers.forEach { appendVoucher(this, data, it.first, it.second) }
+        appendFooter(this)
+    }
+
+    /** Posted ledger vouchers of [data] with their Tally lines, in report order. */
+    internal fun vouchersOf(data: ReportData): List<Pair<Voucher, List<Line>>> {
+        val byVoucher = data.journal.groupBy { it.entry.voucherId }
+        return data.posted.filter { it.type.postsLedger() }.mapNotNull { v ->
             val lines = linesOf(v, data, byVoucher[v.id].orEmpty().map { it.entry.accountId to (it.entry.debit - it.entry.credit) })
-            if (lines.isEmpty()) null else v to lines.also { l -> l.forEach { masters.getOrPut(it.ledger.name) { it.ledger } } }
+            if (lines.isEmpty()) null else v to lines
         }
-        return buildString {
+    }
+
+    internal fun collectMasters(vouchers: List<Pair<Voucher, List<Line>>>, into: LinkedHashMap<String, Ledger>) =
+        vouchers.forEach { (_, lines) -> lines.forEach { into.getOrPut(it.ledger.name) { it.ledger } } }
+
+    internal fun appendHeader(out: Appendable, data: ReportData, masters: Collection<Ledger>) {
+        with(out) {
             append("<ENVELOPE>\n")
             append(" <HEADER>\n  <TALLYREQUEST>Import Data</TALLYREQUEST>\n </HEADER>\n")
             append(" <BODY>\n  <IMPORTDATA>\n   <REQUESTDESC>\n    <REPORTNAME>Vouchers</REPORTNAME>\n")
             append("    <STATICVARIABLES>\n     <SVCURRENTCOMPANY>").append(esc(data.firm.legalName?.takeIf { it.isNotBlank() } ?: data.firm.name)).append("</SVCURRENTCOMPANY>\n    </STATICVARIABLES>\n")
             append("   </REQUESTDESC>\n   <REQUESTDATA>\n")
-            masters.values.filter { it.name !in TALLY_PREDEFINED }.forEach { l ->
+            masters.filter { it.name !in TALLY_PREDEFINED }.forEach { l ->
                 append("    <TALLYMESSAGE xmlns:UDF=\"TallyUDF\">\n")
                 append("     <LEDGER NAME=\"").append(esc(l.name)).append("\" ACTION=\"Create\">\n")
                 append("      <NAME.LIST>\n       <NAME>").append(esc(l.name)).append("</NAME>\n      </NAME.LIST>\n")
@@ -45,29 +60,35 @@ object TallyXml {
                 l.dutyHead?.let { append("      <TAXTYPE>GST</TAXTYPE>\n      <GSTDUTYHEAD>").append(it).append("</GSTDUTYHEAD>\n") }
                 append("     </LEDGER>\n    </TALLYMESSAGE>\n")
             }
-            vouchers.forEach { (v, lines) ->
-                val type = voucherType(v.type)
-                append("    <TALLYMESSAGE xmlns:UDF=\"TallyUDF\">\n")
-                append("     <VOUCHER VCHTYPE=\"").append(type).append("\" ACTION=\"Create\">\n")
-                append("      <DATE>").append(v.date.toString().replace("-", "")).append("</DATE>\n")
-                append("      <VOUCHERTYPENAME>").append(type).append("</VOUCHERTYPENAME>\n")
-                append("      <VOUCHERNUMBER>").append(esc(v.number.orEmpty())).append("</VOUCHERNUMBER>\n")
-                v.referenceNumber?.takeIf { it.isNotBlank() }?.let { append("      <REFERENCE>").append(esc(it)).append("</REFERENCE>\n") }
-                v.partyId?.let { data.partyById[it] }?.let { append("      <PARTYLEDGERNAME>").append(esc(it.name)).append("</PARTYLEDGERNAME>\n") }
-                v.notes?.takeIf { it.isNotBlank() }?.let { append("      <NARRATION>").append(esc(it)).append("</NARRATION>\n") }
-                lines.forEach { l ->
-                    val debit = l.amount > Money.ZERO
-                    append("      <ALLLEDGERENTRIES.LIST>\n")
-                    append("       <LEDGERNAME>").append(esc(l.ledger.name)).append("</LEDGERNAME>\n")
-                    append("       <ISDEEMEDPOSITIVE>").append(if (debit) "Yes" else "No").append("</ISDEEMEDPOSITIVE>\n")
-                    // Tally convention: debits are negative, credits positive.
-                    append("       <AMOUNT>").append((-l.amount).format()).append("</AMOUNT>\n")
-                    append("      </ALLLEDGERENTRIES.LIST>\n")
-                }
-                append("     </VOUCHER>\n    </TALLYMESSAGE>\n")
-            }
-            append("   </REQUESTDATA>\n  </IMPORTDATA>\n </BODY>\n</ENVELOPE>\n")
         }
+    }
+
+    internal fun appendVoucher(out: Appendable, data: ReportData, v: Voucher, lines: List<Line>) {
+        with(out) {
+            val type = voucherType(v.type)
+            append("    <TALLYMESSAGE xmlns:UDF=\"TallyUDF\">\n")
+            append("     <VOUCHER VCHTYPE=\"").append(type).append("\" ACTION=\"Create\">\n")
+            append("      <DATE>").append(v.date.toString().replace("-", "")).append("</DATE>\n")
+            append("      <VOUCHERTYPENAME>").append(type).append("</VOUCHERTYPENAME>\n")
+            append("      <VOUCHERNUMBER>").append(esc(v.number.orEmpty())).append("</VOUCHERNUMBER>\n")
+            v.referenceNumber?.takeIf { it.isNotBlank() }?.let { append("      <REFERENCE>").append(esc(it)).append("</REFERENCE>\n") }
+            v.partyId?.let { data.partyById[it] }?.let { append("      <PARTYLEDGERNAME>").append(esc(it.name)).append("</PARTYLEDGERNAME>\n") }
+            v.notes?.takeIf { it.isNotBlank() }?.let { append("      <NARRATION>").append(esc(it)).append("</NARRATION>\n") }
+            lines.forEach { l ->
+                val debit = l.amount > Money.ZERO
+                append("      <ALLLEDGERENTRIES.LIST>\n")
+                append("       <LEDGERNAME>").append(esc(l.ledger.name)).append("</LEDGERNAME>\n")
+                append("       <ISDEEMEDPOSITIVE>").append(if (debit) "Yes" else "No").append("</ISDEEMEDPOSITIVE>\n")
+                // Tally convention: debits are negative, credits positive.
+                append("       <AMOUNT>").append((-l.amount).format()).append("</AMOUNT>\n")
+                append("      </ALLLEDGERENTRIES.LIST>\n")
+            }
+            append("     </VOUCHER>\n    </TALLYMESSAGE>\n")
+        }
+    }
+
+    internal fun appendFooter(out: Appendable) {
+        out.append("   </REQUESTDATA>\n  </IMPORTDATA>\n </BODY>\n</ENVELOPE>\n")
     }
 
     /** Net per account, party first, then debits before credits; GST lines split by duty head. */

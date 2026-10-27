@@ -11,7 +11,11 @@ import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.report.ReportKind
 import app.openbill.core.domain.report.ReportPeriod
 import app.openbill.core.domain.report.Reports
+import app.openbill.core.domain.report.TallyXml
+import app.openbill.core.model.Progress
 import app.openbill.core.domain.report.loadReportData
+import app.openbill.core.domain.report.writeRegisterCsv
+import app.openbill.core.domain.report.writeTallyXml
 import app.openbill.core.domain.repository.Repositories
 import app.openbill.core.domain.service.PartyAgeing
 import app.openbill.core.domain.service.StockValuation
@@ -21,6 +25,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -122,6 +127,27 @@ class RoomPagingTest {
                 val party = if (kind.needsParty) "party-1" else null
                 assertEquals(Reports.run(kind, full, party), Reports.run(kind, repos.loadReportData("firm-1", period, kind), party), "${kind.key} $period")
             }
+            listOf(true, false).forEach { sales ->
+                assertEquals(Reports.register(full, sales).toCsv(), buildString { repos.writeRegisterCsv("firm-1", period, sales, this) }, "register $sales $period")
+            }
+            assertEquals(TallyXml.export(full), buildString { repos.writeTallyXml("firm-1", period, this) }, "tally $period")
         }
+    }
+
+    @Test
+    fun progressIsMonotonicAndReachesTheTotal(): Unit = runBlocking {
+        val period = ReportPeriod.month("2026-05")
+        fun check(events: List<Progress>) {
+            val counted = events.filter { it.total != null }
+            assertTrue(counted.isNotEmpty())
+            counted.groupBy { it.stage }.forEach { (stage, list) ->
+                assertEquals(list.map { it.done }.sorted(), list.map { it.done }, stage)
+                assertEquals(list.last().total, list.last().done, "$stage ends at 100%")
+            }
+        }
+        check(buildList { buildString { repos.writeTallyXml("firm-1", period, this) { add(it) } } })
+        check(buildList { buildString { repos.writeRegisterCsv("firm-1", period, true, this) { add(it) } } })
+        check(buildList { repos.loadReportData("firm-1", period, ReportKind.STOCK_SUMMARY) { add(it) } })
+        check(buildList { repos.loadReportData("firm-1", period, ReportKind.DAY_BOOK) { add(it) } })
     }
 }

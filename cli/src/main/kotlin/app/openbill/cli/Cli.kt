@@ -10,6 +10,7 @@ import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.database.openBillDatabase
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.repository.Repositories
+import app.openbill.core.model.OnProgress
 import app.openbill.core.model.Ulid
 import java.io.File
 import java.io.PrintStream
@@ -68,6 +69,31 @@ class CliState(val env: CliEnv) {
 
     fun info(msg: String) {
         if (!quiet) env.err.println(msg)
+    }
+
+    private var lastProgress = 0L
+
+    /**
+     * Progress line on stderr, only on a terminal and not with `--quiet`: "stage 42% (420 of 1000)",
+     * redrawn in place at most every 200 ms. Call [progressDone] after the operation.
+     */
+    val progress: OnProgress = { p ->
+        val now = System.currentTimeMillis()
+        if (env.interactive && !quiet && (now - lastProgress >= 200 || p.done == p.total)) {
+            lastProgress = now
+            val f = p.fraction
+            val text = if (f == null) p.stage else "${p.stage} ${(f * 100).toInt()}% (${p.done} of ${p.total})"
+            env.err.print("\r\u001b[K$text")
+            env.err.flush()
+        }
+    }
+
+    /** [progress] for [app.openbill.core.backup.OpenBillBackup] byte counts. */
+    val backupProgress: app.openbill.core.backup.BackupProgress = { stage, done, total -> progress(app.openbill.core.model.Progress(stage, done, total)) }
+
+    fun progressDone() {
+        if (env.interactive && !quiet && lastProgress != 0L) env.err.print("\r\u001b[K")
+        lastProgress = 0L
     }
 
     /** Confirmation for destructive operations: `--yes`, else a terminal prompt, else exit 2. */

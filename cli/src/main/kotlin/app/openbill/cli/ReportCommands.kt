@@ -7,8 +7,9 @@ import app.openbill.core.domain.report.ReportKind
 import app.openbill.core.domain.report.ReportPeriod
 import app.openbill.core.domain.report.ReportTable
 import app.openbill.core.domain.report.Reports
-import app.openbill.core.domain.report.TallyXml
 import app.openbill.core.domain.report.loadReportData
+import app.openbill.core.domain.report.writeRegisterCsv
+import app.openbill.core.domain.report.writeTallyXml
 import app.openbill.core.model.Money
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
@@ -39,25 +40,33 @@ fun tallyCommands(cli: CliState) = Group("tally", "Tally-compatible export").sub
 fun auditCommands(cli: CliState) = Group("audit", "Append-only audit trail").subcommands(AuditList(cli))
 
 /** Loads the snapshot for `--from/--to` (default: the current financial year). */
-private suspend fun Data.reportData(from: String?, to: String?, kind: ReportKind? = null): ReportData {
-    val f = firm()
-    val today = now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-    val fy = ReportPeriod.financialYearOf(today, repos.firms.findSettings(f.id)?.financialYearStartMonth ?: 4)
-    val period = runCatching { ReportPeriod(from?.let(::parseDate) ?: fy.from, to?.let(::parseDate) ?: fy.to) }
-        .getOrElse { fail(Exit.USAGE, it.message ?: "Invalid period") }
-    return repos.loadReportData(f.id, period, kind)
-}
+private suspend fun Data.reportData(from: String?, to: String?, kind: ReportKind? = null): ReportData =
+    repos.loadReportData(firm().id, reportPeriod(from, to), kind, cli.progress).also { cli.progressDone() }
 
 /** Writes [text] to [out] (reporting the path) or stdout. */
-private fun CliState.emit(text: String, out: File?) {
+private fun CliState.emit(text: String, out: File?) = emitStreamed(out) { it.append(text) }
+
+/** Streams [write] to [out] (reporting the path) or stdout, without building the whole text first. */
+private inline fun CliState.emitStreamed(out: File?, write: (Appendable) -> Unit) {
     if (out == null) {
-        this.out.print(text)
+        val w = this.out.bufferedWriter()
+        write(w)
+        w.flush()
         return
     }
     out.absoluteFile.parentFile.mkdirs()
-    out.writeText(text)
+    out.bufferedWriter().use(write)
     info("Wrote ${out.path}")
     if (quiet) this.out.println(out.path)
+}
+
+/** Loads the period for `--from/--to` (default: the current financial year). */
+private suspend fun Data.reportPeriod(from: String?, to: String?): ReportPeriod {
+    val f = firm()
+    val today = now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    val fy = ReportPeriod.financialYearOf(today, repos.firms.findSettings(f.id)?.financialYearStartMonth ?: 4)
+    return runCatching { ReportPeriod(from?.let(::parseDate) ?: fy.from, to?.let(::parseDate) ?: fy.to) }
+        .getOrElse { fail(Exit.USAGE, it.message ?: "Invalid period") }
 }
 
 private fun CliState.render(table: ReportTable, format: String, out: File?, period: ReportPeriod) {
@@ -98,12 +107,20 @@ open class ReportNamed(private val cli: CliState, private val fixed: ReportKind?
 
     override fun run() = cli.withData(write = false) {
         val kind = ReportKind.of(kindKey)!!
+        val fmt = if (cli.json && format == "table") "json" else format
+        if ((kind == ReportKind.SALES_REGISTER || kind == ReportKind.PURCHASE_REGISTER) && (fmt == "csv" || (fmt == "table" && out != null))) {
+            // Registers grow with the books: stream them week by week (docs/14-performance.md).
+            val period = reportPeriod(from, to)
+            cli.emitStreamed(out) { w -> repos.writeRegisterCsv(firm().id, period, kind == ReportKind.SALES_REGISTER, w, cli.progress) }
+            cli.progressDone()
+            return@withData
+        }
         val data = reportData(from, to, kind)
         val partyId = party?.let { p ->
             data.parties.filter { it.id == p || it.name.equals(p, true) }.singleOrNull()?.id ?: fail(Exit.NOT_FOUND, "No single party matches '$p'")
         }
         if (kind.needsParty && partyId == null) fail(Exit.USAGE, "${kind.key} needs --party")
-        cli.render(Reports.run(kind, data, partyId), if (cli.json && format == "table") "json" else format, out, data.period)
+        cli.render(Reports.run(kind, data, partyId), fmt, out, data.period)
     }
 }
 
@@ -157,7 +174,10 @@ class TallyExport(private val cli: CliState, name: String) : CliktCommand(name) 
     private val out by option("--out", help = "File (default: stdout)").file(canBeDir = false)
 
     override fun run() = cli.withData(write = false) {
-        cli.emit(TallyXml.export(reportData(from, to)), out)
+        val period = reportPeriod(from, to)
+        val firmId = firm().id
+        cli.emitStreamed(out) { w -> repos.writeTallyXml(firmId, period, w, cli.progress) }
+        cli.progressDone()
     }
 }
 

@@ -3,6 +3,8 @@ package app.openbill.core.domain.repository
 import app.openbill.core.domain.model.Account
 import app.openbill.core.domain.model.AccountTransaction
 import app.openbill.core.domain.model.PartyMovement
+import app.openbill.core.domain.service.AgeingSums
+import app.openbill.core.domain.service.PartyAgeing
 import app.openbill.core.model.Money
 import app.openbill.core.domain.model.AccountCode
 import app.openbill.core.domain.model.FirmLedgerAccounts
@@ -28,6 +30,9 @@ interface LedgerRepository {
 
     suspend fun journalEntriesForVoucher(voucherId: String): List<JournalEntry>
 
+    /** Journal lines of many vouchers in one go (Room batches the ids). */
+    suspend fun journalEntriesForVouchers(voucherIds: List<String>): List<JournalEntry> = voucherIds.flatMap { journalEntriesForVoucher(it) }
+
     fun observePartyLedger(
         firmId: String,
         partyId: String,
@@ -46,6 +51,10 @@ interface LedgerRepository {
      * dashboard uses it instead of [observePartyMovements].
      */
     fun observePartyBalances(firmId: String, asOf: LocalDate): Flow<Map<String, Money>>
+
+    /** [AgeingSums] of every party with posted receivable/payable lines through [asOf] (opening excluded); Room sums in SQL. */
+    suspend fun partyAgeingSums(firmId: String, asOf: LocalDate): Map<String, AgeingSums> =
+        observePartyMovements(firmId).first().groupBy { it.partyId }.mapValues { (_, moves) -> PartyAgeing.sums(moves, asOf) }
 
     /** Balance of every account: opening balance plus debits minus credits. */
     fun observeAccountBalances(firmId: String): Flow<Map<String, Money>>

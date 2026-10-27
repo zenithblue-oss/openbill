@@ -82,6 +82,7 @@ object StockValuation {
         private var quantity = 0L
         private var value = 0L
         private var average = 0L
+        val valuePaise: Long get() = value
 
         /** Applies one movement; returns its value change in paise. */
         fun add(scaledQuantity: Long, unitCostPaise: Long?): Long {
@@ -116,10 +117,14 @@ object StockValuation {
         private var before = 0L
 
         fun add(date: kotlinx.datetime.LocalDate, scaledQuantity: Long, unitCostPaise: Long?) {
-            if (date > to) return
-            if (date < from) opening += scaledQuantity else if (scaledQuantity > 0) inward += scaledQuantity else outward -= scaledQuantity
+            if (date <= to) add(date < from, scaledQuantity, unitCostPaise)
+        }
+
+        /** [add] for a movement already known to be dated through `to`; [beforeFrom] = dated before `from`. */
+        fun add(beforeFrom: Boolean, scaledQuantity: Long, unitCostPaise: Long?) {
+            if (beforeFrom) opening += scaledQuantity else if (scaledQuantity > 0) inward += scaledQuantity else outward -= scaledQuantity
             walker.add(scaledQuantity, unitCostPaise)
-            if (date < from) before = walker.result().value.paise
+            if (beforeFrom) before = walker.valuePaise
         }
 
         fun result() = StockPeriodTotals(

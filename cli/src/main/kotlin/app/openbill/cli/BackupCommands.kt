@@ -60,7 +60,7 @@ class BackupCreate(private val cli: CliState) : CliktCommand("create") {
                 else -> o
             }
         }
-        val manifest = OpenBillBackup.create(loc, target, cli.env.appVersion, now, cli.env.backupPassword)
+        val manifest = OpenBillBackup.create(loc, target, cli.env.appVersion, now, cli.env.backupPassword, cli.backupProgress).also { cli.progressDone() }
         cli.printManifest(manifest, target)
     }
 }
@@ -70,7 +70,7 @@ class BackupVerify(private val cli: CliState) : CliktCommand("verify") {
     private val file by argument().file(mustExist = true, canBeDir = false)
 
     override fun run() {
-        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.env.backupPassword)
+        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.env.backupPassword, cli.backupProgress).also { cli.progressDone() }
         cli.printManifest(m, file)
         if (!cli.json) cli.info("OK")
     }
@@ -81,11 +81,11 @@ class BackupRestore(private val cli: CliState) : CliktCommand("restore") {
     private val file by argument().file(mustExist = true, canBeDir = false)
 
     override fun run() {
-        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.env.backupPassword)
+        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.env.backupPassword, cli.backupProgress).also { cli.progressDone() }
         cli.exclusive { loc ->
             if (!cli.json && !cli.quiet) cli.printManifest(m, file)
             cli.confirm("Replace the data in ${loc.databaseFile.parentFile} with this backup?")
-            val safety = OpenBillBackup.restore(file, loc, OPENBILL_DATABASE_VERSION, password = cli.env.backupPassword)
+            val safety = OpenBillBackup.restore(file, loc, OPENBILL_DATABASE_VERSION, password = cli.env.backupPassword, onProgress = cli.backupProgress).also { cli.progressDone() }
             // Bring an older archive up to the current schema now, while we hold the lock.
             openAndMigrate(loc.databaseFile)
             if (cli.json) cli.printJson(jsonOf("restored" to file.path, "safetyCopy" to safety.path))

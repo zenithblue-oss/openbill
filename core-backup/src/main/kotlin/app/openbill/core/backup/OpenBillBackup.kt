@@ -37,6 +37,34 @@ internal const val MANIFEST_ENTRY = "manifest.json"
 internal const val CHECKSUMS_ENTRY = "checksums.sha256"
 internal const val ATTACHMENTS = "attachments"
 
+/** Progress of a backup step: stage label, bytes done, bytes total (null = unknown). */
+typealias BackupProgress = (stage: String, done: Long, total: Long?) -> Unit
+
+private val NO_PROGRESS: BackupProgress = { _, _, _ -> }
+
+/** Counts bytes read through [wrap]ped streams for one stage, reporting at most every 4 MiB and at the end. */
+private class ByteMeter(private val stage: String, private val total: Long, private val report: BackupProgress) {
+    private var done = 0L
+    private var last = -1L
+
+    init {
+        report(stage, 0, total)
+    }
+
+    private fun add(n: Long) {
+        done += n
+        if (done - last >= 4L * 1024 * 1024 || done >= total) {
+            last = done
+            report(stage, done, total)
+        }
+    }
+
+    fun wrap(input: InputStream): InputStream = object : java.io.FilterInputStream(input) {
+        override fun read(): Int = super.read().also { if (it >= 0) add(1) }
+        override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) add(it.toLong()) }
+    }
+}
+
 /**
  * Backup archive (`*.openbill.zip`): manifest.json, database.sqlite (a `VACUUM INTO` snapshot),
  * attachments/, and checksums.sha256 for `sha256sum -c`. See docs/03-architecture.md section 14.
@@ -60,12 +88,20 @@ object OpenBillBackup {
      * database open), zip to a temporary file next to [out], verify it, then rename atomically.
      * With a [password] the verified zip is sealed by [BackupCrypto] before the rename.
      */
-    fun create(source: DataLocation, out: File, appVersion: String, now: Instant = Instant.now(), password: CharArray? = null): BackupManifest {
+    fun create(
+        source: DataLocation,
+        out: File,
+        appVersion: String,
+        now: Instant = Instant.now(),
+        password: CharArray? = null,
+        onProgress: BackupProgress = NO_PROGRESS,
+    ): BackupManifest {
         require(source.databaseFile.isFile) { "No database at ${source.databaseFile}" }
         val dir = out.absoluteFile.parentFile.apply { mkdirs() }
         val work = Files.createTempDirectory(dir.toPath(), ".openbill-backup").toFile()
         try {
             val snapshot = File(work, DATABASE_ENTRY)
+            onProgress("Copying database", 0, null)
             snapshot(source.databaseFile, snapshot)
             val entries = linkedMapOf(DATABASE_ENTRY to snapshot)
             source.attachmentDirs.forEach { (name, d) ->
@@ -73,7 +109,10 @@ object OpenBillBackup {
                     entries["$ATTACHMENTS/$name/${it.relativeTo(d).invariantSeparatorsPath}"] = it
                 }
             }
-            val manifest = describe(snapshot, appVersion, now).copy(files = entries.mapValues { sha256(it.value) })
+            val size = entries.values.sumOf { it.length() }
+            val checking = ByteMeter("Checking files", size, onProgress)
+            val manifest = describe(snapshot, appVersion, now).copy(files = entries.mapValues { e -> checking.wrap(e.value.inputStream()).use { copyHashing(it, null) } })
+            val compressing = ByteMeter("Compressing", size, onProgress)
             val tmp = File(work, "archive.zip")
             ZipOutputStream(tmp.outputStream().buffered()).use { zip ->
                 zip.putNextEntry(ZipEntry(MANIFEST_ENTRY))
@@ -81,16 +120,16 @@ object OpenBillBackup {
                 zip.closeEntry()
                 entries.forEach { (name, file) ->
                     zip.putNextEntry(ZipEntry(name))
-                    file.inputStream().use { it.copyTo(zip) }
+                    compressing.wrap(file.inputStream()).use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
                 zip.putNextEntry(ZipEntry(CHECKSUMS_ENTRY))
                 zip.write(manifest.files.entries.joinToString("") { "${it.value}  ${it.key}\n" }.toByteArray())
                 zip.closeEntry()
             }
-            verify(tmp, Int.MAX_VALUE)
+            verify(tmp, Int.MAX_VALUE, onProgress = onProgress)
             val sealed = if (password == null || password.isEmpty()) tmp else File(work, "archive.enc").also { enc ->
-                tmp.inputStream().buffered().use { i -> enc.outputStream().buffered().use { BackupCrypto.encrypt(i, it, password) } }
+                ByteMeter("Encrypting", tmp.length(), onProgress).wrap(tmp.inputStream()).buffered().use { i -> enc.outputStream().buffered().use { BackupCrypto.encrypt(i, it, password) } }
             }
             Files.move(sealed.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
             return manifest
@@ -103,10 +142,10 @@ object OpenBillBackup {
      * Checks the manifest, every checksum, the schema version against [currentSchemaVersion], and
      * `integrity_check` on a temporary copy of the database. Returns the manifest.
      */
-    fun verify(archive: File, currentSchemaVersion: Int, password: CharArray? = null): BackupManifest {
+    fun verify(archive: File, currentSchemaVersion: Int, password: CharArray? = null, onProgress: BackupProgress = NO_PROGRESS): BackupManifest {
         val staging = Files.createTempDirectory("openbill-verify").toFile()
         try {
-            return extract(archive, staging, currentSchemaVersion, password).manifest
+            return extract(archive, staging, currentSchemaVersion, password, onProgress).manifest
         } finally {
             staging.deleteRecursively()
         }
@@ -116,23 +155,30 @@ object OpenBillBackup {
      * Verifies [archive] and extracts it into [stagingDir] (created; must be empty). An encrypted
      * archive needs its [password]; it is decrypted to a temporary file beside [stagingDir].
      */
-    fun extract(archive: File, stagingDir: File, currentSchemaVersion: Int, password: CharArray? = null): PreparedRestore {
+    fun extract(
+        archive: File,
+        stagingDir: File,
+        currentSchemaVersion: Int,
+        password: CharArray? = null,
+        onProgress: BackupProgress = NO_PROGRESS,
+    ): PreparedRestore {
         if (!archive.isFile) throw BackupException(BackupFailure.INVALID, "No such file: $archive")
         stagingDir.mkdirs()
+        if (password != null) onProgress("Decrypting", 0, null)
         val plain = BackupCrypto.plain(archive, password, stagingDir.absoluteFile.parentFile)
         try {
-            return extractPlain(plain, stagingDir, currentSchemaVersion)
+            return extractPlain(plain, stagingDir, currentSchemaVersion, onProgress)
         } finally {
             if (plain != archive) plain.delete()
         }
     }
 
-    private fun extractPlain(archive: File, stagingDir: File, currentSchemaVersion: Int): PreparedRestore {
+    private fun extractPlain(archive: File, stagingDir: File, currentSchemaVersion: Int, onProgress: BackupProgress): PreparedRestore {
         val root = stagingDir.canonicalFile
         var manifest: BackupManifest? = null
         val actual = mutableMapOf<String, String>()
         try {
-            ZipInputStream(archive.inputStream().buffered()).use { zip ->
+            ZipInputStream(ByteMeter("Reading archive", archive.length(), onProgress).wrap(archive.inputStream()).buffered()).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     if (entry.isDirectory) continue
@@ -173,6 +219,7 @@ object OpenBillBackup {
             )
         }
         val db = File(root, DATABASE_ENTRY)
+        onProgress("Checking database integrity", 0, null)
         val check = readOnly(db) { c -> c.textQuery("PRAGMA integrity_check") to c.longQuery("PRAGMA user_version").toInt() }
         if (check.first != "ok") throw BackupException(BackupFailure.INTEGRITY, "Database integrity check failed: ${check.first}")
         if (check.second != m.schemaVersion) throw BackupException(BackupFailure.INTEGRITY, "Database schema does not match the manifest")
@@ -184,13 +231,22 @@ object OpenBillBackup {
      * system), then [commit]. Validation failures leave the current data untouched. The caller
      * must have closed the database. Returns the safety copy directory.
      */
-    fun restore(archive: File, target: DataLocation, currentSchemaVersion: Int, now: Instant = Instant.now(), password: CharArray? = null): File {
+    fun restore(
+        archive: File,
+        target: DataLocation,
+        currentSchemaVersion: Int,
+        now: Instant = Instant.now(),
+        password: CharArray? = null,
+        onProgress: BackupProgress = NO_PROGRESS,
+    ): File {
         val dataDir = target.databaseFile.absoluteFile.parentFile.apply { mkdirs() }
         val needed = archive.length() * 3
         if (dataDir.usableSpace in 1 until needed) throw BackupException(BackupFailure.NO_SPACE, "Not enough free space to restore")
         val staging = Files.createTempDirectory(dataDir.toPath(), ".restore-").toFile()
         try {
-            return commit(extract(archive, staging, currentSchemaVersion, password), target, now)
+            val prepared = extract(archive, staging, currentSchemaVersion, password, onProgress)
+            onProgress("Replacing data", 0, null)
+            return commit(prepared, target, now)
         } finally {
             staging.deleteRecursively()
         }
@@ -233,13 +289,19 @@ object OpenBillBackup {
      * Pre-migration hook: when the database exists with an older schema than [currentSchemaVersion],
      * writes a backup into [backupDir] before Room migrates it. Returns the archive, or null.
      */
-    fun backupBeforeMigration(source: DataLocation, backupDir: File, currentSchemaVersion: Int, appVersion: String): File? {
+    fun backupBeforeMigration(
+        source: DataLocation,
+        backupDir: File,
+        currentSchemaVersion: Int,
+        appVersion: String,
+        onProgress: BackupProgress = NO_PROGRESS,
+    ): File? {
         val v = runCatching { schemaVersion(source.databaseFile) }.getOrDefault(0)
         if (v == 0 || v >= currentSchemaVersion) return null
         val now = Instant.now()
         val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(now)
         val out = File(backupDir, "pre-migration-v$v-$stamp.openbill.zip")
-        create(source, out, appVersion, now)
+        create(source, out, appVersion, now, onProgress = onProgress)
         return out
     }
 

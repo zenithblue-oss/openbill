@@ -15,13 +15,17 @@ import app.openbill.core.domain.model.PartyLedger
 import app.openbill.core.domain.model.PartyLedgerEntry
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.repository.LedgerRepository
+import app.openbill.core.domain.service.AgeingBuckets
+import app.openbill.core.domain.service.AgeingSums
 import app.openbill.core.model.Money
 import app.openbill.core.model.Ulid
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.minus
 
 class RoomLedgerRepository(
     private val database: OpenBillDatabase,
@@ -104,6 +108,16 @@ class RoomLedgerRepository(
 
     override suspend fun journalEntriesForVoucher(voucherId: String): List<JournalEntry> =
         accounts.entriesForVoucher(voucherId).map { it.toDomain() }
+
+    override suspend fun journalEntriesForVouchers(voucherIds: List<String>): List<JournalEntry> =
+        voucherIds.chunked(500).flatMap { ids -> accounts.entriesForVouchers(ids).map { it.toDomain() } }
+
+    override suspend fun partyAgeingSums(firmId: String, asOf: LocalDate): Map<String, AgeingSums> {
+        fun back(days: Int) = asOf.minus(DatePeriod(days = days)).toString()
+        fun b(a: Long, b: Long, c: Long, d: Long) = AgeingBuckets(Money.of(a), Money.of(b), Money.of(c), Money.of(d))
+        return accounts.partyAgeingSums(firmId, asOf.toString(), back(30), back(60), back(90))
+            .associate { it.partyId to AgeingSums(b(it.p0, it.p1, it.p2, it.p3), b(it.n0, it.n1, it.n2, it.n3)) }
+    }
 
     override fun observePartyLedger(
         firmId: String,

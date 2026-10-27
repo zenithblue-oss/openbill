@@ -3,6 +3,7 @@ package app.openbill.cli
 import app.openbill.core.domain.csv.Csv
 import app.openbill.core.domain.csv.CsvImport
 import app.openbill.core.domain.csv.MasterCsv
+import app.openbill.core.model.Progress
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
 import androidx.room.Transactor
@@ -29,6 +30,7 @@ class ImportCsv(private val cli: CliState, private val entity: String) : CliktCo
     override fun run() = cli.withData(write = !dryRun) {
         val f = firm()
         val text = file.readText()
+        cli.progress(Progress("Checking rows"))
         val result: CsvImport<*> = if (entity == "parties") MasterCsv.parties(text, f.id, cli.env.newId, now())
         else MasterCsv.items(text, f.id, units(f.id), items(f.id), cli.env.newId, now())
         val errors = result.errors
@@ -45,9 +47,14 @@ class ImportCsv(private val cli: CliState, private val entity: String) : CliktCo
         // One outer transaction: repository writes nest inside it, so a failure rolls back every row.
         database.useWriterConnection { t ->
             t.withTransaction(Transactor.SQLiteTransactionType.IMMEDIATE) {
-                result.valid.forEach { if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item) }
+                val total = result.valid.size.toLong()
+                result.valid.forEachIndexed { i, it ->
+                    if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item)
+                    cli.progress(Progress("Importing $entity", i + 1L, total))
+                }
             }
         }
+        cli.progressDone()
         if (!cli.json) cli.out.println("Imported ${result.valid.size} $entity")
     }
 }

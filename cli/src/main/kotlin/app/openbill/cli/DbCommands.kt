@@ -95,8 +95,10 @@ class DbMigrate(private val cli: CliState) : CliktCommand("migrate") {
                 else cli.out.println(if (pending.isEmpty()) "Schema $from is current" else "Pending: ${pending.joinToString(", ")}")
                 return@exclusive
             }
-            val backup = OpenBillBackup.backupBeforeMigration(loc, File(loc.databaseFile.parentFile, "backups"), OPENBILL_DATABASE_VERSION, cli.env.appVersion)
+            val backup = OpenBillBackup.backupBeforeMigration(loc, File(loc.databaseFile.parentFile, "backups"), OPENBILL_DATABASE_VERSION, cli.env.appVersion, cli.backupProgress).also { cli.progressDone() }
+            cli.progress(app.openbill.core.model.Progress("Upgrading database"))
             openAndMigrate(loc.databaseFile)
+            cli.progressDone()
             if (cli.json) cli.printJson(jsonOf("from" to from, "to" to OPENBILL_DATABASE_VERSION, "pending" to pending, "applied" to true, "backup" to backup?.path))
             else cli.out.println("Migrated $from -> $OPENBILL_DATABASE_VERSION; backup ${backup?.path}")
         }
