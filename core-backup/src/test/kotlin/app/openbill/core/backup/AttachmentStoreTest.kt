@@ -18,6 +18,9 @@ class AttachmentStoreTest {
         assertTrue(store.file("v1", "receipt.png").path.startsWith(root.path))
         store.delete("v1", "receipt.png")
         assertEquals(listOf("receipt-1.png"), store.list("v1"))
+        store.deleteAll("v1")
+        assertEquals(emptyList<String>(), store.list("v1"))
+        assertTrue(root.listFiles()!!.isEmpty())
         root.deleteRecursively()
     }
 }

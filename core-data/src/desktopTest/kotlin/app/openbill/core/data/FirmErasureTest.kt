@@ -53,8 +53,9 @@ class FirmErasureTest {
         assertTrue(count("SELECT COUNT(*) FROM audit_events WHERE firmId = 'firm-1'") > 0)
         assertTrue(count("SELECT COUNT(*) FROM journal_entries WHERE firmId = 'firm-1'") > 0)
 
-        firms.eraseFirm("firm-1")
+        val owners = firms.eraseFirm("firm-1")
 
+        assertTrue("voucher-1" in owners && "other-1" !in owners, owners.toString())
         assertNull(firms.findFirm("firm-1"))
         firmTables.forEach { t -> assertEquals(0, count("SELECT COUNT(*) FROM $t WHERE firmId = 'firm-1'"), t) }
         listOf("voucher_lines", "voucher_charges", "voucher_charge_portions").forEach { t ->

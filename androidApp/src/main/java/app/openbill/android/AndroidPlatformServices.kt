@@ -187,6 +187,7 @@ class AndroidPlatformServices(
     override val supportsAttachments: Boolean get() = true
     override suspend fun attachments(ownerId: String): List<String> = withContext(Dispatchers.IO) { attachmentStore.list(ownerId) }
     override suspend fun deleteAttachment(ownerId: String, name: String) = withContext(Dispatchers.IO) { attachmentStore.delete(ownerId, name) }
+    override suspend fun deleteAllAttachments(ownerId: String) = withContext(Dispatchers.IO) { attachmentStore.deleteAll(ownerId) }
 
     override suspend fun addAttachment(ownerId: String): String? {
         val uri = requireHooks().openFile(arrayOf("image/*", "application/pdf")) ?: return null

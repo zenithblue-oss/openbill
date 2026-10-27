@@ -107,6 +107,7 @@ interface PlatformServices {
     suspend fun addAttachment(ownerId: String): String? = null
     suspend fun openAttachment(ownerId: String, name: String): String? = null
     suspend fun deleteAttachment(ownerId: String, name: String) {}
+    suspend fun deleteAllAttachments(ownerId: String) {}
 
     /** Android: fingerprint or face through androidx.biometric; true when the user passed. */
     val supportsBiometric: Boolean get() = false

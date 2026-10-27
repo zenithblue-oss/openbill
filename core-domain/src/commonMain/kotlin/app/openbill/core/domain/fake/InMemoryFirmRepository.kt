@@ -26,8 +26,9 @@ class InMemoryFirmRepository : FirmRepository {
         firms.update { current -> current.filterNot { it.id == firm.id } + firm }
     }
 
-    override suspend fun eraseFirm(id: String) {
+    override suspend fun eraseFirm(id: String): List<String> {
         firms.update { current -> current.filterNot { it.id == id } }
+        return emptyList()
     }
 
     override suspend fun archiveFirm(id: String, at: Instant) {

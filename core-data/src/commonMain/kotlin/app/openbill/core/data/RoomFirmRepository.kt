@@ -54,7 +54,7 @@ class RoomFirmRepository(
      * delete trigger is dropped and recreated inside the same transaction (docs/03 section 5):
      * any failure rolls back both the rows and the trigger change.
      */
-    override suspend fun eraseFirm(id: String) {
+    override suspend fun eraseFirm(id: String): List<String> {
         val inVouchers = "voucherId IN (SELECT id FROM vouchers WHERE firmId = ?)"
         val inItems = "itemId IN (SELECT id FROM items WHERE firmId = ?)"
         val deletes = listOf(
@@ -67,10 +67,15 @@ class RoomFirmRepository(
             "DELETE FROM party_addresses WHERE partyId IN (SELECT id FROM parties WHERE firmId = ?)" +
             listOf("parties", "accounts", "financial_years", "firm_settings").map { "DELETE FROM $it WHERE firmId = ?" } +
             "DELETE FROM firms WHERE id = ?"
-        transactions.writeWith { c ->
+        return transactions.writeWith { c ->
+            val owners = c.usePrepared("SELECT id FROM vouchers WHERE firmId = ?1 UNION SELECT id FROM parties WHERE firmId = ?1") { s ->
+                s.bindText(1, id)
+                buildList { while (s.step()) add(s.getText(0)) }
+            }
             c.usePrepared("DROP TRIGGER IF EXISTS audit_events_no_delete") { it.step() }
             deletes.forEach { sql -> c.usePrepared(sql) { s -> s.bindText(1, id); s.step() } }
             AuditTriggers.statements.forEach { sql -> c.usePrepared(sql) { it.step() } }
+            owners
         }
     }
 

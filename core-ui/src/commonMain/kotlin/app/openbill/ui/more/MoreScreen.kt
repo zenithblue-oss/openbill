@@ -269,9 +269,9 @@ fun MoreScreen(
                 CsvSection(container, session, listColors)
                 app.openbill.ui.settings.AppLockItem(container, listColors)
                 BackupSection(listColors)
-                // shortcut: voucher attachment files stay in the attachments folder; erase them too if that matters.
                 DeleteFirmItem(firm.name, listColors) {
-                    container.repositories.firms.eraseFirm(firm.id)
+                    // Files go only after the erase transaction commits, so a rollback never loses them.
+                    container.repositories.firms.eraseFirm(firm.id).forEach { runCatching { container.platform.deleteAllAttachments(it) } }
                     app.openbill.ui.pdf.ImageKind.entries.forEach { runCatching { container.platform.saveFirmImage(firm.id, it, null) } }
                 }
 

@@ -43,6 +43,11 @@ class AttachmentStore(private val root: File) {
         File(dir(ownerId), safe(name)).delete()
     }
 
+    /** Removes every file of [ownerId] (used after its records are erased). */
+    fun deleteAll(ownerId: String) {
+        dir(ownerId).deleteRecursively()
+    }
+
     private fun dir(ownerId: String) = File(root, safe(ownerId))
 
     companion object {

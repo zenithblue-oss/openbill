@@ -15,8 +15,11 @@ interface FirmRepository {
 
     suspend fun archiveFirm(id: String, at: Instant)
 
-    /** Physically deletes the firm and every row that belongs to it, audit log included, atomically. */
-    suspend fun eraseFirm(id: String)
+    /**
+     * Physically deletes the firm and every row that belongs to it, audit log included, atomically.
+     * Returns the ids of the erased vouchers and parties, so the caller can delete their attachment files.
+     */
+    suspend fun eraseFirm(id: String): List<String>
 
     fun observeSettings(firmId: String): Flow<FirmSettings?>
 
