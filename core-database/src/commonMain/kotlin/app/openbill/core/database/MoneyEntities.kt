@@ -86,7 +86,8 @@ data class PaymentAllocationEntity(
         ),
     ],
     indices = [
-        Index(value = ["firmId", "itemId", "godownId", "date"]),
+        // Covers the costing walk (item, date order) so stock reports never touch the table rows.
+        Index(value = ["firmId", "itemId", "date", "createdAt", "id", "godownId", "quantity", "unitCost"]),
         Index(value = ["voucherId"]),
         Index(value = ["voucherLineId"]),
         Index(value = ["batchId"]),

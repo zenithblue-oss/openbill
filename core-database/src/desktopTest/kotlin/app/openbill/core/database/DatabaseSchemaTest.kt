@@ -48,7 +48,7 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(10, OPENBILL_DATABASE_VERSION)
+        assertEquals(11, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
@@ -58,7 +58,7 @@ class DatabaseSchemaTest {
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/7.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/8.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/9.json").exists())
-        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/10.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/11.json").exists())
 
         helper.createDatabase(9).use { connection ->
             val tables = mutableListOf<String>()
@@ -320,7 +320,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(9, migrations.size)
+        assertEquals(10, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -334,7 +334,8 @@ class DatabaseSchemaTest {
         assertEquals(8, migrations[6].endVersion)
         assertEquals(9, migrations[7].endVersion)
         assertEquals(10, migrations[8].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(10).isEmpty())
+        assertEquals(11, migrations[9].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(11).isEmpty())
     }
 
     @Test
@@ -421,7 +422,7 @@ class DatabaseSchemaTest {
                     "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
             )
         }
-        helper.runMigrationsAndValidate(10, DatabaseMigrations.migrationsFor(9)).use { connection ->
+        helper.runMigrationsAndValidate(10, DatabaseMigrations.migrationsFor(9, 10)).use { connection ->
             val names = mutableListOf<String>()
             connection.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'index_%' ORDER BY name").use {
                 while (it.step()) names += it.getText(0)
@@ -436,6 +437,21 @@ class DatabaseSchemaTest {
             ).use { s ->
                 assertTrue(s.step())
                 assertTrue("index_vouchers_firmId_partyId_type_status_date" in s.getText(3), s.getText(3))
+            }
+        }
+    }
+
+    @Test
+    fun schemaV10MigratesToV11WithCoveringStockIndex() {
+        helper.createDatabase(10).close()
+        helper.runMigrationsAndValidate(11, DatabaseMigrations.migrationsFor(10)).use { connection ->
+            connection.prepare(
+                "EXPLAIN QUERY PLAN SELECT itemId, date < '2026-04-01', quantity, unitCost FROM stock_movements " +
+                    "WHERE firmId = 'f' AND date <= '2027-03-31' ORDER BY itemId, date, createdAt, id",
+            ).use { s ->
+                assertTrue(s.step())
+                assertTrue("COVERING INDEX index_stock_movements_firmId_itemId_date_createdAt_id_godownId_quantity_unitCost" in s.getText(3), s.getText(3))
+                assertTrue(!s.step(), "no temp b-tree sort")
             }
         }
     }

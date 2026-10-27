@@ -163,7 +163,17 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+    private val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("DROP INDEX IF EXISTS `index_stock_movements_firmId_itemId_godownId_date`")
+            connection.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_stock_movements_firmId_itemId_date_createdAt_id_godownId_quantity_unitCost` " +
+                    "ON `stock_movements` (`firmId`, `itemId`, `date`, `createdAt`, `id`, `godownId`, `quantity`, `unitCost`)",
+            )
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
 
     fun migrationsFor(
         startVersion: Int,
