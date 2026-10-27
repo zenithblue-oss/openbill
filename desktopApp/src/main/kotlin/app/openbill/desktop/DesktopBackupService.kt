@@ -1,5 +1,8 @@
 package app.openbill.desktop
 
+import app.openbill.core.model.OnProgress
+import app.openbill.core.model.Progress
+
 import app.openbill.core.backup.BackupCrypto
 import app.openbill.core.backup.DataLocation
 import app.openbill.core.backup.OpenBillBackup
@@ -28,29 +31,29 @@ internal class DesktopBackupService(
     private val appVersion: String,
     private val closeDatabase: () -> Unit,
 ) : BackupService {
-    override suspend fun createBackup(password: String?): String? {
+    override suspend fun createBackup(password: String?, onProgress: OnProgress): String? {
         val target = withContext(Dispatchers.IO) {
             chooseFile("Save backup", FileDialog.SAVE, OpenBillBackup.defaultFileName("openbill", Instant.now()))
         } ?: return null
         val out = if (target.name.endsWith(".zip")) target else File(target.path + ".openbill.zip")
-        withContext(Dispatchers.IO) { OpenBillBackup.create(desktopDataLocation(dataDir), out, appVersion, password = password?.toCharArray()) }
+        withContext(Dispatchers.IO) { OpenBillBackup.create(desktopDataLocation(dataDir), out, appVersion, password = password?.toCharArray(), onProgress = { stage, done, total -> onProgress(Progress(stage, done, total)) }) }
         return "Backup saved to ${out.name}"
     }
 
-    override suspend fun pickBackup(askPassword: suspend () -> String?): BackupSummary? {
+    override suspend fun pickBackup(askPassword: suspend () -> String?, onProgress: OnProgress): BackupSummary? {
         val file = withContext(Dispatchers.IO) { chooseFile("Choose a backup", FileDialog.LOAD, null) } ?: return null
         val password = if (withContext(Dispatchers.IO) { BackupCrypto.isEncrypted(file) }) askPassword() ?: return null else null
-        val m = withContext(Dispatchers.IO) { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, password?.toCharArray()) }
+        val m = withContext(Dispatchers.IO) { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, password?.toCharArray(), { stage, done, total -> onProgress(Progress(stage, done, total)) }) }
         return BackupSummary(file, m.firms.map { it.name }, m.createdAt, m.appVersion, m.recordCounts, password)
     }
 
-    override suspend fun restore(summary: BackupSummary) {
+    override suspend fun restore(summary: BackupSummary, onProgress: OnProgress) {
         val file = summary.handle as File
         // Verify again before closing anything: a failure here leaves the app running untouched.
-        withContext(Dispatchers.IO) { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, summary.password?.toCharArray()) }
+        withContext(Dispatchers.IO) { OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, summary.password?.toCharArray(), { stage, done, total -> onProgress(Progress(stage, done, total)) }) }
         closeDatabase()
         val result = withContext(Dispatchers.IO) {
-            runCatching { OpenBillBackup.restore(file, desktopDataLocation(dataDir), OPENBILL_DATABASE_VERSION, password = summary.password?.toCharArray()) }
+            runCatching { OpenBillBackup.restore(file, desktopDataLocation(dataDir), OPENBILL_DATABASE_VERSION, password = summary.password?.toCharArray(), onProgress = { stage, done, total -> onProgress(Progress(stage, done, total)) }) }
         }
         val text = result.fold(
             { "Backup restored. The previous data is kept in\n$it\n\nOpenBill will now close; start it again." },

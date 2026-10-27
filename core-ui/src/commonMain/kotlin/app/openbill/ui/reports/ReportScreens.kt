@@ -50,7 +50,7 @@ import app.openbill.core.domain.report.ReportKind
 import app.openbill.core.domain.report.ReportPeriod
 import app.openbill.core.domain.report.ReportTable
 import app.openbill.core.domain.report.Reports
-import app.openbill.core.domain.report.TallyXml
+import app.openbill.core.domain.report.writeTallyXml
 import app.openbill.core.domain.report.loadReportData
 import app.openbill.ui.AppContainer
 import app.openbill.ui.Session
@@ -58,7 +58,9 @@ import app.openbill.ui.components.AppSnackbarHost
 import app.openbill.ui.components.AppTopBar
 import app.openbill.ui.components.CenteredContent
 import app.openbill.ui.components.FormField
-import app.openbill.ui.components.LoadingState
+import app.openbill.core.model.OnProgress
+import app.openbill.core.model.Progress
+import app.openbill.ui.components.ProgressOverlay
 import app.openbill.ui.components.LocalAppMessages
 import app.openbill.ui.components.SectionHeader
 import app.openbill.ui.components.SelectableChip
@@ -67,7 +69,11 @@ import app.openbill.ui.format.Fmt
 import app.openbill.ui.format.Parse
 import app.openbill.ui.pdf.PdfAction
 import app.openbill.ui.theme.Spacing
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private fun periodLabel(p: ReportPeriod) = "${Fmt.date(p.from)} to ${Fmt.date(p.to)}"
 
@@ -112,18 +118,24 @@ fun ReportsScreen(
     var period by remember { mutableStateOf(PeriodPreset.THIS_MONTH.resolve(container.today(), startMonth)) }
     var pickParty by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<Progress?>(null) }
+    var job by remember { mutableStateOf<Job?>(null) }
     val parties by remember { repos.parties.observeParties(session.firm.id) }.collectAsState(initial = emptyList())
 
-    fun export(block: suspend () -> String?) {
+    fun export(block: suspend (OnProgress) -> String?) {
         busy = true
-        scope.launch {
-            val msg = runCatching { block() }.getOrElse { it.message ?: "Export failed" }
+        progress = null
+        job = scope.launch {
+            val msg = runCatching { block { progress = it } }
+                .getOrElse { if (it is CancellationException) "Export cancelled" else it.message ?: "Export failed" }
             busy = false
+            job = null
             msg?.let { messages?.show(it) }
         }
     }
 
     Scaffold(topBar = { AppTopBar("Reports", onBack = onBack) }, snackbarHost = { AppSnackbarHost() }) { padding ->
+      Box {
         CenteredContent(Modifier.padding(padding)) {
             LazyColumn(contentPadding = PaddingValues(bottom = Spacing.xl)) {
                 item(key = "period") {
@@ -147,15 +159,15 @@ fun ReportsScreen(
                     Column(Modifier.padding(horizontal = pageGutter), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             FilledTonalButton(enabled = !busy, onClick = {
-                                export {
+                                export { onProgress ->
                                     val month = ReportPeriod.monthOf(period.from)
-                                    val g = Gstr1.build(repos.loadReportData(session.firm.id, month, ReportKind.GSTR1))
+                                    val g = withContext(Dispatchers.Default) { Gstr1.build(repos.loadReportData(session.firm.id, month, ReportKind.GSTR1, onProgress)) }
                                     container.platform.saveTextFile("GSTR1-${session.firm.gstin.orEmpty()}-${month.returnPeriod}.json", g.toJson())
                                 }
                             }) { Text("GSTR-1 JSON") }
                             FilledTonalButton(enabled = !busy, onClick = {
-                                export {
-                                    val xml = TallyXml.export(repos.loadReportData(session.firm.id, period))
+                                export { onProgress ->
+                                    val xml = withContext(Dispatchers.Default) { buildString { repos.writeTallyXml(session.firm.id, period, this, onProgress) } }
                                     container.platform.saveTextFile("Tally-${period.from}-${period.to}.xml", xml)
                                 }
                             }) { Text("Tally XML") }
@@ -174,6 +186,8 @@ fun ReportsScreen(
                 }
             }
         }
+        if (busy) ProgressOverlay(progress, "Exporting", Modifier.padding(padding), onCancel = { job?.cancel() })
+      }
     }
     if (pickParty) {
         AlertDialog(
@@ -222,9 +236,14 @@ fun ReportScreen(
     val messages = LocalAppMessages.current
     var period by remember { mutableStateOf(initial) }
     var menu by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<Progress?>(null) }
     val result by produceState<Result<ReportTable>?>(null, period, partyId) {
         value = null
-        value = runCatching { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind), partyId) }
+        progress = null
+        // Off the main thread; leaving the screen (Cancel) cancels the coroutine.
+        value = withContext(Dispatchers.Default) {
+            runCatching { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind) { progress = it }, partyId) }
+        }
     }
     val table = result?.getOrNull()
     val stem = "${kind.key}-${period.from}-${period.to}"
@@ -260,7 +279,7 @@ fun ReportScreen(
             }
             val r = result
             when {
-                r == null -> LoadingState()
+                r == null -> ProgressOverlay(progress, "Preparing ${kind.title.lowercase()}", onCancel = onBack)
                 r.isFailure -> Text(r.exceptionOrNull()?.message ?: "Could not run the report", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(pageGutter))
                 else -> ReportTableView(r.getOrThrow())
             }

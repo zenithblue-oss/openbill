@@ -26,6 +26,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import app.openbill.core.domain.csv.CsvImport
+import app.openbill.core.model.Progress
+import app.openbill.ui.components.ProgressOverlay
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.openbill.core.domain.csv.MasterCsv
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
@@ -46,6 +52,7 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
     val repos = container.repositories
     val firmId = session.firm.id
     var busy by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<Progress?>(null) }
     var preview by remember { mutableStateOf<Pair<String, CsvImport<*>>?>(null) }
 
     fun run(block: suspend () -> String?) {
@@ -53,14 +60,18 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
         scope.launch {
             val msg = runCatching { block() }.getOrElse { it.message ?: "Something went wrong" }
             busy = false
+            progress = null
             msg?.let { messages?.show(it) }
         }
     }
 
     fun import(entity: String) = run {
         val text = container.platform.openTextFile() ?: return@run null
-        preview = entity to if (entity == "parties") MasterCsv.parties(text, firmId, container::newId, container.now())
-        else MasterCsv.items(text, firmId, repos.catalog.observeUnits(firmId).first(), repos.catalog.observeItems(firmId).first().filter { it.deletedAt == null }, container::newId, container.now())
+        progress = Progress("Checking rows")
+        preview = entity to withContext(Dispatchers.Default) {
+            if (entity == "parties") MasterCsv.parties(text, firmId, container::newId, container.now())
+            else MasterCsv.items(text, firmId, repos.catalog.observeUnits(firmId).first(), repos.catalog.observeItems(firmId).first().filter { it.deletedAt == null }, container::newId, container.now())
+        }
         null
     }
 
@@ -153,8 +164,15 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
                     TextButton(onClick = {
                         preview = null
                         run {
-                            repos.transaction {
-                                result.valid.forEach { if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item) }
+                            val total = result.valid.size.toLong()
+                            progress = Progress("Importing $entity", 0, total)
+                            withContext(Dispatchers.Default) {
+                                repos.transaction {
+                                    result.valid.forEachIndexed { i, it ->
+                                        if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item)
+                                        if (i % 200 == 199 || i + 1L == total) progress = Progress("Importing $entity", i + 1L, total)
+                                    }
+                                }
                             }
                             "Imported ${result.valid.size} $entity"
                         }
@@ -163,5 +181,9 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
             },
             dismissButton = { TextButton(onClick = { preview = null }) { Text(if (ok) "Cancel" else "Close") } },
         )
+    }
+    // Import writes in one transaction (all rows or none), so it is not cancellable.
+    if (busy && progress != null) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
+        ProgressOverlay(progress, "CSV import")
     }
 }

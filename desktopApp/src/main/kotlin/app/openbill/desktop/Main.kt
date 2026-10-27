@@ -4,7 +4,18 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import app.openbill.core.model.OnProgress
+import app.openbill.core.model.Progress
+import app.openbill.ui.components.ProgressOverlay
+import app.openbill.ui.theme.OpenBillTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
@@ -107,19 +118,11 @@ fun main() {
         exitProcess(1)
     }
     val platform = DesktopPlatformServices(dataDir)
-    // Automatic pre-migration backup (docs/03-architecture.md section 14); best effort.
-    runCatching {
-        OpenBillBackup.backupBeforeMigration(desktopDataLocation(dataDir), File(dataDir, "backups"), OPENBILL_DATABASE_VERSION, platform.appVersion)
-    }.onFailure { System.err.println("Pre-migration backup failed: ${it.message}") }
-    val database = openBillDatabase(File(dataDir, "openbill.db").absolutePath)
-    // Scheduled backup: on start, when the last automatic one is a day old; the newest 7 are kept.
-    Thread {
-        runCatching { OpenBillBackup.autoBackup(desktopDataLocation(dataDir), File(dataDir, "backups"), platform.appVersion) }
-            .onFailure { System.err.println("Automatic backup failed: ${it.message}") }
-    }.apply { isDaemon = true }.start()
-    val container = AppContainer(database.roomRepositories(), platform)
-    val backupService = DesktopBackupService(dataDir, platform.appVersion) { database.close() }
     application {
+        // Pre-migration backup and the Room migration run off the UI thread behind a progress screen.
+        var started by remember { mutableStateOf<Pair<AppContainer, DesktopBackupService>?>(null) }
+        var progress by remember { mutableStateOf<Progress?>(null) }
+        LaunchedEffect(Unit) { started = withContext(Dispatchers.IO) { startUp(dataDir, platform) { progress = it } } }
         val windowState = remember { initialWindowState() }
         Window(
             onCloseRequest = ::exitApplication,
@@ -128,6 +131,7 @@ fun main() {
             state = windowState,
         ) {
             window.minimumSize = Dimension(minOf(1024, windowState.size.width.value.toInt()), minOf(700, windowState.size.height.value.toInt()))
+            val (container, backupService) = started ?: return@Window OpenBillTheme { ProgressOverlay(progress, "Starting OpenBill") }
             val lock = container.appLock
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 val events = java.awt.AWTEvent.KEY_EVENT_MASK or java.awt.AWTEvent.MOUSE_EVENT_MASK or java.awt.AWTEvent.MOUSE_MOTION_EVENT_MASK or java.awt.AWTEvent.MOUSE_WHEEL_EVENT_MASK
@@ -143,4 +147,23 @@ fun main() {
             }
         }
     }
+}
+
+/** Opens the database: automatic pre-migration backup (docs/03-architecture.md section 14), then the migration itself. */
+private fun startUp(dataDir: File, platform: DesktopPlatformServices, onProgress: OnProgress): Pair<AppContainer, DesktopBackupService> {
+    runCatching {
+        OpenBillBackup.backupBeforeMigration(desktopDataLocation(dataDir), File(dataDir, "backups"), OPENBILL_DATABASE_VERSION, platform.appVersion) { stage, done, total ->
+            onProgress(Progress("Backup before upgrade: $stage", done, total))
+        }
+    }.onFailure { System.err.println("Pre-migration backup failed: ${it.message}") }
+    val database = openBillDatabase(File(dataDir, "openbill.db").absolutePath)
+    onProgress(Progress("Opening and upgrading the database"))
+    val repositories = database.roomRepositories()
+    runBlocking { repositories.firms.findFirm("") } // first query opens the database and runs pending migrations
+    // Scheduled backup: on start, when the last automatic one is a day old; the newest 7 are kept.
+    Thread {
+        runCatching { OpenBillBackup.autoBackup(desktopDataLocation(dataDir), File(dataDir, "backups"), platform.appVersion) }
+            .onFailure { System.err.println("Automatic backup failed: ${it.message}") }
+    }.apply { isDaemon = true }.start()
+    return AppContainer(repositories, platform) to DesktopBackupService(dataDir, platform.appVersion) { database.close() }
 }

@@ -1,5 +1,11 @@
 package app.openbill.ui.more
 
+import app.openbill.core.model.OnProgress
+import app.openbill.core.model.Progress
+import app.openbill.ui.components.ProgressOverlay
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,16 +51,16 @@ class BackupSummary(
 /** Backup and restore through the platform's file dialogs (SAF on Android, AWT on desktop). */
 interface BackupService {
     /** Asks where to save, then writes a verified archive. A message for the user; null if cancelled. */
-    suspend fun createBackup(password: String? = null): String?
+    suspend fun createBackup(password: String? = null, onProgress: OnProgress = {}): String?
 
     /**
      * Asks for an archive and verifies it, calling [askPassword] when it is encrypted; null if
      * cancelled. Throws with a user-facing message if invalid or the password is wrong.
      */
-    suspend fun pickBackup(askPassword: suspend () -> String?): BackupSummary?
+    suspend fun pickBackup(askPassword: suspend () -> String?, onProgress: OnProgress = {}): BackupSummary?
 
     /** Replaces all local data with the archive (keeping a safety copy), then restarts or closes the app. */
-    suspend fun restore(summary: BackupSummary)
+    suspend fun restore(summary: BackupSummary, onProgress: OnProgress = {})
 }
 
 /** Provided by each app shell; null hides the section (e.g. in previews). */
@@ -66,6 +72,7 @@ fun BackupSection(listColors: ListItemColors) {
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
     var busy by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<Progress?>(null) }
     var pending by remember { mutableStateOf<BackupSummary?>(null) }
     // Open password prompt: (creating?, answer); the answer is null when cancelled.
     var prompt by remember { mutableStateOf<Pair<Boolean, CompletableDeferred<String?>>?>(null) }
@@ -76,9 +83,11 @@ fun BackupSection(listColors: ListItemColors) {
         scope.launch {
             val msg = runCatching { block() }.getOrElse { it.message ?: "Something went wrong" }
             busy = false
+            progress = null
             msg?.let { messages?.show(it) }
         }
     }
+    val onProgress: OnProgress = { progress = it }
 
     SectionHeader("Backup and restore")
     ListItem(
@@ -87,7 +96,7 @@ fun BackupSection(listColors: ListItemColors) {
         leadingContent = { Icon(Icons.Outlined.Create, contentDescription = null) },
         colors = listColors,
         modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
-            run { askPassword(creating = true)?.let { service.createBackup(it.ifEmpty { null }) } }
+            run { askPassword(creating = true)?.let { service.createBackup(it.ifEmpty { null }, onProgress) } }
         },
     )
     ListItem(
@@ -96,7 +105,7 @@ fun BackupSection(listColors: ListItemColors) {
         leadingContent = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
         colors = listColors,
         modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
-            run { service.pickBackup { askPassword(creating = false) }?.let { pending = it }; null }
+            run { service.pickBackup({ askPassword(creating = false) }, onProgress)?.let { pending = it }; null }
         },
     )
 
@@ -142,11 +151,17 @@ fun BackupSection(listColors: ListItemColors) {
             confirmButton = {
                 TextButton(onClick = {
                     pending = null
-                    run { service.restore(summary); null }
+                    run { service.restore(summary, onProgress); null }
                 }) { Text("Replace data") }
             },
             dismissButton = { TextButton(onClick = { pending = null }) { Text("Cancel") } },
         )
+    }
+    // Shown once the service starts working (after its file dialog); backup and restore are not cancellable.
+    progress?.let { p ->
+        Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
+            ProgressOverlay(p, "Backup and restore")
+        }
     }
 }
 
