@@ -128,6 +128,16 @@ fun main() {
             state = windowState,
         ) {
             window.minimumSize = Dimension(minOf(1024, windowState.size.width.value.toInt()), minOf(700, windowState.size.height.value.toInt()))
+            val lock = container.appLock
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val events = java.awt.AWTEvent.KEY_EVENT_MASK or java.awt.AWTEvent.MOUSE_EVENT_MASK or java.awt.AWTEvent.MOUSE_MOTION_EVENT_MASK or java.awt.AWTEvent.MOUSE_WHEEL_EVENT_MASK
+                java.awt.Toolkit.getDefaultToolkit().addAWTEventListener({ lock.onActivity(System.currentTimeMillis()) }, events)
+                while (true) {
+                    kotlinx.coroutines.delay(10_000)
+                    lock.checkIdle(System.currentTimeMillis())
+                }
+            }
+            androidx.compose.runtime.LaunchedEffect(windowState.isMinimized) { if (windowState.isMinimized) lock.onMinimised() }
             CompositionLocalProvider(LocalBackupService provides backupService) {
                 OpenBillApp(container)
             }
