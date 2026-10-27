@@ -148,6 +148,7 @@ fun releaseNotes(changelog: String, version: String): String? {
     return lines.subList(start + 1, end).joinToString("\n")
         .replace(Regex("""\[([^\]]+)]\([^)]*\)"""), "$1")
         .replace("\n  ", " ") // join wrapped bullet lines
+        .replace("`", "")
         .trim().ifEmpty { null }
 }
 
