@@ -1,0 +1,5 @@
+First stable release.
+Built for large books: tested at 1,000,000 invoices. Lists are paged, reports and Tally export stream under 512 MB.
+Progress overlay for long reports, exports, backup, import and start-up, with cancel for reports and exports.
+Database schema 11: an automatic backup is made before upgrading, which can take a while on big books.
+Fixes: ship-to GSTIN on PDFs, desktop restore.

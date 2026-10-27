@@ -3,6 +3,24 @@
 All notable changes to OpenBill. Versions follow the git tags; release notes live in
 [docs/releases](docs/releases).
 
+## 1.0.0 - 2026-10-27
+
+First stable release. Scale work on top of 0.3.0-alpha; see
+[docs/releases/v1.0.0.md](docs/releases/v1.0.0.md) and [docs/14-performance.md](docs/14-performance.md).
+
+- Scale: tested at 1M sales invoices. Paged lists, scale indexes (schema v10), a covering index
+  for the stock costing walk (schema v11).
+- Reports: sales/purchase registers and Tally XML are streamed, outstanding/ageing is computed
+  in SQL; every report runs under a 512 MB heap. On-screen registers are paged.
+- Progress overlay for long reports, exports, backup, import and start-up; reports and exports
+  can be cancelled. Counts use Indian grouping.
+- Upgrading from schema 10 or earlier makes an automatic backup first, which dominates the
+  migration time on very large books.
+- Fix: ship-to GSTIN in one-line ship-to rows on PDFs.
+- Fix: desktop restore no longer leaves the app running on a closed database.
+- CLI: hidden `openbill dev` commands to generate scale fixtures.
+- Database schema version 11.
+
 ## 0.3.0-alpha - 2026-10-27
 
 New package id `com.zenithblue.openbill`: back up in the old app, install this, restore. See
