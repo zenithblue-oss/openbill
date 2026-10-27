@@ -3,6 +3,7 @@ package app.openbill.ui
 import app.openbill.core.domain.report.ColumnKind
 import app.openbill.core.domain.report.ReportColumn
 import app.openbill.core.domain.report.ReportTable
+import app.openbill.ui.components.countLabel
 import app.openbill.ui.nav.Route
 import app.openbill.ui.pdf.DrawOp
 import app.openbill.ui.reports.ReportPdf
@@ -23,6 +24,11 @@ class ReportsUiTest {
         assertEquals("1,23,456.50", reportCell(ColumnKind.MONEY, "123456.50"))
         assertEquals("−12.00", reportCell(ColumnKind.MONEY, "-12.00"))
         assertEquals("05-10-2026", reportCell(ColumnKind.DATE, "2026-10-05"))
+    }
+
+    @Test
+    fun progressCountsUseIndianGrouping() {
+        assertEquals("43% · 17,00,000 of 38,95,400", app.openbill.core.model.Progress("x", 1_700_000, 3_895_400).countLabel())
     }
 
     @Test

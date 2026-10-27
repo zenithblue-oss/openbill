@@ -22,12 +22,13 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.openbill.core.model.Progress
+import app.openbill.ui.format.Fmt
 import app.openbill.ui.theme.Spacing
 
-/** "42% · 4200 of 10000" for a known total, else null. */
+/** "42% · 4,200 of 10,000" for a known total, else null. */
 fun Progress.countLabel(): String? {
     val f = fraction ?: return null
-    return "${(f * 100).toInt()}% · $done of $total"
+    return "${(f * 100).toInt()}% · ${Fmt.groupIndian(done.toString())} of ${Fmt.groupIndian(total.toString())}"
 }
 
 /**
