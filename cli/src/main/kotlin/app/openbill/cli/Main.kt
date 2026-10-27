@@ -110,4 +110,5 @@ fun rootCommand(cli: CliState): CliktCommand = Root(cli).subcommands(
     gstCommands(cli),
     tallyCommands(cli),
     auditCommands(cli),
+    devCommands(cli),
 )
