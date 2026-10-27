@@ -259,6 +259,9 @@ data class ItemForm(
     val trackSerial: Boolean = false,
     val lowStock: String = "",
     val barcode: String = "",
+    /** Optional second unit and how many primary units one of it holds ("12" for a box of 12). */
+    val altUnitId: String? = null,
+    val altFactor: String = "",
     /** Opening stock, recorded as a posted adjustment when a new tracked item is saved. */
     val openingQty: String = "",
     val openingCost: String = "",
@@ -290,6 +293,11 @@ object ItemRules {
         if (form.openingQty.isNotBlank() && form.trackInventory && !form.isService && (form.trackBatch || form.trackSerial) && "opening" !in this)
             put("opening", "Batch and serial items get stock from a purchase, not an opening quantity")
         if (form.barcode.isNotBlank() && form.barcode.any { it.code !in 32..126 }) put("barcode", "Use letters, digits and symbols only")
+        if (form.trackInventory && !form.isService && form.trackBatch && form.trackSerial) put("serial", "Use batches or serial numbers, not both")
+        if (form.altUnitId != null) {
+            if (form.altUnitId == form.unitId) put("altUnit", "Choose a different unit")
+            if (Parse.quantity(form.altFactor)?.let { it.scaledUnits > 0 } != true) put("altFactor", "Enter how many units it holds")
+        }
     }
 }
 
@@ -333,6 +341,8 @@ class ItemEditorModel(
                         trackSerial = item.trackSerial,
                         lowStock = item.lowStockLevel?.format().orEmpty(),
                         barcode = item.barcode.orEmpty(),
+                        altUnitId = item.alternateUnitId,
+                        altFactor = item.alternateUnitFactor?.format().orEmpty(),
                     )
                 }
             }
@@ -390,6 +400,8 @@ class ItemEditorModel(
                     trackSerial = form.trackSerial && form.trackInventory && !form.isService,
                     lowStockLevel = Parse.quantity(form.lowStock).takeIf { form.lowStock.isNotBlank() },
                     barcode = form.barcode.trim().ifBlank { null },
+                    alternateUnitId = form.altUnitId,
+                    alternateUnitFactor = form.altUnitId?.let { Parse.quantity(form.altFactor) },
                     updatedAt = now,
                 )
                 container.repositories.catalog.saveItem(item)
@@ -445,6 +457,7 @@ fun ItemEditScreen(
     LaunchedEffect(form.rejectedSaves) { if (form.rejectedSaves > 0) scroll.animateScrollTo(0) }
     val units by remember { container.repositories.catalog.observeUnits(session.firm.id) }.collectAsState(initial = emptyList<UnitOfMeasure>())
     var pickUnit by remember { mutableStateOf(false) }
+    var pickAltUnit by remember { mutableStateOf(false) }
     var pickRate by remember { mutableStateOf(false) }
     val slabs = remember { gstSlabsOn(container.today()) }
     val messages = LocalAppMessages.current
@@ -489,6 +502,23 @@ fun ItemEditScreen(
                     { pickUnit = true },
                     error = form.errors["unit"],
                 )
+                PickerField(
+                    "Alternate unit",
+                    units.firstOrNull { it.id == form.altUnitId }?.let { "${it.name} (${it.symbol})" } ?: "",
+                    { pickAltUnit = true },
+                    error = form.errors["altUnit"],
+                    placeholder = "Optional, such as box or dozen",
+                )
+                if (form.altUnitId != null) {
+                    val alt = units.firstOrNull { it.id == form.altUnitId }?.symbol.orEmpty()
+                    val unit = units.firstOrNull { it.id == form.unitId }?.symbol.orEmpty()
+                    FormField(
+                        "1 $alt holds", form.altFactor, { v -> model.edit { it.copy(altFactor = v) } },
+                        error = form.errors["altFactor"], keyboardType = KeyboardType.Decimal, suffix = unit,
+                        supporting = "Bills can enter quantity in $alt; stock stays in $unit",
+                    )
+                    TextButton(onClick = { model.edit { it.copy(altUnitId = null, altFactor = "") } }) { Text("No alternate unit") }
+                }
                 FormField(
                     if (form.isService) "SAC code" else "HSN code",
                     form.hsnSac,
@@ -547,8 +577,10 @@ fun ItemEditScreen(
                     SectionHeader("Stock")
                     SwitchRow("Track stock", "Purchases add stock, sales deduct it", form.trackInventory, { v -> model.edit { it.copy(trackInventory = v) } })
                     if (form.trackInventory) {
-                        SwitchRow("Batch and expiry", "Enter a batch number on each purchase and sale", form.trackBatch, { v -> model.edit { it.copy(trackBatch = v) } })
-                        SwitchRow("Serial / IMEI numbers", "One number per unit; duplicates are rejected", form.trackSerial, { v -> model.edit { it.copy(trackSerial = v) } })
+                        // An item uses batches or serials, never both: switching one on turns the other off.
+                        SwitchRow("Batch and expiry", "Enter a batch number on each purchase and sale", form.trackBatch, { v -> model.edit { it.copy(trackBatch = v, trackSerial = it.trackSerial && !v) } })
+                        SwitchRow("Serial / IMEI numbers", "One number per unit; duplicates are rejected", form.trackSerial, { v -> model.edit { it.copy(trackSerial = v, trackBatch = it.trackBatch && !v) } })
+                        form.errors["serial"]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         FormField(
                             "Low-stock level",
                             form.lowStock,
@@ -634,6 +666,9 @@ fun ItemEditScreen(
     }
     if (pickUnit) {
         UnitSheet(units, form.unitId, { u -> model.edit { it.copy(unitId = u.id) }; pickUnit = false }, { pickUnit = false })
+    }
+    if (pickAltUnit) {
+        UnitSheet(units, form.altUnitId, { u -> model.edit { it.copy(altUnitId = u.id) }; pickAltUnit = false }, { pickAltUnit = false })
     }
     if (pickRate) {
         GstRateSheet(slabs, form.gstRate, { r -> model.edit { it.copy(gstRate = r) }; pickRate = false }, { pickRate = false })

@@ -246,7 +246,7 @@ fun InvoiceEditorScreen(
                             } else {
                                 scanError = null
                                 scanText = ""
-                                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide)
+                                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] })
                             }
                         }
                     }
@@ -392,7 +392,7 @@ fun InvoiceEditorScreen(
             emptyText = "No items yet. Add them from the Items tab, or use a custom line.",
             onSelect = { item ->
                 pickItem = false
-                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide)
+                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] })
             },
             onDismiss = { pickItem = false },
         )
@@ -609,6 +609,14 @@ private fun LineEditor(
                     prefix = "₹",
                     modifier = Modifier.weight(1f),
                 )
+            }
+            val alt = current.altUnit
+            val factor = current.altFactor
+            if (alt != null && factor != null) {
+                val converted = LineRules.fromAltUnits(current.quantity, factor)
+                TextButton(enabled = converted != null, onClick = { converted?.let { edit = edit.copy(quantity = it) } }) {
+                    Text("${current.quantity.ifBlank { "0" }} $alt = ${converted ?: "?"} ${current.unit.orEmpty()} (use this)")
+                }
             }
             FormField(
                 "Discount",

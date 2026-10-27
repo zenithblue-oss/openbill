@@ -32,6 +32,13 @@ class InvoiceLogicTest {
     )
 
     @Test
+    fun alternateUnitQuantityConvertsToThePrimaryUnit() {
+        assertEquals("24", LineRules.fromAltUnits("2", Quantity.of(12)))
+        assertEquals("6", LineRules.fromAltUnits("0.5", Quantity.of(12)))
+        assertNull(LineRules.fromAltUnits("two", Quantity.of(12)))
+    }
+
+    @Test
     fun grossMultipliesQuantityAndRateInPaise() {
         assertEquals(Money.parse("312.50"), InvoiceMath.gross(Quantity.parse("2.5"), Money.parse("125")))
         assertEquals(Money.parse("0.33"), InvoiceMath.gross(Quantity.parse("0.333"), Money.parse("1")))

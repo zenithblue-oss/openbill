@@ -39,10 +39,13 @@ data class LineForm(
     val batchNumber: String = "",
     val expiryDate: LocalDate? = null,
     val serials: String = "",
+    /** The item's alternate unit and primary units per one of it, for entering a quantity in it. */
+    val altUnit: String? = null,
+    val altFactor: Quantity? = null,
 )
 
 object LineRules {
-    fun fromItem(item: Item, unitSymbol: String?, purchase: Boolean = false): LineForm {
+    fun fromItem(item: Item, unitSymbol: String?, purchase: Boolean = false, altUnitSymbol: String? = null): LineForm {
         val price = if (purchase) item.purchasePrice else item.salePrice
         val stock = item.trackInventory && !item.isService
         return LineForm(
@@ -55,7 +58,15 @@ object LineRules {
             gstRate = item.taxRate,
             trackBatch = stock && item.trackBatch,
             trackSerial = stock && item.trackSerial,
+            altUnit = altUnitSymbol?.takeIf { item.alternateUnitFactor != null },
+            altFactor = item.alternateUnitFactor.takeIf { altUnitSymbol != null },
         )
+    }
+
+    /** [text] read as a quantity of the alternate unit, converted to the primary unit; null if not a quantity. */
+    fun fromAltUnits(text: String, factor: Quantity): String? {
+        val q = Parse.quantity(text) ?: return null
+        return Quantity.ofScaledUnits(app.openbill.core.model.Rounding.multiplyDivide(q.scaledUnits, factor.scaledUnits, 10_000L, app.openbill.core.model.RoundingMode.HALF_UP)).format()
     }
 
     fun fromDraft(line: DraftLine, item: Item? = null): LineForm = LineForm(
