@@ -78,18 +78,18 @@ Method: every row in [docs/01-feature-inventory.md](docs/01-feature-inventory.md
 against what is usable in the app today. A feature counts 1 when it works end to end, 0.5 when
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
-**1.0 scope: about 96% (about 130 of 136 P0 features)** `███████████████████░`
-**Full parity: about 48% (about 133 of 277 P0+P1+P2 features)** `█████████░░░░░░░░░░░`
+**1.0 scope: 100% (136 of 136 P0 features)** `████████████████████`
+**Full parity: about 50% (about 139 of 277 P0+P1+P2 features)** `██████████░░░░░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
 | Billing and vouchers | Invoices, quotations, proforma, challans, credit/debit notes, purchases, duplicate, recycle bin, restore cancelled, attachments | 100% (22 / 22) |
-| Parties and items | Masters, ledgers, statements, CSV import (one transaction), offline HSN/SAC search, business switcher | 94% (29 / 31 P0) |
-| Inventory | Godowns, batches (FEFO picker), serials, adjustments, transfers, valuation, labels | 95% (est.) |
+| Parties and items | Masters, ledgers, statements, shipping addresses with ship-to GSTIN, party notes and attachments, alternate units, CSV import (one transaction), offline HSN/SAC search, business switcher | 100% (31 / 31 P0) |
+| Inventory | Godowns, batches (FEFO picker), serials (batch or serial per item), adjustments, transfers, valuation, labels, low-stock card and report | 100% |
 | Payments and accounting | Payments, allocation, split tender, expenses, accounts, ageing, reconciliation, reminder templates | 100% (14 / 14) |
-| Reports and GST | Registers, books, statements, stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 95% (18 / 19) |
+| Reports and GST | Registers, books, statements, stock, low stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 100% (19 / 19) |
 | Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image | 100% (15 / 15) |
-| Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN, biometric on Android), daily automatic backups, portable desktop mode, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
+| Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
 | Desktop apps | Windows and Linux builds run the shared UI | Alpha |
 | CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 |
 | Server | Not started (post-1.0) | 0% |
@@ -98,7 +98,7 @@ only the engine/data layer exists without UI, and 0 otherwise. These are the mai
 
 Phases are defined in [ROADMAP.md](ROADMAP.md); details in [docs/04-implementation-plan.md](docs/04-implementation-plan.md).
 
-Remaining 1.0 (P0) gaps:
+Still open for the 1.0 release (outside the P0 feature count):
 
 - Output: USB thermal printing on Android (Bluetooth works; desktop USB goes through the
   print service or /dev/usb/lp*).

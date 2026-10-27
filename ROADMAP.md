@@ -364,8 +364,8 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 
 | Feature group | Competitor plan that gates it | OpenBill phase | Surfaces | Status |
 | --- | --- | --- | --- | --- |
-| Core invoicing, parties, items, payments, reports, GSTR-1, backup | Free tier (limited) and paid tiers | Phases 1-6 (1.0) | A W L C | Done (split tender, voucher attachments, daily backups, HSN/SAC search, business switcher added; app lock, encrypted backups and business erasure done) |
-| Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C | Done (FEFO batch picker on sale lines) |
+| Core invoicing, parties, items, payments, reports, GSTR-1, backup | Free tier (limited) and paid tiers | Phases 1-6 (1.0) | A W L C | Done (split tender, voucher attachments, daily backups, HSN/SAC search, business switcher; app lock with PIN backoff and idle relock, encrypted backups, business erasure with files; shipping addresses with ship-to GSTIN, party notes and attachments; low-stock report) |
+| Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C | Done (FEFO batch picker on sale lines; alternate units with conversion; batch or serial per item, not both) |
 | Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L | Alpha builds; packaging and signing pending |
 | Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Done (silent print setting, tray notification, portable mode, Ctrl+K palette; ESC/POS thermal printing on all surfaces) |
 | Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Delivery challans done; rest planned |
