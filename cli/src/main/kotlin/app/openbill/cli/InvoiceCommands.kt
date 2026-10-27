@@ -182,7 +182,7 @@ suspend fun Data.buildDraft(f: Firm, partyRef: String?, dateText: String?, pos: 
     val date = dateText?.let(::parseDate) ?: now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val fy = repos.firms.observeFinancialYears(f.id).first().firstOrNull { date >= it.startDate && date <= it.endDate }
         ?: fail(Exit.VALIDATION, "No financial year covers $date")
-    val place = pos ?: party?.stateCode ?: f.stateCode
+    val place = pos ?: party?.shipToStateCode() ?: party?.stateCode ?: f.stateCode
     val resolved = specs.mapIndexed { index, s ->
         val item = s.item?.let { findItem(f.id, it) }
         val qty = runCatching { Quantity.parse(s.quantity) }.getOrElse { fail(Exit.VALIDATION, "Invalid quantity '${s.quantity}'") }

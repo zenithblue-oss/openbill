@@ -55,4 +55,10 @@ data class Party(
         }
         require(updatedAt >= createdAt) { "Party updatedAt cannot precede createdAt" }
     }
+
+    /** State where goods are delivered (default, else first, shipping address); decides place of supply for goods (IGST Act s.10(1)). */
+    fun shipToStateCode(): String? {
+        val ship = addresses.filter { it.kind == AddressKind.SHIPPING }
+        return (ship.firstOrNull { it.isDefault } ?: ship.firstOrNull())?.stateCode
+    }
 }

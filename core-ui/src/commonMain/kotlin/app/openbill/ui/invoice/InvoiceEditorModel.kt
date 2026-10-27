@@ -69,7 +69,9 @@ object LineRules {
         return Quantity.ofScaledUnits(app.openbill.core.model.Rounding.multiplyDivide(q.scaledUnits, factor.scaledUnits, 10_000L, app.openbill.core.model.RoundingMode.HALF_UP)).format()
     }
 
-    fun fromDraft(line: DraftLine, item: Item? = null): LineForm = LineForm(
+    fun fromDraft(line: DraftLine, item: Item? = null, altUnitSymbol: String? = null): LineForm = LineForm(
+        altUnit = altUnitSymbol?.takeIf { item?.alternateUnitFactor != null },
+        altFactor = item?.alternateUnitFactor.takeIf { altUnitSymbol != null },
         trackBatch = item?.let { it.trackInventory && it.trackBatch } ?: (line.batchNumber != null),
         trackSerial = item?.let { it.trackInventory && it.trackSerial } ?: line.serialNumbers.isNotEmpty(),
         batchNumber = line.batchNumber.orEmpty(),
@@ -286,7 +288,7 @@ class InvoiceEditorModel(
     }
 
     fun setParty(party: Party) = mutate {
-        val pos = party.stateCode ?: Validation.stateFromGstin(party.gstin.orEmpty()) ?: firm.stateCode
+        val pos = party.shipToStateCode() ?: party.stateCode ?: Validation.stateFromGstin(party.gstin.orEmpty()) ?: firm.stateCode
         it.copy(party = party, placeOfSupply = pos, errors = it.errors - "party")
     }
 
