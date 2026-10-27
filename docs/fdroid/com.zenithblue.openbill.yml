@@ -14,7 +14,7 @@ Repo: https://github.com/zenithblue-oss/openbill.git
 Builds:
   - versionName: 0.3.0-alpha
     versionCode: 6
-    commit: v0.3.0-alpha
+    commit: 96e582ac92f62bf280d1880dc30356d6698c202e
     subdir: androidApp
     gradle:
       - yes
