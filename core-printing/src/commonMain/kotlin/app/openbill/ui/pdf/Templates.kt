@@ -437,7 +437,7 @@ class ModernLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val detW = cw - billW - cardGap
         val pad = 10f * k
         val bill = Block.stack(listOf(label("BILLED TO", labelSt, 3f * k), partyBlock(doc.buyer, billW - 2 * pad, ts(10f, FontRole.BOLD, Ink.BLACK), ts(7.6f))))
-        val detRows = metaRows(false) + listOfNotNull(doc.shipTo?.let { "Ship to" to (it.addressLines.joinToString(", ")) })
+        val detRows = metaRows(false) + listOfNotNull(doc.shipTo?.let { "Ship to" to it.shipLine() })
         val det = Block.stack(listOf(label("DETAILS", labelSt, 3f * k), kvBlock(detRows, detW - 2 * pad, ts(7.6f, color = Ink.MUTED), ts(7.6f, FontRole.BOLD, Ink.BLACK))))
         val cards = boxedPair(bill, billW, det, detW, pad, null, cardGap, soft, 8f * k)
         cards.draw(pen, left, y)
@@ -558,7 +558,7 @@ class ElegantLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
         val details = Block.stack(
             listOf(
                 label("INVOICE", labelSt, 4f * k),
-                kvBlock(metaRows() + listOfNotNull(doc.shipTo?.let { "Ship to" to it.addressLines.joinToString(", ") }), colW, ts(7.8f, color = Ink.MUTED), ts(7.8f, color = Ink.BLACK), valueX = 78f * k),
+                kvBlock(metaRows() + listOfNotNull(doc.shipTo?.let { "Ship to" to it.shipLine() }), colW, ts(7.8f, color = Ink.MUTED), ts(7.8f, color = Ink.BLACK), valueX = 78f * k),
             ),
         )
         bill.draw(pen, left, y)
@@ -717,3 +717,6 @@ class CounterLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
         return listOf(Block.stack(listOf(first, taxBox, boxedPair(thanks, leftW, sign, rightW, pad, g))))
     }
 }
+
+/** One-line ship-to for key/value rows; keeps the ship-to GSTIN, which decides IGST. */
+private fun InvoiceDocument.PartyBlock.shipLine() = (addressLines + listOfNotNull(gstin?.let { "GSTIN $it" })).joinToString(", ")
