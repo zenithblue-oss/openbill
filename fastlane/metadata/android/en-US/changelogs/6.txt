@@ -1,0 +1,4 @@
+New package id: com.zenithblue.openbill. It installs beside the old app, so back up in the old one, install this, then restore.
+1.0 feature-complete scope: shipping addresses with ship-to GSTIN, alternate units, low-stock report, thermal receipt printing.
+Security: app lock with PIN and biometrics, backoff on wrong PINs, password-encrypted backups, full business erase.
+GST now follows the ship-to state.

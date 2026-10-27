@@ -17,7 +17,7 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
-version = "0.2.0"
+version = "0.3.0"
 
 dependencies {
     implementation(project(":core-data"))

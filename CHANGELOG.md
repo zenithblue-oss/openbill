@@ -3,7 +3,10 @@
 All notable changes to OpenBill. Versions follow the git tags; release notes live in
 [docs/releases](docs/releases).
 
-## Unreleased (1.0 candidate)
+## 0.3.0-alpha - 2026-10-27
+
+New package id `com.zenithblue.openbill`: back up in the old app, install this, restore. See
+[docs/releases/v0.3.0-alpha.md](docs/releases/v0.3.0-alpha.md).
 
 All 136 P0 features of the 1.0 scope are in ([ROADMAP.md](ROADMAP.md)).
 
@@ -18,6 +21,8 @@ All 136 P0 features of the 1.0 scope are in ([ROADMAP.md](ROADMAP.md)).
 - Printing: ESC/POS thermal receipts over Bluetooth, print services and serial ports, with an
   optional serial baud rate (Linux, via `stty`); silent print; OS notification after bulk
   export or print.
+- GST: place of supply follows the default ship-to state; can still be set by hand.
+- Fix: reopened draft lines offer the alternate-unit conversion.
 - Database schema version 9 (migrates from every earlier version).
 
 ## 0.2.0-alpha - 2026-10-26
