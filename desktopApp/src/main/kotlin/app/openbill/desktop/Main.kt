@@ -11,6 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import app.openbill.core.model.OnProgress
 import app.openbill.core.model.Progress
+import app.openbill.core.model.STARTUP_BACKUP_STAGE
+import app.openbill.core.model.STARTUP_MIGRATE_STAGE
 import app.openbill.ui.components.ProgressOverlay
 import app.openbill.ui.theme.OpenBillTheme
 import kotlinx.coroutines.Dispatchers
@@ -153,11 +155,11 @@ fun main() {
 private fun startUp(dataDir: File, platform: DesktopPlatformServices, onProgress: OnProgress): Pair<AppContainer, DesktopBackupService> {
     runCatching {
         OpenBillBackup.backupBeforeMigration(desktopDataLocation(dataDir), File(dataDir, "backups"), OPENBILL_DATABASE_VERSION, platform.appVersion) { stage, done, total ->
-            onProgress(Progress("Backup before upgrade: $stage", done, total))
+            onProgress(Progress(STARTUP_BACKUP_STAGE, done, total))
         }
     }.onFailure { System.err.println("Pre-migration backup failed: ${it.message}") }
     val database = openBillDatabase(File(dataDir, "openbill.db").absolutePath)
-    onProgress(Progress("Opening and upgrading the database"))
+    onProgress(Progress(STARTUP_MIGRATE_STAGE))
     val repositories = database.roomRepositories()
     runBlocking { repositories.firms.findFirm("") } // first query opens the database and runs pending migrations
     // Scheduled backup: on start, when the last automatic one is a day old; the newest 7 are kept.

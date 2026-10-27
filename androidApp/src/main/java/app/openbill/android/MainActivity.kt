@@ -12,6 +12,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.fragment.app.FragmentActivity
 import app.openbill.ui.OpenBillApp
 import app.openbill.ui.more.LocalBackupService
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import app.openbill.ui.components.ProgressOverlay
+import app.openbill.ui.theme.OpenBillTheme
 import kotlinx.coroutines.CompletableDeferred
 
 class MainActivity : FragmentActivity() {
@@ -76,7 +84,6 @@ class MainActivity : FragmentActivity() {
         // party names and GSTINs as credentials.
         window.decorView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         val app = application as OpenBillApplication
-        val container = app.container
         app.platformServices.attach(
             ActivityHooks(
                 activity = this,
@@ -135,24 +142,33 @@ class MainActivity : FragmentActivity() {
             },
         )
         setContent {
-            CompositionLocalProvider(LocalBackupService provides backupService) {
-                OpenBillApp(
-                    container = container,
-                    backHandler = { enabled, onBack -> BackHandler(enabled = enabled, onBack = onBack) },
-                )
+            var ready by remember { mutableStateOf(app.startUp.isCompleted) }
+            LaunchedEffect(Unit) { app.startUp.await(); ready = true }
+            if (!ready) {
+                OpenBillTheme { ProgressOverlay(app.startUpProgress.collectAsState().value, "Starting OpenBill") }
+            } else {
+                CompositionLocalProvider(LocalBackupService provides backupService) {
+                    OpenBillApp(
+                        container = app.container,
+                        backHandler = { enabled, onBack -> BackHandler(enabled = enabled, onBack = onBack) },
+                    )
+                }
             }
         }
     }
 
+    // Null while the database is still starting up (the lock cannot be engaged yet).
+    private fun appLock() = (application as OpenBillApplication).takeIf { it.startUp.isCompleted }?.container?.appLock
+
     // App lock: relock after a minute away (short trips to a picker or share sheet do not count).
     override fun onStart() {
         super.onStart()
-        (application as OpenBillApplication).container.appLock.onForeground(System.currentTimeMillis())
+        appLock()?.onForeground(System.currentTimeMillis())
     }
 
     override fun onStop() {
         super.onStop()
-        if (!isChangingConfigurations) (application as OpenBillApplication).container.appLock.onBackground(System.currentTimeMillis())
+        if (!isChangingConfigurations) appLock()?.onBackground(System.currentTimeMillis())
     }
 
     override fun onDestroy() {
