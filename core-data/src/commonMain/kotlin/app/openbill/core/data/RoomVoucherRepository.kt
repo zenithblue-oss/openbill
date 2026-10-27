@@ -8,7 +8,12 @@ import app.openbill.core.domain.model.SerialStatus
 import app.openbill.core.domain.service.InventoryRules
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
+import app.openbill.core.database.VoucherChargeEntity
+import app.openbill.core.database.VoucherChargePortionEntity
 import app.openbill.core.database.VoucherEntity
+import app.openbill.core.database.VoucherLineEntity
+import app.openbill.core.domain.model.VoucherTally
+import app.openbill.core.model.Money
 import app.openbill.core.database.VoucherNumberSequenceEntity
 import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.JournalEntry
@@ -63,7 +68,46 @@ class RoomVoucherRepository(
         firmId = firmId,
         fromDate = fromDate.toString(),
         toDate = toDate.toString(),
-    ).map { values -> values.map { it.toDomain(vouchers.linesFor(it.id), vouchers.chargesFor(it.id), vouchers.portionsFor(it.id)) } }
+    ).map { values -> withDetails(values) }
+
+    override fun observeVoucherPage(
+        firmId: String,
+        types: Set<VoucherType>,
+        status: VoucherStatus?,
+        query: String,
+        limit: Int,
+    ): Flow<List<Voucher>> = vouchers.observePage(
+        firmId = firmId,
+        types = types.map { it.name.lowercase() },
+        status = status?.code(),
+        query = query.trim(),
+        limit = limit,
+    ).map { values -> values.map { it.toDomain(emptyList(), emptyList()) } }
+
+    override fun observeVoucherStats(
+        firmId: String,
+        types: Set<VoucherType>,
+        fromDate: LocalDate,
+        toDate: LocalDate,
+    ): Flow<Map<VoucherStatus, VoucherTally>> = vouchers.observeStats(
+        firmId = firmId,
+        types = types.map { it.name.lowercase() },
+        fromDate = fromDate.toString(),
+        toDate = toDate.toString(),
+    ).map { rows -> rows.associate { decodeEnum<VoucherStatus>(it.status, "voucher status") to VoucherTally(it.count, Money.of(it.total)) } }
+
+    /** Lines, charges and portions of many vouchers in a few IN queries instead of three per voucher. */
+    private suspend fun withDetails(values: List<VoucherEntity>): List<Voucher> {
+        val lines = HashMap<String, MutableList<VoucherLineEntity>>()
+        val charges = HashMap<String, MutableList<VoucherChargeEntity>>()
+        val portions = HashMap<String, MutableList<VoucherChargePortionEntity>>()
+        values.map { it.id }.chunked(500).forEach { ids ->
+            vouchers.linesForAll(ids).groupByTo(lines) { it.voucherId }
+            vouchers.chargesForAll(ids).groupByTo(charges) { it.voucherId }
+            vouchers.portionsForAll(ids).groupByTo(portions) { it.voucherId }
+        }
+        return values.map { it.toDomain(lines[it.id].orEmpty(), charges[it.id].orEmpty(), portions[it.id].orEmpty()) }
+    }
 
     override fun observeVoucher(id: String): Flow<Voucher?> =
         vouchers.observeById(id).map { value ->
@@ -71,11 +115,7 @@ class RoomVoucherRepository(
         }
 
     override fun observeRecycleBin(firmId: String): Flow<List<Voucher>> =
-        vouchers.observeRecycleBin(firmId).map { values ->
-            values.map { value ->
-                value.toDomain(vouchers.linesFor(value.id), vouchers.chargesFor(value.id), vouchers.portionsFor(value.id))
-            }
-        }
+        vouchers.observeRecycleBin(firmId).map { values -> withDetails(values) }
 
     override suspend fun findVoucher(id: String): Voucher? {
         val voucher = vouchers.findById(id) ?: return null

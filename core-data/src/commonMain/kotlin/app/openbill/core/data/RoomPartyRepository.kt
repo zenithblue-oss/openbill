@@ -3,10 +3,12 @@ package app.openbill.core.data
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.domain.model.Party
+import app.openbill.core.domain.model.PartyType
 import app.openbill.core.domain.repository.PartyRepository
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 
 class RoomPartyRepository(
     private val database: OpenBillDatabase,
@@ -21,6 +23,10 @@ class RoomPartyRepository(
         val addressesByParty = addresses.groupBy { it.partyId }
         values.map { party -> party.toDomain(addressesByParty[party.id].orEmpty()) }
     }
+
+    override fun observePartyPage(firmId: String, types: Set<PartyType>, query: String, limit: Int): Flow<List<Party>> =
+        parties.observePage(firmId, types.map { it.name.lowercase() }, query.trim(), limit)
+            .map { values -> values.map { it.toDomain(emptyList()) } }
 
     override fun observeParty(id: String): Flow<Party?> = combine(
         parties.observeById(id),

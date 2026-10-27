@@ -167,6 +167,9 @@ class RoomLedgerRepository(
             }
         }
 
+    override fun observePartyBalances(firmId: String, asOf: LocalDate): Flow<Map<String, Money>> =
+        accounts.observePartyBalances(firmId, asOf.toString()).map { rows -> rows.associate { it.partyId to Money.of(it.balance) } }
+
     override fun observeAccountBalances(firmId: String): Flow<Map<String, Money>> = combine(
         accounts.observeAccounts(firmId),
         accounts.observeAccountTotals(firmId),
@@ -189,6 +192,24 @@ class RoomLedgerRepository(
                 )
             }
         }
+
+    override suspend fun accountNets(firmId: String, from: LocalDate, to: LocalDate): Map<String, Money> =
+        accounts.accountTotalsInRange(firmId, from.toString(), to.toString()).associate { it.accountId to Money.of(it.debit - it.credit) }
+
+    override fun observeAccountTransactionsPage(accountId: String, limit: Int): Flow<List<AccountTransaction>> =
+        accounts.observeAccountEntriesPage(accountId, limit).map { rows ->
+            rows.map {
+                AccountTransaction(
+                    entry = it.entry.toDomain(),
+                    voucherType = decodeEnum<VoucherType>(it.voucherType, "voucher type"),
+                    voucherNumber = it.voucherNumber,
+                    partyId = it.partyId,
+                )
+            }
+        }
+
+    override fun observeAccountNet(accountId: String): Flow<Pair<Money, Money>> =
+        accounts.observeAccountNet(accountId).map { Money.of(it.net) to Money.of(it.clearedNet) }
 
     override suspend fun setCleared(entryId: String, clearedOn: LocalDate?) {
         val changed = accounts.setCleared(entryId, clearedOn?.toString())

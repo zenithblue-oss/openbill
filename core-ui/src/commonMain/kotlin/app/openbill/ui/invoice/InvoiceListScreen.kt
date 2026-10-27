@@ -77,35 +77,23 @@ import app.openbill.ui.theme.LocalReducedMotion
 import app.openbill.ui.theme.Motion
 import app.openbill.ui.theme.Spacing
 import app.openbill.ui.theme.motionTween
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import app.openbill.core.domain.model.PartyType
+import app.openbill.ui.components.GrowLimitOnScroll
+import app.openbill.ui.components.PAGE_SIZE
 
 enum class StatusFilter(val label: String, val status: VoucherStatus?) {
     ALL("All", null),
     DRAFT("Drafts", VoucherStatus.DRAFT),
     POSTED("Posted", VoucherStatus.POSTED),
     CANCELLED("Cancelled", VoucherStatus.CANCELLED),
-}
-
-object InvoiceSearch {
-    fun filter(
-        vouchers: List<Voucher>,
-        partiesById: Map<String, Party>,
-        query: String,
-        status: VoucherStatus?,
-        types: Set<VoucherType> = setOf(VoucherType.SALE),
-    ): List<Voucher> {
-        val q = query.trim()
-        return vouchers.filter { v ->
-            v.type in types &&
-                (status == null || v.status == status) &&
-                (
-                    q.isEmpty() ||
-                        (v.number?.contains(q, ignoreCase = true) ?: false) ||
-                        (v.referenceNumber?.contains(q, ignoreCase = true) ?: false) ||
-                        (v.partyId?.let { partiesById[it]?.name }?.contains(q, ignoreCase = true) ?: false)
-                    )
-        }
-    }
 }
 
 private val ALL_FROM = LocalDate(2000, 1, 1)
@@ -126,7 +114,7 @@ data class SalesSummary(val monthTotal: Money, val postedThisMonth: Int, val dra
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalCoroutinesApi::class)
 @Composable
 fun InvoiceListScreen(
     container: AppContainer,
@@ -150,19 +138,24 @@ fun InvoiceListScreen(
     val title = docType?.let { app.openbill.ui.money.DOC_LIST_TITLES[it] } ?: if (purchases) "Purchases" else "Invoices"
     val secondary = purchases || docType != null
     val firmId = session.firm.id
-    val vouchers by remember(firmId) { container.repositories.vouchers.observeVouchers(firmId, ALL_FROM, ALL_TO) }
-        .collectAsState(initial = null)
-    val parties by remember(firmId) { container.repositories.parties.observeParties(firmId) }.collectAsState(initial = emptyList())
-    // Removed (archived) parties drop out of the live list but their invoices still need a name.
-    val archivedParties = remember(firmId) { mutableStateMapOf<String, Party>() }
-    val partiesById = archivedParties + parties.associateBy { it.id }
-    val missingPartyIds = vouchers.orEmpty().mapNotNull { it.partyId }.filterNot { it in partiesById }.toSet()
-    LaunchedEffect(missingPartyIds) {
-        missingPartyIds.forEach { id -> container.repositories.parties.findParty(id)?.let { archivedParties[id] = it } }
-    }
+    val repos = container.repositories
     var query by rememberSaveable { mutableStateOf("") }
     var filterName by rememberSaveable { mutableStateOf(StatusFilter.ALL.name) }
     val filter = StatusFilter.valueOf(filterName)
+    // Paged: the newest `limit` matches, filtered and searched in SQL; grows as the list scrolls.
+    val limit = remember(firmId) { mutableIntStateOf(PAGE_SIZE) }
+    val vouchers by remember(firmId, types) {
+        snapshotFlow { Triple(query, StatusFilter.valueOf(filterName).status, limit.intValue) }
+            .flatMapLatest { (q, status, n) -> repos.vouchers.observeVoucherPage(firmId, types, status, q, n) }
+    }.collectAsState(initial = null)
+    val stats by remember(firmId, types) { repos.vouchers.observeVoucherStats(firmId, types, ALL_FROM, ALL_TO) }.collectAsState(initial = null)
+    val anyParty by remember(firmId) { repos.parties.observePartyPage(firmId, PartyType.entries.toSet(), "", 1) }.collectAsState(initial = emptyList())
+    // Names of the listed parties only, archived ones included, looked up as rows appear.
+    val partiesById = remember(firmId) { mutableStateMapOf<String, Party>() }
+    val missingPartyIds = vouchers.orEmpty().mapNotNull { it.partyId }.filterNot { it in partiesById }.toSet()
+    LaunchedEffect(missingPartyIds) {
+        missingPartyIds.forEach { id -> repos.parties.findParty(id)?.let { partiesById[id] = it } }
+    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val reduced = LocalReducedMotion.current
@@ -185,13 +178,14 @@ fun InvoiceListScreen(
         },
     ) { padding ->
         CenteredContent(Modifier.padding(padding)) {
-            val all = vouchers
-            if (all == null) {
+            val shown = vouchers
+            val counts = stats
+            if (shown == null || counts == null) {
                 LoadingState()
                 return@CenteredContent
             }
-            val sales = all.filter { it.type in types }
-            if (sales.isEmpty() && secondary) {
+            val total = counts.values.sumOf { it.count }
+            if (total == 0 && secondary) {
                 EmptyState(
                     Icons.Outlined.Create,
                     "No ${title.lowercase()} yet",
@@ -201,40 +195,44 @@ fun InvoiceListScreen(
                 )
                 return@CenteredContent
             }
-            if (sales.isEmpty()) {
+            if (total == 0) {
                 EmptyState(
                     Icons.Outlined.Create,
                     "No invoices yet",
-                    if (parties.isEmpty()) {
+                    if (anyParty.isEmpty()) {
                         "Add the customer you bill first, then create your first GST invoice."
                     } else {
                         "Create your first GST invoice. Pick items from your list or type a custom line."
                     },
                     Modifier.align(Alignment.Center),
                 ) {
-                    if (parties.isEmpty()) OutlinedButton(onClick = onAddParty) { Text("Add a party") }
+                    if (anyParty.isEmpty()) OutlinedButton(onClick = onAddParty) { Text("Add a party") }
                 }
                 return@CenteredContent
             }
-            val shown = InvoiceSearch.filter(sales, partiesById, query, filter.status, types)
-            val summary = remember(sales) { SalesSummary.of(sales, container.today()) }
+            GrowLimitOnScroll(listState, shown.size, limit)
             // Header rows scroll with the list so the list stays usable in landscape and at large font sizes.
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
-                if (!secondary) item(key = "summary") { SummaryCard(session.firm.name, summary) }
+                if (!secondary) item(key = "summary") { SummaryCard(container, session) }
                 if (onMoney != null) item(key = "money") { app.openbill.ui.money.MoneyDashboardCard(container, session, onMoney) }
                 if (onStock != null) item(key = "stock") { app.openbill.ui.inventory.StockDashboardCard(container, session, onStock) }
-                item(key = "search") { AppSearchBar(query, { query = it }, "Search number or party") }
+                item(key = "search") { AppSearchBar(query, { query = it; limit.intValue = PAGE_SIZE }, "Search number or party") }
                 item(key = "filters") {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
                         StatusFilter.entries.forEach { f ->
-                            val count = if (f.status == null) sales.size else sales.count { it.status == f.status }
-                            SelectableChip("${f.label} ($count)", filter == f, { filterName = f.name })
+                            val count = if (f.status == null) total else counts[f.status]?.count ?: 0
+                            SelectableChip("${f.label} ($count)", filter == f, { filterName = f.name; limit.intValue = PAGE_SIZE })
                         }
                         if (container.platform.supportsBulkPdf && shown.isNotEmpty()) {
-                            BulkPdfButtons(container, session, shown)
+                            val matches = when {
+                                query.isBlank() -> if (filter.status == null) total else counts[filter.status]?.count ?: 0
+                                shown.size < limit.intValue -> shown.size
+                                else -> null // more pages; counted when the export starts
+                            }
+                            BulkPdfButtons(container, session, types, filter.status, query, matches)
                         }
                     }
                 }
@@ -295,6 +293,20 @@ fun Monogram(name: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun SummaryCard(container: AppContainer, session: Session) {
+    val today = container.today()
+    val sale = setOf(VoucherType.SALE)
+    val firmId = session.firm.id
+    val month by remember(firmId, today.year, today.month) {
+        container.repositories.vouchers.observeVoucherStats(firmId, sale, LocalDate(today.year, today.month, 1), LocalDate(today.year, today.month, 1).plus(DatePeriod(months = 1, days = -1)))
+    }.collectAsState(initial = emptyMap())
+    val all by remember(firmId) { container.repositories.vouchers.observeVoucherStats(firmId, sale, ALL_FROM, ALL_TO) }.collectAsState(initial = emptyMap())
+    val posted = month[VoucherStatus.POSTED]
+    val summary = SalesSummary(posted?.total ?: Money.ZERO, posted?.count ?: 0, all[VoucherStatus.DRAFT]?.count ?: 0)
+    SummaryCard(session.firm.name, summary)
+}
+
+@Composable
 private fun SummaryCard(firmName: String, summary: SalesSummary) {
     Card(
         Modifier.fillMaxWidth().padding(horizontal = pageGutter, vertical = Spacing.sm),
@@ -325,18 +337,19 @@ private fun SummaryCard(firmName: String, summary: SalesSummary) {
  * or every invoice to one printer, with progress and cancellation.
  */
 @Composable
-private fun BulkPdfButtons(container: AppContainer, session: Session, shown: List<Voucher>) {
+private fun BulkPdfButtons(container: AppContainer, session: Session, types: Set<VoucherType>, status: VoucherStatus?, query: String, count: Int?) {
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
     var job by remember { mutableStateOf<Job?>(null) }
     var progress by remember { mutableStateOf(0 to 0) }
     fun run(print: Boolean) {
-        val list = shown.toList()
-        progress = 0 to list.size
         job = scope.launch {
+            // Every match, not just the loaded page; headers only, each loaded in full as it is laid out.
+            val list = container.repositories.vouchers.observeVoucherPage(session.firm.id, types, status, query, Int.MAX_VALUE).first()
+            progress = 0 to list.size
             val pdfs = list.map { v ->
                 val stem = pdfTitle(v.type, session.firm.gstin).replace(" ", "") + "-" + (v.number ?: v.id).replace(Regex("[^A-Za-z0-9_-]"), "_")
-                stem to suspend { InvoicePdf.layout(container, session.firm.id, buildInvoiceDocument(container, session, v)) }
+                stem to suspend { InvoicePdf.layout(container, session.firm.id, buildInvoiceDocument(container, session, container.repositories.vouchers.findVoucher(v.id) ?: v)) }
             }
             val msg = runCatching { container.platform.bulkPdf(pdfs, print) { done -> progress = done to list.size } }
                 .getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) "Stopped after ${progress.first} of ${list.size}" else e.message }
@@ -344,8 +357,8 @@ private fun BulkPdfButtons(container: AppContainer, session: Session, shown: Lis
             msg?.let { messages?.show(it) }
         }
     }
-    OutlinedButton(onClick = { run(print = false) }, enabled = job == null) { Text("Export ${shown.size} PDFs") }
-    OutlinedButton(onClick = { run(print = true) }, enabled = job == null) { Text("Print ${shown.size}") }
+    OutlinedButton(onClick = { run(print = false) }, enabled = job == null) { Text(if (count == null) "Export PDFs" else "Export $count PDFs") }
+    OutlinedButton(onClick = { run(print = true) }, enabled = job == null) { Text(if (count == null) "Print all" else "Print $count") }
     if (job != null && progress.second > 0) {
         AlertDialog(
             onDismissRequest = {},

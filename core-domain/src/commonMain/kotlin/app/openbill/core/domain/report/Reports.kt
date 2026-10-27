@@ -231,13 +231,12 @@ object Reports {
         val byItem = data.stock.groupBy { it.itemId }
         var totalValue = Money.ZERO
         val rows = data.items.filter { it.trackInventory && !it.isService }.sortedBy { it.name.lowercase() }.map { item ->
-            val moves = byItem[item.id].orEmpty()
-            fun qty(f: (app.openbill.core.domain.model.StockMovement) -> Boolean) = Quantity.ofScaledUnits(moves.filter(f).sumOf { it.quantity.scaledUnits })
-            val inRange = { m: app.openbill.core.domain.model.StockMovement -> m.date >= data.from && m.date <= data.to }
-            val opening = qty { it.date < data.from }
-            val inward = qty { inRange(it) && it.quantity.scaledUnits > 0 }
-            val outward = Quantity.ofScaledUnits(-qty { inRange(it) && it.quantity.scaledUnits < 0 }.scaledUnits)
-            val v = StockValuation.value(moves.filter { it.date <= data.to })
+            val t = data.stockTotals?.let { it[item.id] ?: StockValuation.periodTotals(emptyList(), data.from, data.to) }
+                ?: StockValuation.periodTotals(byItem[item.id].orEmpty(), data.from, data.to)
+            val opening = t.opening
+            val inward = t.inward
+            val outward = t.outward
+            val v = t.closing
             totalValue += v.value
             listOf(item.name, data.unitById[item.unitId]?.symbol.orEmpty(), opening.format(), inward.format(), outward.format(), v.quantity.format(), v.averageCost.cell(), v.value.cell())
         }
@@ -255,7 +254,8 @@ object Reports {
         val byItem = data.stock.filter { it.date <= data.to }.groupBy { it.itemId }
         val rows = data.items.filter { it.trackInventory && !it.isService && it.lowStockLevel != null }.mapNotNull { item ->
             val level = item.lowStockLevel!!
-            val onHand = Quantity.ofScaledUnits(byItem[item.id].orEmpty().sumOf { it.quantity.scaledUnits })
+            val onHand = data.stockTotals?.let { it[item.id]?.closing?.quantity ?: Quantity.of(0) }
+                ?: Quantity.ofScaledUnits(byItem[item.id].orEmpty().sumOf { it.quantity.scaledUnits })
             if (onHand > level) null else Triple(item, onHand, level)
         }.sortedWith(compareBy({ it.second.scaledUnits - it.third.scaledUnits }, { it.first.name.lowercase() }))
         return ReportTable(
@@ -269,10 +269,17 @@ object Reports {
     }
 
     /** Value of all inventory at the end of [through] (inclusive). */
-    fun stockValue(data: ReportData, through: kotlinx.datetime.LocalDate): Money =
-        data.stock.filter { it.date <= through }.groupBy { it.itemId }
+    fun stockValue(data: ReportData, through: kotlinx.datetime.LocalDate): Money {
+        data.stockTotals?.let { totals ->
+            // Only the two P&L dates are precomputed: the day before the period and its end.
+            require(through == data.to || through == data.from.minus(DatePeriod(days = 1))) { "No stock totals for $through" }
+            return totals.filterKeys { id -> data.itemById[id]?.let { it.trackInventory && !it.isService } ?: true }
+                .values.fold(Money.ZERO) { t, p -> t + if (through == data.to) p.closing.value else p.valueBeforeFrom }
+        }
+        return data.stock.filter { it.date <= through }.groupBy { it.itemId }
             .filterKeys { id -> data.itemById[id]?.let { it.trackInventory && !it.isService } ?: true }
             .values.fold(Money.ZERO) { t, list -> t + StockValuation.value(list).value }
+    }
 
     /**
      * Per item: net quantity sold, net sales value (taxable, credit notes negative), cost of goods
@@ -318,7 +325,8 @@ object Reports {
     /** Ledger-based trading and profit and loss account for the period. */
     fun profitLoss(data: ReportData): ReportTable {
         val inRange = data.journal.filter { it.entry.date >= data.from && it.entry.date <= data.to }
-        fun net(accountId: String) = inRange.filter { it.entry.accountId == accountId }.fold(Money.ZERO) { t, x -> t + x.entry.debit - x.entry.credit }
+        fun net(accountId: String) = data.accountNets?.let { it[accountId] ?: Money.ZERO }
+            ?: inRange.filter { it.entry.accountId == accountId }.fold(Money.ZERO) { t, x -> t + x.entry.debit - x.entry.credit }
         val sales = data.accounts.firstOrNull { it.code == AccountCode.SALES }?.let { -net(it.id) } ?: Money.ZERO
         val purchases = data.accounts.firstOrNull { it.code == AccountCode.PURCHASES }?.let { net(it.id) } ?: Money.ZERO
         val openingStock = stockValue(data, data.from.minus(DatePeriod(days = 1)))

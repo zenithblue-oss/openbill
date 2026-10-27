@@ -5,10 +5,21 @@ import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.ItemCategory
 import app.openbill.core.domain.model.UnitOfMeasure
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlin.time.Instant
 
 interface CatalogRepository {
     fun observeItems(firmId: String): Flow<List<Item>>
+
+    /** The first [limit] active items by name ([services] null = all) whose name, SKU, HSN/SAC or barcode contains [query]. */
+    fun observeItemPage(firmId: String, services: Boolean?, query: String, limit: Int): Flow<List<Item>> =
+        observeItems(firmId).map { all ->
+            val q = query.trim()
+            all.filter {
+                it.deletedAt == null && (services == null || it.isService == services) &&
+                    (q.isEmpty() || it.name.contains(q, true) || it.sku?.contains(q, true) == true || it.hsnSac?.contains(q) == true || it.barcode?.contains(q, true) == true)
+            }.take(limit)
+        }
 
     suspend fun findItem(id: String): Item?
 

@@ -11,6 +11,9 @@ import app.openbill.core.tax.TaxTreatment
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 
+/** Number of vouchers and the sum of their totals. */
+data class VoucherTally(val count: Int, val total: Money)
+
 data class VoucherLine(
     val id: String,
     val lineNumber: Int,

@@ -222,6 +222,15 @@ class InMemoryLedgerRepository(
         }.sortedBy { it.date }
     }
 
+    override fun observePartyBalances(firmId: String, asOf: LocalDate): Flow<Map<String, Money>> = combine(
+        parties?.observeParties(firmId) ?: flowOf(emptyList()),
+        observePartyMovements(firmId),
+    ) { partyValues, movements ->
+        val net = movements.filter { it.date <= asOf }.groupBy { it.partyId }
+            .mapValues { (_, l) -> l.fold(Money.ZERO) { t, m -> t + m.net } }
+        partyValues.filter { it.deletedAt == null }.associate { p -> p.id to signedOpening(p) + (net[p.id] ?: Money.ZERO) }
+    }
+
     override fun observeAccountBalances(firmId: String): Flow<Map<String, Money>> =
         combine(accounts, entries) { accountValues, entryValues ->
             accountValues.filter { it.firmId == firmId }.associate { a ->

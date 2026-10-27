@@ -14,6 +14,24 @@ data class ItemValuation(
     val averageCost: Money,
 )
 
+/** Per-godown balances and the item-wise valuation of one item, without the item. */
+data class StockPosition(
+    val byGodown: Map<String, Quantity>,
+    val valuation: ItemValuation,
+)
+
+/**
+ * One item's stock over a report period: quantities before, into and out of the period, the
+ * valuation through its end, and the value just before it starts (P&L opening stock).
+ */
+data class StockPeriodTotals(
+    val opening: Quantity,
+    val inward: Quantity,
+    val outward: Quantity,
+    val closing: ItemValuation,
+    val valueBeforeFrom: Money,
+)
+
 /** One item's stock position: per-godown balances plus the item-wise valuation. */
 data class ItemStock(
     val item: Item,
@@ -49,37 +67,80 @@ object StockValuation {
     }
 
     private inline fun walk(movements: List<StockMovement>, onEach: (StockMovement, Long) -> Unit): ItemValuation {
-        var quantity = 0L
-        var value = 0L
-        var average = 0L
+        val walker = Walker()
         val ordered = movements.sortedWith(compareBy<StockMovement> { it.date }.thenBy { it.createdAt }.thenBy { it.id })
-        for (m in ordered) {
-            val q = m.quantity.scaledUnits
-            val cost = m.unitCost?.paise ?: average
+        for (m in ordered) onEach(m, walker.add(m.quantity.scaledUnits, m.unitCost?.paise))
+        return walker.result()
+    }
+
+    /**
+     * The costing walk of one item, fed one movement at a time in movement order: scaled
+     * quantity and unit cost in paise (null = at the running average). Lets the data layer
+     * value millions of movements from a cursor without loading them.
+     */
+    class Walker {
+        private var quantity = 0L
+        private var value = 0L
+        private var average = 0L
+
+        /** Applies one movement; returns its value change in paise. */
+        fun add(scaledQuantity: Long, unitCostPaise: Long?): Long {
             val before = value
-            value += Rounding.multiplyDivide(q, cost, UNIT, RoundingMode.HALF_UP)
-            quantity += q
+            value += Rounding.multiplyDivide(scaledQuantity, unitCostPaise ?: average, UNIT, RoundingMode.HALF_UP)
+            quantity += scaledQuantity
             if (quantity <= 0L) {
                 value = 0L
             } else {
                 average = Rounding.multiplyDivide(value, UNIT, quantity, RoundingMode.HALF_UP)
             }
-            onEach(m, value - before)
+            return value - before
         }
-        return ItemValuation(Quantity.ofScaledUnits(quantity), Money.of(value), Money.of(average))
+
+        fun result() = ItemValuation(Quantity.ofScaledUnits(quantity), Money.of(value), Money.of(average))
     }
 
-    /** Stock positions for [items] (inventory items only), from all of the firm's movements. */
-    fun summarize(items: List<Item>, movements: List<StockMovement>): List<ItemStock> {
-        val byItem = movements.groupBy { it.itemId }
-        return items.filter { it.trackInventory && !it.isService }.map { item ->
-            val own = byItem[item.id].orEmpty()
-            ItemStock(
-                item = item,
-                byGodown = own.groupBy { it.godownId }
-                    .mapValues { (_, list) -> Quantity.ofScaledUnits(list.sumOf { it.quantity.scaledUnits }) },
-                valuation = value(own),
-            )
-        }
+    /** [StockPeriodTotals] of one item's movements for [from]..[to]. */
+    fun periodTotals(movements: List<StockMovement>, from: kotlinx.datetime.LocalDate, to: kotlinx.datetime.LocalDate): StockPeriodTotals {
+        val acc = PeriodWalk(from, to)
+        movements.sortedWith(compareBy<StockMovement> { it.date }.thenBy { it.createdAt }.thenBy { it.id })
+            .forEach { acc.add(it.date, it.quantity.scaledUnits, it.unitCost?.paise) }
+        return acc.result()
     }
+
+    /** [periodTotals] fed one movement at a time in movement order (cursor streaming). */
+    class PeriodWalk(private val from: kotlinx.datetime.LocalDate, private val to: kotlinx.datetime.LocalDate) {
+        private val walker = Walker()
+        private var opening = 0L
+        private var inward = 0L
+        private var outward = 0L
+        private var before = 0L
+
+        fun add(date: kotlinx.datetime.LocalDate, scaledQuantity: Long, unitCostPaise: Long?) {
+            if (date > to) return
+            if (date < from) opening += scaledQuantity else if (scaledQuantity > 0) inward += scaledQuantity else outward -= scaledQuantity
+            walker.add(scaledQuantity, unitCostPaise)
+            if (date < from) before = walker.result().value.paise
+        }
+
+        fun result() = StockPeriodTotals(
+            Quantity.ofScaledUnits(opening), Quantity.ofScaledUnits(inward), Quantity.ofScaledUnits(outward), walker.result(), Money.of(before),
+        )
+    }
+
+    /** One item's per-godown balances and valuation from all its movements. */
+    fun position(movements: List<StockMovement>): StockPosition = StockPosition(
+        byGodown = movements.groupBy { it.godownId }.mapValues { (_, list) -> Quantity.ofScaledUnits(list.sumOf { it.quantity.scaledUnits }) },
+        valuation = value(movements),
+    )
+
+    /** Stock positions for [items] (inventory items only), from all of the firm's movements. */
+    fun summarize(items: List<Item>, movements: List<StockMovement>): List<ItemStock> =
+        summarize(items, movements.groupBy { it.itemId }.mapValues { (_, own) -> position(own) })
+
+    /** Stock positions for [items] (inventory items only) from per-item [positions] (absent = no movements). */
+    fun summarize(items: List<Item>, positions: Map<String, StockPosition>): List<ItemStock> =
+        items.filter { it.trackInventory && !it.isService }.map { item ->
+            val p = positions[item.id] ?: position(emptyList())
+            ItemStock(item = item, byGodown = p.byGodown, valuation = p.valuation)
+        }
 }

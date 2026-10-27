@@ -149,7 +149,7 @@ fun ReportsScreen(
                             FilledTonalButton(enabled = !busy, onClick = {
                                 export {
                                     val month = ReportPeriod.monthOf(period.from)
-                                    val g = Gstr1.build(repos.loadReportData(session.firm.id, month))
+                                    val g = Gstr1.build(repos.loadReportData(session.firm.id, month, ReportKind.GSTR1))
                                     container.platform.saveTextFile("GSTR1-${session.firm.gstin.orEmpty()}-${month.returnPeriod}.json", g.toJson())
                                 }
                             }) { Text("GSTR-1 JSON") }
@@ -224,7 +224,7 @@ fun ReportScreen(
     var menu by remember { mutableStateOf(false) }
     val result by produceState<Result<ReportTable>?>(null, period, partyId) {
         value = null
-        value = runCatching { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period), partyId) }
+        value = runCatching { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind), partyId) }
     }
     val table = result?.getOrNull()
     val stem = "${kind.key}-${period.from}-${period.to}"

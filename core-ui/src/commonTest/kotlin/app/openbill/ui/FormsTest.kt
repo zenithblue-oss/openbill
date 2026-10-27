@@ -11,7 +11,6 @@ import app.openbill.ui.format.AmountInWords
 import app.openbill.ui.format.Fmt
 import app.openbill.ui.format.Parse
 import app.openbill.ui.forms.Validation
-import app.openbill.ui.invoice.InvoiceSearch
 import app.openbill.ui.more.SampleData
 import app.openbill.ui.parties.PartyForm
 import app.openbill.ui.parties.PartyRules
@@ -132,24 +131,5 @@ class FormsTest {
         assertEquals("Two Crore Rupees Only", AmountInWords.rupees(Money.parse("20000000")))
         assertEquals(LocalDate(2026, 4, 1), Parse.date("01-04-2026"))
         assertEquals(Rate.ofBasisPoints(1250), Parse.percent("12.5"))
-    }
-
-    @Test
-    fun invoiceSearchMatchesNumberAndPartyName() {
-        val at = Instant.fromEpochMilliseconds(1_700_000_000_000)
-        val party = Party(id = "p1", firmId = "f", name = "Lotus Stores", type = PartyType.CUSTOMER, createdAt = at, updatedAt = at)
-        fun v(id: String, number: String?, status: VoucherStatus) = Voucher(
-            id = id, firmId = "f", financialYearId = "fy", type = VoucherType.SALE, number = number,
-            date = LocalDate(2026, 10, 1), partyId = "p1", status = status, placeOfSupplyStateCode = "29",
-            postedAt = if (status != VoucherStatus.DRAFT) at else null,
-            cancelledAt = if (status == VoucherStatus.CANCELLED) at else null,
-            cancellationReason = if (status == VoucherStatus.CANCELLED) "dup" else null,
-            createdAt = at, updatedAt = at,
-        )
-        val list = listOf(v("a", "INV-0001", VoucherStatus.POSTED), v("b", null, VoucherStatus.DRAFT), v("c", "INV-0002", VoucherStatus.CANCELLED))
-        val parties = mapOf("p1" to party)
-        assertEquals(listOf("a"), InvoiceSearch.filter(list, parties, "0001", null).map { it.id })
-        assertEquals(3, InvoiceSearch.filter(list, parties, "lotus", null).size)
-        assertEquals(listOf("b"), InvoiceSearch.filter(list, parties, "", VoucherStatus.DRAFT).map { it.id })
     }
 }

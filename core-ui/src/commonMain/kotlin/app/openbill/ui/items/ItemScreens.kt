@@ -1,5 +1,10 @@
 package app.openbill.ui.items
 
+import kotlinx.coroutines.flow.flatMapLatest
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import app.openbill.ui.components.GrowLimitOnScroll
+import app.openbill.ui.components.PAGE_SIZE
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.unit.dp
@@ -102,13 +107,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 
-fun Item.matches(query: String): Boolean {
-    val q = query.trim()
-    if (q.isEmpty()) return true
-    return name.contains(q, true) || (hsnSac?.contains(q) ?: false) || (sku?.contains(q, true) ?: false) ||
-        (barcode?.contains(q, true) ?: false)
-}
-
 /** Selectable GST slabs on a date, from the versioned schedule in core-tax. */
 fun gstSlabsOn(date: LocalDate): List<Rate> =
     GstRateSchedules.standard.ratesOn(date).ifEmpty { listOf(Rate.ofPercent(0)) }
@@ -142,7 +140,7 @@ fun UnitSheet(units: List<UnitOfMeasure>, selectedId: String?, onPick: (UnitOfMe
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @Composable
 fun ItemListScreen(
     container: AppContainer,
@@ -151,11 +149,17 @@ fun ItemListScreen(
     onStock: (lowOnly: Boolean) -> Unit = {},
 ) {
     val firmId = session.firm.id
-    val items by remember(firmId) { container.repositories.catalog.observeItems(firmId) }.collectAsState(initial = null)
     val units by remember(firmId) { container.repositories.catalog.observeUnits(firmId) }.collectAsState(initial = emptyList())
     val unitById = units.associateBy { it.id }
     var query by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf(0) } // 0 all, 1 goods, 2 services
+    // Paged by name, searched in SQL; grows as the list scrolls.
+    val limit = remember(firmId) { mutableIntStateOf(PAGE_SIZE) }
+    val items by remember(firmId) {
+        snapshotFlow { Triple(query, kind, limit.intValue) }
+            .flatMapLatest { (q, k, n) -> container.repositories.catalog.observeItemPage(firmId, if (k == 0) null else k == 2, q, n) }
+    }.collectAsState(initial = null)
+    val anyItem by remember(firmId) { container.repositories.catalog.observeItemPage(firmId, null, "", 1) }.collectAsState(initial = null)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val reduced = LocalReducedMotion.current
@@ -174,12 +178,12 @@ fun ItemListScreen(
         },
     ) { padding ->
         CenteredContent(Modifier.padding(padding)) {
-            val list = items
-            if (list == null) {
+            val filtered = items
+            if (filtered == null || anyItem == null) {
                 LoadingState()
                 return@CenteredContent
             }
-            if (list.isEmpty()) {
+            if (anyItem.isNullOrEmpty()) {
                 EmptyState(
                     Icons.Outlined.ShoppingCart,
                     "No items yet",
@@ -188,22 +192,16 @@ fun ItemListScreen(
                 )
                 return@CenteredContent
             }
-            val filtered = list.filter {
-                it.matches(query) && when (kind) {
-                    1 -> !it.isService
-                    2 -> it.isService
-                    else -> true
-                }
-            }
+            GrowLimitOnScroll(listState, filtered.size, limit)
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
                 item(key = "stock") { StockDashboardCard(container, session, onStock) }
-                item(key = "search") { AppSearchBar(query, { query = it }, "Search name, HSN/SAC or barcode") }
+                item(key = "search") { AppSearchBar(query, { query = it; limit.intValue = PAGE_SIZE }, "Search name, HSN/SAC or barcode") }
                 item(key = "filters") {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
-                        listOf("All", "Goods", "Services").forEachIndexed { i, label -> SelectableChip(label, kind == i, { kind = i }) }
+                        listOf("All", "Goods", "Services").forEachIndexed { i, label -> SelectableChip(label, kind == i, { kind = i; limit.intValue = PAGE_SIZE }) }
                     }
                 }
                 if (filtered.isEmpty()) {

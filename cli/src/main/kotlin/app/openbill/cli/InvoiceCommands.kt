@@ -36,6 +36,7 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.file
+import com.github.ajalt.clikt.parameters.types.int
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDate
@@ -59,13 +60,18 @@ suspend fun Data.invoices(firmId: String, from: LocalDate = ALL_FROM, to: LocalD
         .filter { it.type == VoucherType.SALE && it.deletedAt == null }
         .sortedWith(compareBy({ it.date }, { it.number ?: "￿" }, { it.id }))
 
+/** Sale invoice headers (no lines), oldest first, matched in SQL like the app's list. */
+suspend fun Data.invoiceHeaders(firmId: String, status: VoucherStatus? = null, query: String = "", limit: Int = Int.MAX_VALUE): List<Voucher> =
+    repos.vouchers.observeVoucherPage(firmId, setOf(VoucherType.SALE), status, query, limit).first()
+        .sortedWith(compareBy({ it.date }, { it.number ?: "￿" }, { it.id }))
+
 /** By id or invoice number. */
 suspend fun Data.findInvoice(firmId: String, ref: String): Voucher =
     repos.vouchers.findVoucher(ref)?.takeIf { it.firmId == firmId && it.type == VoucherType.SALE }
-        ?: invoices(firmId).filter { it.number.equals(ref, true) }.let {
+        ?: invoiceHeaders(firmId, query = ref).filter { it.number.equals(ref, true) }.let {
             when (it.size) {
                 0 -> fail(Exit.NOT_FOUND, "No invoice '$ref'")
-                1 -> it.single()
+                1 -> repos.vouchers.findVoucher(it.single().id)!!
                 else -> fail(Exit.USAGE, "Invoice number '$ref' is ambiguous; use its id")
             }
         }
@@ -95,12 +101,17 @@ class InvoiceList(private val cli: CliState) : CliktCommand("list") {
     private val from by option("--from", help = "YYYY-MM-DD")
     private val to by option("--to", help = "YYYY-MM-DD")
     private val status by option("--status").choice("draft", "posted", "cancelled")
+    private val search by option("--search", help = "Number, reference or party name contains this")
+    private val limit by option("--limit", help = "Only the newest N matches").int()
 
     override fun run() = cli.withData(write = false) {
         val f = firm()
-        val list = invoices(f.id, from?.let(::parseDate) ?: ALL_FROM, to?.let(::parseDate) ?: ALL_TO)
-            .filter { status == null || it.status.name.equals(status, true) }
-        val names = parties(f.id).associate { it.id to it.name }
+        val fromDate = from?.let(::parseDate) ?: ALL_FROM
+        val toDate = to?.let(::parseDate) ?: ALL_TO
+        val list = invoiceHeaders(f.id, status?.let { VoucherStatus.valueOf(it.uppercase()) }, search.orEmpty(), limit ?: Int.MAX_VALUE)
+            .filter { it.date in fromDate..toDate }
+        val names = HashMap<String, String?>()
+        list.mapNotNull { it.partyId }.distinct().forEach { id -> names[id] = repos.parties.findParty(id)?.name }
         when {
             cli.json -> cli.printJson(toJson(list.map { invoiceJson(it, withLines = false) }))
             cli.quiet -> list.forEach { cli.out.println(it.number ?: it.id) }

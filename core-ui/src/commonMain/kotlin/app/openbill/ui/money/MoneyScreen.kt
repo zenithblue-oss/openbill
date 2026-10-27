@@ -1,5 +1,8 @@
 package app.openbill.ui.money
 
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -65,8 +68,7 @@ enum class MoneyCard { RECEIVABLE, PAYABLE, CASH_BANK }
 /** Dashboard card: to receive, to pay, and cash plus bank balances. */
 @Composable
 fun MoneyDashboardCard(container: AppContainer, session: Session, onOpen: (MoneyCard) -> Unit) {
-    val overview by rememberMoneyOverview(container, session.firm.id)
-    val o = overview ?: return
+    val o = rememberMoneyTotals(container, session.firm.id).value ?: return
     Card(
         Modifier.fillMaxWidth().padding(horizontal = pageGutter, vertical = Spacing.xs),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -105,16 +107,25 @@ fun MoneyScreen(
 ) {
     val firmId = session.firm.id
     val repos = container.repositories
-    val overview by rememberMoneyOverview(container, firmId)
+    // SQL totals and pages only: this tab is one click from home.
+    val overview by rememberMoneyTotals(container, firmId)
     val accounts by remember(firmId) { repos.ledger.observeAccounts(firmId) }.collectAsState(initial = emptyList())
-    val parties by remember(firmId) { repos.parties.observeParties(firmId) }.collectAsState(initial = emptyList())
-    val vouchers by remember(firmId) { repos.vouchers.observeVouchers(firmId, ALL_FROM, ALL_TO) }.collectAsState(initial = emptyList())
+    val recent by remember(firmId) {
+        repos.vouchers.observeVoucherPage(firmId, VoucherType.entries.filter { it.usesPaymentAccount() }.toSet(), null, "", 50)
+    }.collectAsState(initial = emptyList())
+    val docCounts by remember(firmId) {
+        combine(DOC_LIST_TITLES.keys.map { t -> repos.vouchers.observeVoucherStats(firmId, setOf(t), ALL_FROM, ALL_TO).map { s -> t to s.values.sumOf { it.count } } }) { it.toMap() }
+    }.collectAsState(initial = emptyMap())
+    // Names of the listed vouchers' parties only.
+    val partyNames = remember(firmId) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    LaunchedEffect(recent) {
+        recent.mapNotNull { it.partyId }.distinct().filterNot { it in partyNames }
+            .forEach { id -> repos.parties.findParty(id)?.let { partyNames[id] = it.name } }
+    }
     var editing by remember { mutableStateOf<Account?>(null) }
     var adding by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val names = accounts.associate { it.id to it.name } + parties.associate { it.id to it.name }
-    val recent = vouchers.filter { it.type.usesPaymentAccount() && it.deletedAt == null }
-        .sortedWith(compareByDescending<Voucher> { it.date }.thenByDescending { it.createdAt }).take(50)
+    val names = accounts.associate { it.id to it.name } + partyNames
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -184,7 +195,7 @@ fun MoneyScreen(
                 items(listOf(VoucherType.QUOTATION, VoucherType.PROFORMA, VoucherType.DELIVERY_CHALLAN), key = { "doc-" + it.name }) { t ->
                     ListItem(
                         headlineContent = { Text(DOC_LIST_TITLES.getValue(t)) },
-                        supportingContent = { Text("${vouchers.count { it.type == t }} documents") },
+                        supportingContent = { Text("${docCounts[t] ?: 0} documents") },
                         modifier = Modifier.clickable { onDocuments(t) },
                     )
                 }

@@ -19,6 +19,10 @@ import app.openbill.ui.AppContainer
 import app.openbill.ui.format.Fmt
 import app.openbill.ui.pdf.InvoiceLayoutEngine
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
 
 /** One party's position: signed balance (positive = they owe us) and its ageing. */
@@ -61,7 +65,31 @@ data class MoneyOverview(
 
 val AccountType.isMoney: Boolean get() = this == AccountType.CASH || this == AccountType.BANK
 
-/** Live [MoneyOverview] for the firm. */
+/** Home card and Money tab figures, from SQL aggregates rather than the movement history. */
+data class MoneyTotals(val receivable: Money, val payable: Money, val moneyAccounts: List<Pair<Account, Money>>) {
+    val cashAndBank: Money get() = moneyAccounts.fold(Money.ZERO) { t, (_, b) -> t + b }
+}
+
+/** Live [MoneyTotals]: per-party balances grouped in SQL, and each cash/bank account's net. */
+@OptIn(ExperimentalCoroutinesApi::class)
+@Composable
+fun rememberMoneyTotals(container: AppContainer, firmId: String): State<MoneyTotals?> = remember(firmId) {
+    val repos = container.repositories
+    val money = repos.ledger.observeAccounts(firmId).flatMapLatest { all ->
+        val list = all.filter { it.type.isMoney }
+        if (list.isEmpty()) flowOf(emptyList())
+        else combine(list.map { a -> repos.ledger.observeAccountNet(a.id).map { a to a.openingBalance + it.first } }) { it.toList() }
+    }
+    combine(repos.ledger.observePartyBalances(firmId, container.today()), money) { balances, accounts ->
+        MoneyTotals(
+            receivable = balances.values.fold(Money.ZERO) { t, b -> if (b > Money.ZERO) t + b else t },
+            payable = balances.values.fold(Money.ZERO) { t, b -> if (b < Money.ZERO) t - b else t },
+            moneyAccounts = accounts,
+        )
+    }
+}.collectAsState(initial = null)
+
+/** Live [MoneyOverview] for the firm (with ageing: loads every receivable/payable movement). */
 @Composable
 fun rememberMoneyOverview(container: AppContainer, firmId: String): State<MoneyOverview?> = remember(firmId) {
     val repos = container.repositories

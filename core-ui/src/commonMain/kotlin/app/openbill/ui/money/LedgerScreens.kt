@@ -1,5 +1,11 @@
 package app.openbill.ui.money
 
+import kotlinx.coroutines.flow.flatMapLatest
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import app.openbill.ui.components.GrowLimitOnScroll
+import app.openbill.ui.components.PAGE_SIZE
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +59,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 
 /** Cash or bank account: balance, running statement and manual reconciliation (bank). */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @Composable
 fun AccountScreen(
     container: AppContainer,
@@ -64,7 +71,13 @@ fun AccountScreen(
     val repos = container.repositories
     val scope = rememberCoroutineScope()
     val accounts by remember { repos.ledger.observeAccounts(session.firm.id) }.collectAsState(initial = null)
-    val txns by remember(accountId) { repos.ledger.observeAccountTransactions(accountId) }.collectAsState(initial = null)
+    // Newest lines first, a page at a time; balances come from SQL totals, not the loaded rows.
+    val limit = remember(accountId) { mutableIntStateOf(PAGE_SIZE) }
+    val txns by remember(accountId) {
+        snapshotFlow { limit.intValue }.flatMapLatest { n -> repos.ledger.observeAccountTransactionsPage(accountId, n) }
+    }.collectAsState(initial = null)
+    val net by remember(accountId) { repos.ledger.observeAccountNet(accountId) }.collectAsState(initial = null)
+    val listState = rememberLazyListState()
     var editing by remember { mutableStateOf(false) }
     val account = accounts?.firstOrNull { it.id == accountId }
     Scaffold(
@@ -76,20 +89,24 @@ fun AccountScreen(
         snackbarHost = { AppSnackbarHost() },
     ) { padding ->
         val list = txns
-        if (account == null || list == null) {
+        val totals = net
+        if (account == null || list == null || totals == null) {
             LoadingState(Modifier.padding(padding))
             return@Scaffold
         }
         val bank = account.type == AccountType.BANK
-        var running = account.openingBalance
-        val rows = list.map { t -> running += t.entry.debit - t.entry.credit; t to running }
-        val cleared = list.filter { it.entry.clearedOn != null }.fold(account.openingBalance) { b, t -> b + t.entry.debit - t.entry.credit }
+        val balance = account.openingBalance + totals.first
+        // Balance after each line, walking back from the current balance.
+        var after = balance
+        val rows = list.map { t -> (t to after).also { after -= t.entry.debit - t.entry.credit } }
+        val cleared = account.openingBalance + totals.second
+        GrowLimitOnScroll(listState, list.size, limit)
         CenteredContent(Modifier.padding(padding)) {
-            LazyColumn(contentPadding = PaddingValues(bottom = Spacing.xl)) {
+            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.xl)) {
                 item {
                     Column(Modifier.padding(horizontal = pageGutter, vertical = Spacing.sm)) {
                         AmountRow("Opening balance", Fmt.inrSigned(account.openingBalance))
-                        AmountRow("Balance", Fmt.inrSigned(running), emphasize = true)
+                        AmountRow("Balance", Fmt.inrSigned(balance), emphasize = true)
                         if (bank) {
                             AmountRow("Cleared (as per bank)", Fmt.inrSigned(cleared))
                             Text(
@@ -101,7 +118,7 @@ fun AccountScreen(
                     }
                 }
                 if (rows.isEmpty()) item { SectionHeader("No transactions yet", Modifier.padding(horizontal = pageGutter)) }
-                items(rows.reversed(), key = { it.first.entry.id }) { (t, balance) ->
+                items(rows, key = { it.first.entry.id }) { (t, balance) ->
                     val e = t.entry
                     ListItem(
                         leadingContent = if (bank) {

@@ -92,8 +92,6 @@ import kotlinx.datetime.LocalDate
 
 /** Inventory helpers shared by the stock screens, the item editor and the invoice editor. */
 object Inventory {
-    private val ALL_FROM = LocalDate(2000, 1, 1)
-    private val ALL_TO = LocalDate(2099, 12, 31)
 
     /**
      * Batches with stock in [godownId] (any godown when null) for picking on an outward line,
@@ -144,9 +142,6 @@ object Inventory {
         }
         return listOfNotNull(kind, v.number).joinToString(" · ")
     }
-
-    internal fun allVouchers(container: AppContainer, firmId: String) =
-        container.repositories.vouchers.observeVouchers(firmId, ALL_FROM, ALL_TO)
 }
 
 /** Live stock positions of every inventory item of the firm. */
@@ -154,8 +149,8 @@ object Inventory {
 fun rememberStock(container: AppContainer, firmId: String): State<List<ItemStock>?> = remember(firmId) {
     combine(
         container.repositories.catalog.observeItems(firmId),
-        container.repositories.stock.observeFirmMovements(firmId),
-    ) { items, movements -> StockValuation.summarize(items, movements) }
+        container.repositories.stock.observeStockPositions(firmId),
+    ) { items, positions -> StockValuation.summarize(items, positions) }
 }.collectAsState(initial = null)
 
 @Composable
@@ -308,10 +303,14 @@ fun ItemStockScreen(
     val godowns by remember { repos.catalog.observeGodowns(firmId) }.collectAsState(initial = emptyList())
     val batches by remember(itemId) { repos.stock.observeBatches(itemId) }.collectAsState(initial = emptyList())
     val serials by remember(itemId) { repos.stock.observeSerials(itemId) }.collectAsState(initial = emptyList())
-    val vouchers by remember { Inventory.allVouchers(container, firmId) }.collectAsState(initial = emptyList())
+    // Only the vouchers behind this item's movements, looked up as they appear.
+    val voucherById = remember(itemId) { androidx.compose.runtime.mutableStateMapOf<String, Voucher>() }
+    androidx.compose.runtime.LaunchedEffect(movements) {
+        movements.map { it.voucherId }.distinct().filterNot { it in voucherById }
+            .forEach { id -> repos.vouchers.findVoucher(id)?.let { voucherById[id] = it } }
+    }
     val item = items?.firstOrNull { it.id == itemId }
     val godownName = godowns.associate { it.id to it.name }
-    val voucherById = vouchers.associateBy { it.id }
     Scaffold(
         topBar = {
             AppTopBar(item?.name ?: "Item stock", onBack = onBack) {

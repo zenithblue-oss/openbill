@@ -39,13 +39,13 @@ fun tallyCommands(cli: CliState) = Group("tally", "Tally-compatible export").sub
 fun auditCommands(cli: CliState) = Group("audit", "Append-only audit trail").subcommands(AuditList(cli))
 
 /** Loads the snapshot for `--from/--to` (default: the current financial year). */
-private suspend fun Data.reportData(from: String?, to: String?): ReportData {
+private suspend fun Data.reportData(from: String?, to: String?, kind: ReportKind? = null): ReportData {
     val f = firm()
     val today = now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val fy = ReportPeriod.financialYearOf(today, repos.firms.findSettings(f.id)?.financialYearStartMonth ?: 4)
     val period = runCatching { ReportPeriod(from?.let(::parseDate) ?: fy.from, to?.let(::parseDate) ?: fy.to) }
         .getOrElse { fail(Exit.USAGE, it.message ?: "Invalid period") }
-    return repos.loadReportData(f.id, period)
+    return repos.loadReportData(f.id, period, kind)
 }
 
 /** Writes [text] to [out] (reporting the path) or stdout. */
@@ -98,7 +98,7 @@ open class ReportNamed(private val cli: CliState, private val fixed: ReportKind?
 
     override fun run() = cli.withData(write = false) {
         val kind = ReportKind.of(kindKey)!!
-        val data = reportData(from, to)
+        val data = reportData(from, to, kind)
         val partyId = party?.let { p ->
             data.parties.filter { it.id == p || it.name.equals(p, true) }.singleOrNull()?.id ?: fail(Exit.NOT_FOUND, "No single party matches '$p'")
         }
@@ -123,7 +123,7 @@ class PeriodReport(private val cli: CliState, name: String, private val kind: Re
 
     override fun run() = cli.withData(write = false) {
         val p = period?.let { runCatching { ReportPeriod.month(it) }.getOrElse { e -> fail(Exit.USAGE, e.message!!) } }
-        val data = reportData(p?.from?.toString() ?: from, p?.to?.toString() ?: to)
+        val data = reportData(p?.from?.toString() ?: from, p?.to?.toString() ?: to, kind)
         cli.render(Reports.run(kind, data), if (cli.json && format == "table") "json" else format, out, data.period)
     }
 }
@@ -137,7 +137,7 @@ class Gstr1Cmd(private val cli: CliState) : CliktCommand("gstr1") {
 
     override fun run() = cli.withData(write = false) {
         val p = runCatching { ReportPeriod.month(period) }.getOrElse { fail(Exit.USAGE, it.message!!) }
-        val data = reportData(p.from.toString(), p.to.toString())
+        val data = reportData(p.from.toString(), p.to.toString(), ReportKind.GSTR1)
         val g = Gstr1.build(data)
         if (format == "json") {
             if (data.firm.gstin.isNullOrBlank()) fail(Exit.VALIDATION, "The firm has no GSTIN; GSTR-1 needs one")

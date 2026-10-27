@@ -1,5 +1,6 @@
 package app.openbill.ui.setup
 
+import app.openbill.core.domain.model.VoucherType
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -71,10 +72,11 @@ class BusinessEditModel(
             val f = repos.findFirm(firmId) ?: return@launch
             firm = f
             settings = repos.findSettings(firmId)
+            // Counts in SQL instead of loading every voucher.
             stateLocked = container.repositories.vouchers
-                .observeVouchers(firmId, LocalDate(2000, 1, 1), LocalDate(2099, 12, 31))
+                .observeVoucherStats(firmId, VoucherType.entries.toSet(), LocalDate(2000, 1, 1), LocalDate(2099, 12, 31))
                 .first()
-                .any { it.status != VoucherStatus.DRAFT }
+                .any { (status, tally) -> status != VoucherStatus.DRAFT && tally.count > 0 }
             val form = FirmSetupRules.formFor(f, settings)
             baseline = form
             _state.value = form

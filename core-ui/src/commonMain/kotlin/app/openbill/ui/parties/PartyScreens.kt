@@ -89,12 +89,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-fun Party.matches(query: String): Boolean {
-    val q = query.trim()
-    if (q.isEmpty()) return true
-    return name.contains(q, true) || (phone?.contains(q) ?: false) || (gstin?.contains(q, true) ?: false)
-}
+import kotlinx.coroutines.flow.flatMapLatest
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import app.openbill.ui.components.GrowLimitOnScroll
+import app.openbill.ui.components.PAGE_SIZE
 
 /** List filter by party role; "Both" parties appear under customers and suppliers. */
 enum class PartyFilter(val label: String) {
@@ -102,11 +101,13 @@ enum class PartyFilter(val label: String) {
     CUSTOMERS("Customers"),
     SUPPLIERS("Suppliers");
 
-    fun matches(party: Party): Boolean = when (this) {
-        ALL -> true
-        CUSTOMERS -> party.type == PartyType.CUSTOMER || party.type == PartyType.BOTH
-        SUPPLIERS -> party.type == PartyType.SUPPLIER || party.type == PartyType.BOTH
+    val types: Set<PartyType> get() = when (this) {
+        ALL -> PartyType.entries.toSet()
+        CUSTOMERS -> setOf(PartyType.CUSTOMER, PartyType.BOTH)
+        SUPPLIERS -> setOf(PartyType.SUPPLIER, PartyType.BOTH)
     }
+
+    fun matches(party: Party): Boolean = party.type in types
 }
 
 /** One-line summary for list rows and pickers: "98xxxxxx · 29AAGFN… · Karnataka". */
@@ -115,18 +116,25 @@ fun Party.summaryLine(): String =
         .joinToString(" · ")
         .ifEmpty { "No contact details" }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @Composable
 fun PartyListScreen(
     container: AppContainer,
     session: Session,
     onOpen: (String?) -> Unit,
 ) {
-    val parties by remember(session.firm.id) { container.repositories.parties.observeParties(session.firm.id) }
-        .collectAsState(initial = null)
     var query by rememberSaveable { mutableStateOf("") }
     var filterName by rememberSaveable { mutableStateOf(PartyFilter.ALL.name) }
     val filter = PartyFilter.valueOf(filterName)
+    // Paged by name, searched in SQL; grows as the list scrolls.
+    val limit = remember(session.firm.id) { mutableIntStateOf(PAGE_SIZE) }
+    val parties by remember(session.firm.id) {
+        snapshotFlow { Triple(query, PartyFilter.valueOf(filterName).types, limit.intValue) }
+            .flatMapLatest { (q, types, n) -> container.repositories.parties.observePartyPage(session.firm.id, types, q, n) }
+    }.collectAsState(initial = null)
+    val anyParty by remember(session.firm.id) {
+        container.repositories.parties.observePartyPage(session.firm.id, PartyType.entries.toSet(), "", 1)
+    }.collectAsState(initial = null)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val reduced = LocalReducedMotion.current
@@ -145,12 +153,12 @@ fun PartyListScreen(
         },
     ) { padding ->
         CenteredContent(Modifier.padding(padding)) {
-            val list = parties
-            if (list == null) {
+            val filtered = parties
+            if (filtered == null || anyParty == null) {
                 LoadingState()
                 return@CenteredContent
             }
-            if (list.isEmpty()) {
+            if (anyParty.isNullOrEmpty()) {
                 EmptyState(
                     Icons.Outlined.Person,
                     "No parties yet",
@@ -159,15 +167,15 @@ fun PartyListScreen(
                 )
                 return@CenteredContent
             }
-            val filtered = list.filter { filter.matches(it) && it.matches(query) }
+            GrowLimitOnScroll(listState, filtered.size, limit)
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
-                item(key = "search") { AppSearchBar(query, { query = it }, "Search name, phone or GSTIN") }
+                item(key = "search") { AppSearchBar(query, { query = it; limit.intValue = PAGE_SIZE }, "Search name, phone or GSTIN") }
                 item(key = "filters") {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
-                        PartyFilter.entries.forEach { f -> SelectableChip(f.label, filter == f, { filterName = f.name }) }
+                        PartyFilter.entries.forEach { f -> SelectableChip(f.label, filter == f, { filterName = f.name; limit.intValue = PAGE_SIZE }) }
                     }
                 }
                 if (filtered.isEmpty()) {

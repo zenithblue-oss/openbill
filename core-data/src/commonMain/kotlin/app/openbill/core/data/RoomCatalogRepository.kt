@@ -21,6 +21,9 @@ class RoomCatalogRepository(
     override fun observeItems(firmId: String): Flow<List<Item>> =
         items.observeActive(firmId).map { values -> values.map { it.toDomain() } }
 
+    override fun observeItemPage(firmId: String, services: Boolean?, query: String, limit: Int): Flow<List<Item>> =
+        items.observePage(firmId, services, query.trim(), limit).map { values -> values.map { it.toDomain() } }
+
     override suspend fun findItem(id: String): Item? = items.findById(id)?.toDomain()
 
     override suspend fun saveItem(item: Item) {

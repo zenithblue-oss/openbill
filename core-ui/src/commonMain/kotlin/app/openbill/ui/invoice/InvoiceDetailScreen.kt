@@ -1,5 +1,6 @@
 package app.openbill.ui.invoice
 
+import app.openbill.core.domain.model.AccountCode
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.ListItem
 import androidx.compose.runtime.produceState
@@ -93,8 +94,10 @@ suspend fun buildInvoiceDocument(container: AppContainer, session: Session, vouc
     val doc = InvoiceDocument.build(voucher, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
     if (party == null || voucher.status != VoucherStatus.POSTED || !container.invoiceStyles.style(firm.id).value.options.showPartyBalance) return doc
     val current = repos.ledger.partyBalance(firm.id, party.id, voucher.date).net
-    val effect = repos.ledger.observePartyMovements(firm.id).first()
-        .filter { it.voucherId == voucher.id }.fold(Money.ZERO) { a, m -> a + m.net }
+    // This voucher's own receivable/payable lines, not the firm's whole movement history.
+    val control = listOfNotNull(repos.ledger.findAccount(firm.id, AccountCode.AR), repos.ledger.findAccount(firm.id, AccountCode.AP)).map { it.id }.toSet()
+    val effect = repos.ledger.journalEntriesForVoucher(voucher.id)
+        .filter { it.accountId in control }.fold(Money.ZERO) { a, e -> a + e.debit - e.credit }
     fun drCr(m: Money) = Fmt.inr(if (m < Money.ZERO) -m else m) + if (m < Money.ZERO) " Cr" else " Dr"
     return doc.copy(partyBalance = "Previous balance ${drCr(current - effect)} · Current balance ${drCr(current)}")
 }
