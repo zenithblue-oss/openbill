@@ -3,6 +3,17 @@
 All notable changes to OpenBill. Versions follow the git tags; release notes live in
 [docs/releases](docs/releases).
 
+## 1.0.1 - 2026-10-27
+
+Update notice and What's new; see [docs/releases/v1.0.1.md](docs/releases/v1.0.1.md).
+
+- Update notice (desktop): once a day OpenBill asks GitHub for the latest release number and shows
+  a dismissible banner when a newer version exists. Nothing is downloaded or installed. Turn it
+  off under More > About > Check for updates. Android has no network permission, so it never
+  checks and hides the setting.
+- What's new: after an update, the changes for the running version are shown once. Reopen them
+  any time from More > About > What's new. Fresh installs do not show it.
+
 ## 1.0.0 - 2026-10-27
 
 First stable release. Scale work on top of 0.3.0-alpha; see

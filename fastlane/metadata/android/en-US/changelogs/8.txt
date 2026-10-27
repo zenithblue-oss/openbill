@@ -1,0 +1,2 @@
+New: What's new is shown once after an update and can be reopened from More > About.
+Desktop only: optional daily check for a newer release, with a dismissible banner. Android never checks.

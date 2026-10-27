@@ -55,8 +55,8 @@ android {
         applicationId = "com.zenithblue.openbill"
         minSdk = libs.versions.min.sdk.get().toInt()
         targetSdk = libs.versions.target.sdk.get().toInt()
-        versionCode = 7
-        versionName = "1.0.0"
+        versionCode = 8
+        versionName = "1.0.1"
     }
 
     signingConfigs {

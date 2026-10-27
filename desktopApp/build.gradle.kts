@@ -40,7 +40,7 @@ compose.desktop {
             // Each format only builds on its own OS (jpackage); the host ignores others.
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.AppImage)
             packageName = "OpenBill"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
             description = "Offline-first GST billing and accounting"
             vendor = "OpenBill contributors"
             copyright = "Copyright (c) OpenBill contributors"
