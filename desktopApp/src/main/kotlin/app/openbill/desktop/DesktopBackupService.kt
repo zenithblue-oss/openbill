@@ -56,7 +56,8 @@ internal class DesktopBackupService(
             { "Backup restored. The previous data is kept in\n$it\n\nOpenBill will now close; start it again." },
             { "Restore failed and your data was left as it was:\n${it.message}\n\nOpenBill will now close; start it again." },
         )
-        EventQueue.invokeAndWait { JOptionPane.showMessageDialog(Frame.getFrames().firstOrNull { it.isVisible }, text, "OpenBill", JOptionPane.INFORMATION_MESSAGE) }
+        // Off the EDT: restore() runs on the UI dispatcher, where invokeAndWait throws and the app would carry on with a closed database.
+        withContext(Dispatchers.IO) { EventQueue.invokeAndWait { JOptionPane.showMessageDialog(Frame.getFrames().firstOrNull { it.isVisible }, text, "OpenBill", JOptionPane.INFORMATION_MESSAGE) } }
         exitProcess(0)
     }
 
