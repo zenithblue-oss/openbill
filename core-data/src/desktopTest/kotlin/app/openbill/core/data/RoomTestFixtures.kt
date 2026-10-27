@@ -105,7 +105,7 @@ internal fun testParty(
     name: String = "Acme Traders",
     addresses: List<PartyAddress> = listOf(
         testAddress("address-1", AddressKind.BILLING, isDefault = true),
-        testAddress("address-2", AddressKind.SHIPPING, city = "Mumbai"),
+        testAddress("address-2", AddressKind.SHIPPING, city = "Mumbai").copy(gstin = "27AAPFU0939F1ZV"),
     ),
 ): Party = Party(
     id = id,

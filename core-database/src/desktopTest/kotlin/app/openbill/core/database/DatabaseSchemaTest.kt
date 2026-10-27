@@ -48,7 +48,7 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(8, OPENBILL_DATABASE_VERSION)
+        assertEquals(9, OPENBILL_DATABASE_VERSION)
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
@@ -57,8 +57,9 @@ class DatabaseSchemaTest {
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/6.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/7.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/8.json").exists())
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/9.json").exists())
 
-        helper.createDatabase(8).use { connection ->
+        helper.createDatabase(9).use { connection ->
             val tables = mutableListOf<String>()
             connection.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' " +
@@ -318,7 +319,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(7, migrations.size)
+        assertEquals(8, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -330,7 +331,8 @@ class DatabaseSchemaTest {
         assertEquals(6, migrations[4].endVersion)
         assertEquals(7, migrations[5].endVersion)
         assertEquals(8, migrations[6].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(8).isEmpty())
+        assertEquals(9, migrations[7].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(9).isEmpty())
     }
 
     @Test
@@ -391,6 +393,21 @@ class DatabaseSchemaTest {
                 assertTrue(it.step())
                 assertTrue(it.isNull(0))
             }
+        }
+    }
+
+    @Test
+    fun schemaV8MigratesToV9WithEmptyShipToGstinAndAlternateUnit() {
+        helper.createDatabase(8).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(9, DatabaseMigrations.migrationsFor(8)).use { connection ->
+            connection.prepare("SELECT COUNT(*) FROM firms").use { assertTrue(it.step()); assertEquals(1L, it.getLong(0)) }
+            connection.execSQL("UPDATE party_addresses SET gstin = NULL")
+            connection.execSQL("UPDATE items SET alternateUnitId = NULL, alternateUnitFactor = NULL")
         }
     }
 

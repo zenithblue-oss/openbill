@@ -14,6 +14,8 @@ data class PartyAddress(
     val pincode: String? = null,
     val country: String = "IN",
     val isDefault: Boolean = false,
+    /** Ship-to GSTIN (shipping addresses); null = unregistered site or the party's own GSTIN. */
+    val gstin: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "PartyAddress id cannot be blank" }
@@ -48,8 +50,8 @@ data class Party(
         require(addresses.map { it.id }.distinct().size == addresses.size) {
             "Party address ids must be unique"
         }
-        require(addresses.count { it.isDefault } <= 1) {
-            "Party can have at most one default address"
+        require(addresses.groupBy { it.kind }.values.all { list -> list.count { it.isDefault } <= 1 }) {
+            "Party can have at most one default address of each kind"
         }
         require(updatedAt >= createdAt) { "Party updatedAt cannot precede createdAt" }
     }

@@ -119,6 +119,8 @@ data class PartyAddressEntity(
     val country: String,
     val isDefault: Boolean,
     @Embedded val sync: SyncMetadata,
+    /** Ship-to GSTIN of a shipping address; null = unregistered or same as the party. */
+    @ColumnInfo(defaultValue = "NULL") val gstin: String? = null,
 )
 
 @Entity(
@@ -254,6 +256,9 @@ data class ItemEntity(
     val notes: String?,
     @Embedded val sync: SyncMetadata,
     @ColumnInfo(defaultValue = "NULL") val barcode: String? = null,
+    /** Optional second unit and how many primary units (scaled quantity) one of it holds. */
+    @ColumnInfo(defaultValue = "NULL") val alternateUnitId: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val alternateUnitFactor: Long? = null,
 )
 
 @Entity(

@@ -227,6 +227,7 @@ internal fun PartyAddressEntity.toDomain(): PartyAddress = PartyAddress(
     pincode = pincode,
     country = country,
     isDefault = isDefault,
+    gstin = gstin,
 )
 
 internal fun PartyAddress.toEntity(
@@ -245,6 +246,7 @@ internal fun PartyAddress.toEntity(
     pincode = pincode,
     country = country,
     isDefault = isDefault,
+    gstin = gstin,
     sync = syncFor(
         createdAt = party.createdAt,
         updatedAt = party.updatedAt,
@@ -333,6 +335,8 @@ internal fun ItemEntity.toDomain(): Item = Item(
     trackSerial = trackSerial,
     lowStockLevel = lowStockLevel?.let(Quantity::ofScaledUnits),
     notes = notes,
+    alternateUnitId = alternateUnitId,
+    alternateUnitFactor = alternateUnitFactor?.let(Quantity::ofScaledUnits),
     createdAt = sync.createdAt.toInstant(),
     updatedAt = sync.updatedAt.toInstant(),
     deletedAt = sync.deletedAt?.toInstant(),
@@ -360,6 +364,8 @@ internal fun Item.toEntity(existing: ItemEntity?): ItemEntity = ItemEntity(
     lowStockLevel = lowStockLevel?.scaledUnits,
     notes = notes,
     sync = syncFor(createdAt, updatedAt, deletedAt, existing?.sync),
+    alternateUnitId = alternateUnitId,
+    alternateUnitFactor = alternateUnitFactor?.scaledUnits,
 )
 
 internal fun VoucherEntity.toDomain(

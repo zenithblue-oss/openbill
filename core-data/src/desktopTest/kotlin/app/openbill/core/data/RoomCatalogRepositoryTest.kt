@@ -36,7 +36,7 @@ class RoomCatalogRepositoryTest {
         val unit = testUnit()
         val category = testCategory()
         val godown = testGodown()
-        val item = testItem()
+        val item = testItem().copy(alternateUnitId = "unit-box", alternateUnitFactor = app.openbill.core.model.Quantity.of(12))
 
         repository.saveUnit(unit)
         repository.saveCategory(category)

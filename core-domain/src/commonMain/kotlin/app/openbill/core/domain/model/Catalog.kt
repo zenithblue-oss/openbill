@@ -80,6 +80,10 @@ data class Item(
     val trackSerial: Boolean = false,
     val lowStockLevel: Quantity? = null,
     val notes: String? = null,
+    /** Optional second unit (box, dozen); stock and lines stay in [unitId]. */
+    val alternateUnitId: String? = null,
+    /** Primary units in one [alternateUnitId]. */
+    val alternateUnitFactor: Quantity? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
     val deletedAt: Instant? = null,
@@ -93,6 +97,9 @@ data class Item(
         require(purchasePrice >= Money.ZERO) { "Item purchase price cannot be negative" }
         require(!trackBatch || trackInventory) { "Batch tracking requires inventory tracking" }
         require(!trackSerial || trackInventory) { "Serial tracking requires inventory tracking" }
+        require((alternateUnitId == null) == (alternateUnitFactor == null)) { "Alternate unit and its conversion go together" }
+        require(alternateUnitFactor == null || alternateUnitFactor.scaledUnits > 0) { "Alternate unit conversion must be above zero" }
+        require(alternateUnitId == null || alternateUnitId != unitId) { "Alternate unit must differ from the unit" }
         require(updatedAt >= createdAt) { "Item updatedAt cannot precede createdAt" }
     }
 }
