@@ -72,7 +72,7 @@ android {
 
     buildTypes {
         release {
-            // R8 is intentionally off for 0.1.0: no app-level keep rules exist yet and a
+            // R8 is intentionally off for now: no app-level keep rules exist yet and a
             // minified build cannot be verified here. Enable after a device smoke test.
             isMinifyEnabled = false
             isShrinkResources = false
