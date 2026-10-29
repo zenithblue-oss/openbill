@@ -307,6 +307,17 @@ fun MoreScreen(
                     colors = listColors,
                     modifier = Modifier.clickable(role = Role.Button, onClick = onViewIntroduction),
                 )
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                ListItem(
+                    headlineContent = { Text("Privacy policy") },
+                    supportingContent = { Text("Opens in your browser") },
+                    leadingContent = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                    colors = listColors,
+                    modifier = Modifier.clickable(role = Role.Button) {
+                        runCatching { uriHandler.openUri("https://zenithblue-oss.github.io/openbill/privacy.html") }
+                    },
+                )
                 Spacer(Modifier.height(Spacing.xl))
             }
         }
