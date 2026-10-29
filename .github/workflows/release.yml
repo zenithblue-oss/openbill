@@ -28,15 +28,30 @@ jobs:
           else
             echo "No keystore secret; building unsigned release APK"
           fi
+      - name: Require signing secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.OPENBILL_KEYSTORE_BASE64 }}
+          OPENBILL_STORE_PASSWORD: ${{ secrets.OPENBILL_STORE_PASSWORD }}
+          OPENBILL_KEY_ALIAS: ${{ secrets.OPENBILL_KEY_ALIAS }}
+        run: |
+          for v in KEYSTORE_B64 OPENBILL_STORE_PASSWORD OPENBILL_KEY_ALIAS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Signing secret for $v is empty; refusing to build an unsigned release"
+              exit 1
+            fi
+          done
       - name: Assemble release
         env:
           OPENBILL_STORE_PASSWORD: ${{ secrets.OPENBILL_STORE_PASSWORD }}
           OPENBILL_KEY_ALIAS: ${{ secrets.OPENBILL_KEY_ALIAS }}
           OPENBILL_KEY_PASSWORD: ${{ secrets.OPENBILL_KEY_PASSWORD }}
-        run: ./gradlew --console=plain :androidApp:assembleRelease
+        run: ./gradlew --console=plain :androidApp:assembleRelease :androidApp:bundleRelease
       - name: Rename APK
         run: |
           mkdir -p out
+          for f in androidApp/build/outputs/bundle/release/*.aab; do
+            cp "$f" "out/OpenBill-${GITHUB_REF_NAME}-android.aab"
+          done
           for f in androidApp/build/outputs/apk/release/*.apk; do
             case "$f" in
               *unsigned*) cp "$f" "out/OpenBill-${GITHUB_REF_NAME}-android-unsigned.apk" ;;
