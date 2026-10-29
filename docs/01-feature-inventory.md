@@ -1,7 +1,7 @@
 # Feature Inventory
 
 This inventory combines public product documentation, the Play Store listing, the
-myBillBook help center, and static inspection of version 8.17.7. It is used to scope
+competitor help centers. It is used to scope
 OpenBill, not to clone every behavior.
 
 **Source note (2026-10-22):** updated after a review of the vendor's public website

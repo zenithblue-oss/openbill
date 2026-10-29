@@ -26,8 +26,7 @@ self-update, raw ESC/POS, a local server, macOS, and 32-bit builds.
 
 ### Competitive baseline
 
-The competing product's Windows app (studied 2026-10-22; see
-[00-reverse-engineering.md](00-reverse-engineering.md)) is a thin Electron shell around its
+The competing product's Windows app (studied 2026-10-22) is a thin Electron shell around its
 web application. It has no local database, needs the internet for all data, ships on Windows
 only, and sits behind a paid tier. What the shell adds over a browser is small: silent
 printing of an invoice PDF to the default printer, bulk invoice download as a zip, bulk print,

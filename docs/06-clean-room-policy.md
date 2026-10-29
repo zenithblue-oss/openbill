@@ -129,10 +129,10 @@ packages can carry configuration that points at live services.
 
 ## 7. Trademarks
 
-"myBillBook", "Flobiz", and related names are trademarks of their respective owners.
+Third-party product names are trademarks of their respective owners.
 
 OpenBill may use these names only for nominative comparison, such as "an alternative to
-myBillBook" in documentation, provided the use is truthful and does not imply endorsement.
+X" in documentation, provided the use is truthful and does not imply endorsement.
 Do not use them in:
 
 - The application name, package ID, or domain.

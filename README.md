@@ -6,14 +6,14 @@ and Linux from one Kotlin codebase.
 [![Latest release](https://img.shields.io/github/v/release/zenithblue-oss/openbill?include_prereleases&label=release)](https://github.com/zenithblue-oss/openbill/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Android%20%7C%20Windows%20%7C%20Linux-informational)
-![Status](https://img.shields.io/badge/status-alpha-orange)
+![Status](https://img.shields.io/badge/status-stable-green)
 
-> **Alpha.** Invoicing, inventory, payments, reports, GST exports, backup, CSV import and the
+> Invoicing, inventory, payments, reports, GST exports, backup, CSV import and the
 > CLI work today; the remaining 1.0 gaps are listed in [What's left](#whats-left).
 
 ## Download
 
-Latest: [v0.1.1-alpha](https://github.com/zenithblue-oss/openbill/releases/latest) (all
+Latest: [v1.0.1](https://github.com/zenithblue-oss/openbill/releases/latest) (all
 files are listed with `SHA256SUMS`).
 
 | Platform | File | Notes |
@@ -22,9 +22,9 @@ files are listed with `SHA256SUMS`).
 | Windows | `.exe` installer, `.msi`, portable `.zip` | Unzip the portable build and run `OpenBill.exe` |
 | Linux | `.deb`, portable `.tar.gz` | `sudo apt install ./openbill_*.deb`, or extract and run `./OpenBill/bin/OpenBill` |
 
-Builds are unsigned for Windows/Linux and the app is alpha: back up anything you care about.
+Builds are unsigned for Windows/Linux and OpenBill is local-first: back up anything you care about.
 
-**0.2.x alpha users:** the Android app is now a new package (`com.zenithblue.openbill`), so reinstall it; the old app keeps its own data. Migrate with Backup in the old app, then restore in the new one.
+**Users of the pre-1.0 alpha:** the Android app is now a new package (`com.zenithblue.openbill`), so reinstall it; the old app keeps its own data. Migrate with Backup in the old app, then restore in the new one.
 
 ## Coming to F-Droid
 
@@ -90,7 +90,7 @@ only the engine/data layer exists without UI, and 0 otherwise. These are the mai
 | Reports and GST | Registers, books, statements, stock, low stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 100% (19 / 19) |
 | Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image | 100% (15 / 15) |
 | Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
-| Desktop apps | Windows and Linux builds run the shared UI | Alpha |
+| Desktop apps | Windows and Linux builds run the shared UI | Stable |
 | CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 |
 | Server | Not started (post-1.0) | 0% |
 
@@ -103,11 +103,10 @@ Still open for the 1.0 release (outside the P0 feature count):
 - Output: USB thermal printing on Android (Bluetooth works; desktop USB goes through the
   print service or /dev/usb/lp*).
 - Data: backup schedule and retention settings (fixed at daily, keep 7).
-- Desktop: packaging and signing.
 - Optional server after 1.0.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
-the source code of myBillBook or any other commercial billing product. See
+the source code of any commercial billing product. See
 [NOTICE](NOTICE) and [docs/06-clean-room-policy.md](docs/06-clean-room-policy.md).
 
 ## Why this project exists
@@ -127,13 +126,13 @@ alternative:
 This is not a get-rich-quick clone. Correctness, data durability, and print quality matter
 more than shipping every competitor feature in the first release.
 
-## Planned platforms
+## Platforms
 
 | Platform | Form factor | Status | Packaging |
 | --- | --- | --- | --- |
-| Android | Phone and tablet | First target | APK, AAB |
-| Windows | Desktop and laptop | Planned | MSI |
-| Linux | Desktop and laptop | Planned | DEB, AppImage |
+| Android | Phone and tablet | Stable | APK, AAB |
+| Windows | Desktop and laptop | Stable | MSI |
+| Linux | Desktop and laptop | Stable | DEB, AppImage |
 | iOS | Phone and tablet | Not planned for 1.0 | - |
 | Web | Browser | Not planned; optional later | - |
 | [Server](docs/10-server.md) | Self-hosted, optional | Planned, after 1.0 | OCI image, JAR |
@@ -232,7 +231,7 @@ that map to it. Features outside Phases 1-6 of the roadmap are after 1.0.
 ## Explicit non-goals for the MVP
 
 - Reimplementing a proprietary backend or scraping a competitor service.
-- Copying myBillBook assets, themes, illustrations, strings, or database schema.
+- Copying any other product's assets, themes, illustrations, strings, or database schema.
 - Payment processing or lending. OpenBill records payments; it does not move money.
 - Automated GST portal filing. The MVP exports data in portal-compatible formats.
 - e-invoice and e-way bill registration without the user's own credentials and a
@@ -307,7 +306,6 @@ feature screens unless a platform-specific interaction genuinely requires a diff
 ## Documentation
 
 - [Roadmap](ROADMAP.md)
-- [Reverse-engineering report](docs/00-reverse-engineering.md)
 - [Feature inventory](docs/01-feature-inventory.md)
 - [Search analysis](docs/02-search-analysis.md)
 - [Architecture](docs/03-architecture.md)
@@ -336,5 +334,4 @@ application. Do not submit APKs or decompiled output.
 
 Apache License 2.0. See [LICENSE](LICENSE).
 
-"myBillBook" is a trademark of its respective owner and is used here only for nominative
-comparison. OpenBill is an independent project.
+OpenBill is an independent project.

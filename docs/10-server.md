@@ -33,7 +33,6 @@ Principles:
 ### Competitive baseline
 
 The market leader's Windows client (studied 2026-10-22; see
-[00-reverse-engineering.md](00-reverse-engineering.md) and
 [07-desktop.md](07-desktop.md#competitive-baseline)) is a shell around the vendor's web app.
 It has no local database and needs the vendor's servers for all data. OpenBill inverts that
 model: the local database is the product, and the server is an optional relay and

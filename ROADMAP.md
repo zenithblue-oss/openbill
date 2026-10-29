@@ -37,8 +37,6 @@ Deliverables:
 
 - Public repository with Apache-2.0 license.
 - Clean-room policy and trademark notice.
-- Reverse-engineering report covering the target app's architecture, modules, permissions,
-  SDKs, and API surface.
 - Feature inventory from public product pages, help center articles, store listing, and
   static analysis.
 - Search analysis with implementation evidence.
@@ -357,8 +355,7 @@ Exit criteria:
 
 ## Parity tracker
 
-Maps each feature group to the competitor plan tier that gates it (as recorded in
-[docs/00](docs/00-reverse-engineering.md#5-product-and-market-notes); tier names are generic
+Maps each feature group to the competitor plan tier that gates it (tier names are generic
 here), the OpenBill phase, and the surfaces: A = Android, W = Windows, L = Linux,
 S = self-hosted server, C = CLI. In OpenBill every row is free.
 
@@ -426,7 +423,7 @@ deferred; `No` = out of scope.
 | Party search | Yes | Yes | MVP |
 | Offline HSN/SAC lookup | Yes | Yes | MVP |
 | Global search / command palette | Partial | Yes | MVP |
-| Windows desktop app | Exists; an online-only Electron shell around the web app ([docs/00](docs/00-reverse-engineering.md#4-windows-desktop-application)) | Native offline Compose app | MVP |
+| Windows desktop app | Exists; an online-only Electron shell around the web app | Native offline Compose app | MVP |
 | Linux desktop app | Not offered | Native Compose app | MVP |
 | Multi-firm | Yes | Yes | MVP |
 | Staff users and roles | Yes | Post-1.0 local roles | Next |
