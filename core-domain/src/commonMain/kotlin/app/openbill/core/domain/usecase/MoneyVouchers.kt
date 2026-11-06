@@ -135,7 +135,7 @@ class MoneyVouchers(
             val same = ledger.observeAccounts(firmId).first().filter { it.deletedAt == null && it.name.equals(name, ignoreCase = true) }
             same.firstOrNull { it.type == type && it.code == null }?.let { return it }
             require(same.isEmpty()) { "An account named \"$name\" already exists with another type; rename it to record a settlement discount" }
-            return Account(newId(), firmId, name, type, createdAt = at, updatedAt = at).also { ledger.saveAccount(it) }
+            return Account(newId(), firmId, name, type, createdAt = at, updatedAt = at).also { ledger.createSystemAccount(it) }
         }
 
         fun invoiceTypeFor(paymentType: VoucherType): VoucherType =

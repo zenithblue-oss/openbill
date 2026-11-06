@@ -74,6 +74,18 @@ object LineRules {
         )
     }
 
+    /**
+     * An item line on a foreign-currency invoice: the rupee rate converted at [exchangeRate], and
+     * the list prices too, so a cashier keeping the converted price is not changing it.
+     */
+    fun inCurrency(form: LineForm, exchangeRate: Quantity): LineForm {
+        val inr = Parse.money(form.rate) ?: return form
+        return form.copy(
+            rate = InvoiceMath.fromInr(inr, exchangeRate).format(),
+            listPrices = form.listPrices.map { InvoiceMath.fromInr(it, exchangeRate) },
+        )
+    }
+
     /** [text] read as a quantity of the alternate unit, converted to the primary unit; null if not a quantity. */
     fun fromAltUnits(text: String, factor: Quantity): String? {
         val q = Parse.quantity(text) ?: return null

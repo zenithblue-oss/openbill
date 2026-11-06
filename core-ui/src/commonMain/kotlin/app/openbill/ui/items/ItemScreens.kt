@@ -167,13 +167,14 @@ fun ItemListScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val reduced = LocalReducedMotion.current
+    val canEdit = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = { CollapsingTopBar("Items", scrollBehavior) },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
             // With a navigation rail, its header FAB is the screen's one create action.
-            if (!LocalWidthClass.current.usesRail) ExtendedFloatingActionButton(
+            if (!LocalWidthClass.current.usesRail && canEdit) ExtendedFloatingActionButton(
                 onClick = { onOpen(null) },
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
@@ -258,7 +259,12 @@ fun ItemListScreen(
                                 placementSpec = if (reduced) null else motionTween(false, Motion.MEDIUM1, Motion.Emphasized),
                                 fadeOutSpec = if (reduced) null else motionTween(false, Motion.SHORT3),
                             )
-                            .clickable(onClickLabel = "Edit item") { onOpen(item.id) },
+                            // Without item rights a row opens the read-only stock view, so only stocked goods open.
+                            .then(
+                                if (canEdit) Modifier.clickable(onClickLabel = "Edit item") { onOpen(item.id) }
+                                else if (item.trackInventory && !item.isService) Modifier.clickable(onClickLabel = "Open item stock") { onOpen(item.id) }
+                                else Modifier,
+                            ),
                     )
                 }
             }

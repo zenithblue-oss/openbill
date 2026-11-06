@@ -528,10 +528,13 @@ private fun RouteContent(
                 onRecurring = { nav.push(Route.Recurring) },
                 onReports = { nav.push(Route.Reports) },
             )
-            Tab.PARTIES -> PartyListScreen(container, s) { id -> nav.push(Route.PartyEdit(id)) }
+            // Without edit rights a party opens its ledger and a stocked item its stock, both read-only.
+            Tab.PARTIES -> PartyListScreen(container, s) { id ->
+                nav.push(if (id == null || Access.can(Permission.EDIT_PARTIES)) Route.PartyEdit(id) else Route.PartyLedger(id))
+            }
             Tab.ITEMS -> ItemListScreen(
                 container, s,
-                onOpen = { id -> nav.push(Route.ItemEdit(id)) },
+                onOpen = { id -> nav.push(if (id == null || Access.can(Permission.MANAGE_MASTERS)) Route.ItemEdit(id) else Route.ItemStock(id)) },
                 onStock = { low -> nav.push(Route.StockSummary(low)) },
             )
             Tab.MORE -> MoreScreen(

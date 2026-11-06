@@ -213,7 +213,9 @@ fun MoneyEditorScreen(
                 if (type == VoucherType.EXPENSE) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         PickerField("Category *", categories.firstOrNull { it.id == categoryId }?.name.orEmpty(), { pick = "category" }, Modifier.weight(1f))
-                        TextButton(onClick = { newCategory = "" }) { Text("New") }
+                        if (app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) {
+                            TextButton(onClick = { newCategory = "" }) { Text("New") }
+                        }
                     }
                 }
                 FormField("Amount *", amount, { amount = it; error = null }, keyboardType = KeyboardType.Decimal, prefix = "₹")
@@ -353,7 +355,8 @@ fun MoneyEditorScreen(
             label = { it.name },
             selected = { it.id == categoryId },
             key = { it.id },
-            emptyText = "No categories yet. Use New to add one, such as Rent or Salary.",
+            emptyText = if (app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) "No categories yet. Use New to add one, such as Rent or Salary."
+            else "No categories yet. Ask an owner or manager to add one, such as Rent or Salary.",
             onSelect = { categoryId = it.id; pick = null },
             onDismiss = { pick = null },
         )

@@ -138,13 +138,14 @@ fun PartyListScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val reduced = LocalReducedMotion.current
+    val canEdit = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.EDIT_PARTIES)
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = { CollapsingTopBar("Parties", scrollBehavior) },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
             // With a navigation rail, its header FAB is the screen's one create action.
-            if (!LocalWidthClass.current.usesRail) ExtendedFloatingActionButton(
+            if (!LocalWidthClass.current.usesRail && canEdit) ExtendedFloatingActionButton(
                 onClick = { onOpen(null) },
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
@@ -205,7 +206,7 @@ fun PartyListScreen(
                                 placementSpec = if (reduced) null else motionTween(false, Motion.MEDIUM1, Motion.Emphasized),
                                 fadeOutSpec = if (reduced) null else motionTween(false, Motion.SHORT3),
                             )
-                            .clickable(onClickLabel = "Edit party") { onOpen(party.id) },
+                            .clickable(onClickLabel = if (canEdit) "Edit party" else "Open party ledger") { onOpen(party.id) },
                     )
                 }
             }

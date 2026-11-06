@@ -140,8 +140,7 @@ fun InvoiceEditorScreen(
     val fxRate = state.fields.takeIf { currency != null }?.let { DocFieldRules.exchange(it)?.second }
     fun itemForm(item: app.openbill.core.domain.model.Item): LineForm {
         val form = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] })
-        val inr = Parse.money(form.rate)
-        return if (fxRate == null || inr == null) form else form.copy(rate = InvoiceMath.fromInr(inr, fxRate).format())
+        return if (fxRate == null) form else LineRules.inCurrency(form, fxRate)
     }
 
     var pickParty by remember { mutableStateOf(false) }
@@ -338,6 +337,7 @@ fun InvoiceEditorScreen(
                     val master = if (purchaseSide) item?.purchasePrice else item?.salePrice
                     // Not on foreign-currency invoices: their rates are not rupee prices.
                     if (item != null && master != null && currency == null && line.rate != master && line.rate > Money.ZERO &&
+                        app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS) &&
                         state.type != VoucherType.CREDIT_NOTE && state.type != VoucherType.DEBIT_NOTE
                     ) {
                         priceChange = item to line.rate

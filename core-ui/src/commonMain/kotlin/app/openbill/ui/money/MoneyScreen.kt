@@ -127,6 +127,7 @@ fun MoneyScreen(
     var adding by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val names = accounts.associate { it.id to it.name } + partyNames
+    val can = { p: app.openbill.core.domain.model.Permission -> app.openbill.core.domain.model.Access.can(p) }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -144,7 +145,7 @@ fun MoneyScreen(
                         }
                     }
                 }
-                item(key = "actions") {
+                if (can(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)) item(key = "actions") {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter, vertical = Spacing.sm),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -156,7 +157,9 @@ fun MoneyScreen(
                 }
                 item(key = "acc-h") {
                     SectionHeader("Cash & bank", Modifier.padding(horizontal = pageGutter)) {
-                        IconButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, contentDescription = "Add account") }
+                        if (can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) {
+                            IconButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, contentDescription = "Add account") }
+                        }
                     }
                 }
                 items(overview?.moneyAccounts.orEmpty(), key = { "acc-" + it.first.id }) { (a, balance) ->
@@ -184,7 +187,7 @@ fun MoneyScreen(
                         modifier = Modifier.clickable { onOutstanding(false) },
                     )
                 }
-                item(key = "reports") {
+                if (can(app.openbill.core.domain.model.Permission.VIEW_REPORTS)) item(key = "reports") {
                     SectionHeader("Reports", Modifier.padding(horizontal = pageGutter))
                     ListItem(
                         headlineContent = { Text("Reports and GST") },
@@ -200,7 +203,7 @@ fun MoneyScreen(
                         modifier = Modifier.clickable { onDocuments(t) },
                     )
                 }
-                item(key = "recurring") {
+                if (can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) item(key = "recurring") {
                     ListItem(
                         headlineContent = { Text("Recurring invoices") },
                         supportingContent = { Text("Invoices made on a schedule; pause, resume or delete") },

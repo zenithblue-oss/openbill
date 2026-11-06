@@ -219,7 +219,7 @@ class RoomRecycleBinTest {
         vouchers.observeRecycleBin("firm-1").first().map { it.id }
 
     private suspend fun auditEvents(voucherId: String): List<AuditEventEntity> =
-        db.auditDao().observeForEntity("firm-1", "voucher", voucherId).first()
+        db.auditDao().observeForEntity("firm-1", "voucher", voucherId).first().filter { it.action != "voucher.draft_created" }
 
     private fun draft(
         id: String,

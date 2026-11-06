@@ -80,10 +80,11 @@ fun AccountScreen(
     val listState = rememberLazyListState()
     var editing by remember { mutableStateOf(false) }
     val account = accounts?.firstOrNull { it.id == accountId }
+    val canManage = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
     Scaffold(
         topBar = {
             AppTopBar(account?.name ?: "Account", onBack = onBack) {
-                if (account != null) IconButton(onClick = { editing = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit account") }
+                if (account != null && canManage) IconButton(onClick = { editing = true }) { Icon(Icons.Filled.Edit, contentDescription = "Edit account") }
             }
         },
         snackbarHost = { AppSnackbarHost() },
@@ -109,7 +110,7 @@ fun AccountScreen(
                         AmountRow("Balance", Fmt.inrSigned(balance), emphasize = true)
                         if (bank) {
                             AmountRow("Cleared (as per bank)", Fmt.inrSigned(cleared))
-                            Text(
+                            if (canManage) Text(
                                 "Tick entries that appear on your bank statement to reconcile. Untick to undo.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -125,6 +126,7 @@ fun AccountScreen(
                             {
                                 Checkbox(
                                     checked = e.clearedOn != null,
+                                    enabled = canManage,
                                     onCheckedChange = { on ->
                                         scope.launch { runCatching { repos.ledger.setCleared(e.id, if (on) container.today() else null) } }
                                     },
@@ -233,7 +235,7 @@ fun PartyLedgerScreen(
     Scaffold(
         topBar = {
             AppTopBar(p?.name ?: "Ledger", onBack = onBack) {
-                if (onStatement != null) IconButton(onClick = onStatement) { Icon(Icons.Filled.List, contentDescription = "Statement report (CSV, PDF)") }
+                if (onStatement != null && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.VIEW_REPORTS)) IconButton(onClick = onStatement) { Icon(Icons.Filled.List, contentDescription = "Statement report (CSV, PDF)") }
             }
         },
         snackbarHost = { AppSnackbarHost() },
@@ -280,7 +282,7 @@ fun PartyLedgerScreen(
                                 Icon(Icons.Filled.Share, contentDescription = null)
                                 Text(if (closing > Money.ZERO) " Send reminder" else " Share statement")
                             }
-                            OutlinedButton(onClick = { onRecordPayment(if (closing >= Money.ZERO) VoucherType.PAYMENT_IN else VoucherType.PAYMENT_OUT) }) {
+                            if (app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)) OutlinedButton(onClick = { onRecordPayment(if (closing >= Money.ZERO) VoucherType.PAYMENT_IN else VoucherType.PAYMENT_OUT) }) {
                                 Text(if (closing >= Money.ZERO) "Receive payment" else "Make payment")
                             }
                         }

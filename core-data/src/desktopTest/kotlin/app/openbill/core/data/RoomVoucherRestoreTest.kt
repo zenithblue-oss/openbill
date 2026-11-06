@@ -354,5 +354,5 @@ class RoomVoucherRestoreTest {
     )
 
     private suspend fun auditEvents(voucherId: String): List<AuditEventEntity> =
-        db.auditDao().observeForEntity("firm-1", "voucher", voucherId).first()
+        db.auditDao().observeForEntity("firm-1", "voucher", voucherId).first().filter { it.action != "voucher.draft_created" }
 }

@@ -161,19 +161,20 @@ fun InvoiceListScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val reduced = LocalReducedMotion.current
+    val canCreate = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             if (onBack != null) AppTopBar(title, onBack = onBack)
             else CollapsingTopBar(title, scrollBehavior, actions = {
-                if (onPos != null) androidx.compose.material3.TextButton(onClick = onPos) { Text("POS") }
+                if (onPos != null && canCreate) androidx.compose.material3.TextButton(onClick = onPos) { Text("POS") }
             })
         },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
             // With a navigation rail, its header FAB is the screen's one create action.
-            if (!LocalWidthClass.current.usesRail || secondary) ExtendedFloatingActionButton(
+            if ((!LocalWidthClass.current.usesRail || secondary) && canCreate) ExtendedFloatingActionButton(
                 onClick = onNew,
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
@@ -211,7 +212,7 @@ fun InvoiceListScreen(
                     },
                     Modifier.align(Alignment.Center),
                 ) {
-                    if (anyParty.isEmpty()) OutlinedButton(onClick = onAddParty) { Text("Add a party") }
+                    if (anyParty.isEmpty() && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.EDIT_PARTIES)) OutlinedButton(onClick = onAddParty) { Text("Add a party") }
                 }
                 return@CenteredContent
             }

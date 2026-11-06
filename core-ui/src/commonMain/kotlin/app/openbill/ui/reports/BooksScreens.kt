@@ -171,7 +171,9 @@ fun AuditLogScreen(container: AppContainer, session: Session, onBack: () -> Unit
                     ListItem(
                         headlineContent = { Text(e.action.replace('.', ' ').replace('_', ' ').replaceFirstChar { it.uppercase() }) },
                         supportingContent = {
-                            Text(listOfNotNull(at(e), who(e), e.entityType, e.detailsJson).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            // Flat JSON details read as "name: Ravi, role: cashier"; the CSV keeps the JSON.
+                            val details = e.detailsJson?.removePrefix("{")?.removeSuffix("}")?.replace("\"", "")?.replace(",", ", ")?.replace(":", ": ")?.ifBlank { null }
+                            Text(listOfNotNull(at(e), who(e), e.entityType, details).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis)
                         },
                     )
                 }

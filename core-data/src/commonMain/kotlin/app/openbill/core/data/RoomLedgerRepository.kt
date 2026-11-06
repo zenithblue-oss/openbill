@@ -107,6 +107,13 @@ class RoomLedgerRepository(
         }
     }
 
+    override suspend fun createSystemAccount(account: Account) {
+        transactions.write {
+            require(accounts.findAccountById(account.id) == null) { "Account ${account.id} already exists" }
+            accounts.insertAccount(account.toEntity(null))
+        }
+    }
+
     override suspend fun journalEntriesForVoucher(voucherId: String): List<JournalEntry> =
         accounts.entriesForVoucher(voucherId).map { it.toDomain() }
 

@@ -306,7 +306,7 @@ fun MoreScreen(
                 }
 
                 if (can(Permission.SETTINGS)) ReminderTemplateItem(container, firm.id, listColors)
-                if (can(Permission.EXPORT)) CsvSection(container, session, listColors)
+                if (can(Permission.EXPORT) || can(Permission.CREATE_VOUCHERS)) CsvSection(container, session, listColors)
                 if (can(Permission.SETTINGS)) app.openbill.ui.settings.AppLockItem(container, listColors)
                 if (can(Permission.MANAGE_USERS)) ListItem(
                     headlineContent = { Text("Users and roles") },

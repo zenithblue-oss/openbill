@@ -40,6 +40,8 @@ import app.openbill.core.domain.repository.VoucherRepository
 import app.openbill.core.domain.service.LedgerJournalDerivation
 import app.openbill.core.domain.service.StockMovementDerivation
 import app.openbill.core.model.Quantity
+import app.openbill.core.model.Rounding
+import app.openbill.core.model.RoundingMode
 import app.openbill.core.model.Ulid
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -152,6 +154,7 @@ class RoomVoucherRepository(
             val entity = voucher.toEntity(existing)
             if (existing == null) {
                 vouchers.insert(entity)
+                audits.insert(auditEvent(entity, DRAFT_CREATED_ACTION, Clock.System.now()))
             } else {
                 vouchers.update(entity)
             }
@@ -173,14 +176,24 @@ class RoomVoucherRepository(
     /**
      * Without [Permission.MANAGE_MASTERS] (cashiers), sales-side lines of a stocked item keep one of
      * its own prices and carry no line discount, so a price can only be changed in the item.
+     * On a foreign-currency invoice the entered rate must be a list price converted at the
+     * invoice's exchange rate (as the editor fills it in), so conversion is not a price change.
      */
     private suspend fun requireListPrices(voucher: Voucher) {
         if (Access.can(Permission.MANAGE_MASTERS) || voucher.type !in SALES_SIDE) return
+        val fx = voucher.exchangeRate
         for (line in voucher.lines) {
             val item = line.itemId?.let { items.findById(it) } ?: continue
             val prices = listOfNotNull(item.salePrice, item.wholesalePrice).filter { it != 0L }
             if (prices.isEmpty()) continue
-            if (line.rate.paise !in prices || line.discount.paise != 0L) {
+            val listed = if (fx != null && line.foreignRate != null) {
+                // Same rounding as the editor's InvoiceMath.fromInr.
+                line.foreignRate!!.paise in prices.map { Rounding.multiplyDivide(it, 10_000L, fx.scaledUnits, RoundingMode.HALF_UP) } &&
+                    (line.foreignDiscount?.paise ?: 0L) == 0L
+            } else {
+                line.rate.paise in prices
+            }
+            if (!listed || line.discount.paise != 0L) {
                 throw PermissionDeniedException(Permission.MANAGE_MASTERS, Access.role)
             }
         }
@@ -707,6 +720,7 @@ class RoomVoucherRepository(
         const val POSTED_ACTION = "voucher.posted"
         const val CANCELLED_ACTION = "voucher.cancelled"
         const val RESTORED_ACTION = "voucher.restored"
+        const val DRAFT_CREATED_ACTION = "voucher.draft_created"
         const val DRAFT_DELETED_ACTION = "voucher.draft_deleted"
         const val DRAFT_RESTORED_ACTION = "voucher.draft_restored"
         const val PURGED_ACTION = "voucher.purged"

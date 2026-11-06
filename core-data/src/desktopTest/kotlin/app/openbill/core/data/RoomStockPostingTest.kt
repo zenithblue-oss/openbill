@@ -206,7 +206,7 @@ class RoomStockPostingTest {
         assertNull(stored?.number)
         assertNull(stored?.postedAt)
         assertNull(db.voucherNumberSequenceDao().get("firm-1", "sale", "fy-1"))
-        assertTrue(db.auditDao().observeForEntity("firm-1", "voucher", draft.id).first().isEmpty())
+        assertTrue(db.auditDao().observeForEntity("firm-1", "voucher", draft.id).first().none { it.action != "voucher.draft_created" })
         assertTrue(movements(draft.id).isEmpty())
         assertEquals(Quantity.of(0), balance())
     }
@@ -238,7 +238,7 @@ class RoomStockPostingTest {
         assertEquals(VoucherStatus.POSTED, repository.findVoucher(purchase.id)?.status)
         assertEquals(1, movements(purchase.id).size)
         assertEquals(Quantity.of(1), balance())
-        assertEquals(1, db.auditDao().observeForEntity("firm-1", "voucher", purchase.id).first().size)
+        assertEquals(1, db.auditDao().observeForEntity("firm-1", "voucher", purchase.id).first().count { it.action != "voucher.draft_created" })
     }
 
     @Test

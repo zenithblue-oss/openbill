@@ -224,8 +224,10 @@ fun StockSummaryScreen(
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
-                        OutlinedButton(onClick = onAdjust) { Text("Adjust stock") }
-                        OutlinedButton(onClick = onTransfer, enabled = godowns.size > 1) { Text("Transfer") }
+                        if (app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) {
+                            OutlinedButton(onClick = onAdjust) { Text("Adjust stock") }
+                            OutlinedButton(onClick = onTransfer, enabled = godowns.size > 1) { Text("Transfer") }
+                        }
                         OutlinedButton(onClick = onGodowns) { Text("Godowns (${godowns.size})") }
                         OutlinedButton(onClick = onLabels) { Text("Barcode labels") }
                     }
@@ -311,10 +313,11 @@ fun ItemStockScreen(
     }
     val item = items?.firstOrNull { it.id == itemId }
     val godownName = godowns.associate { it.id to it.name }
+    val canManage = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
     Scaffold(
         topBar = {
             AppTopBar(item?.name ?: "Item stock", onBack = onBack) {
-                TextButton(onClick = onEditItem) { Text("Edit") }
+                if (canManage) TextButton(onClick = onEditItem) { Text("Edit") }
             }
         },
     ) { padding ->
@@ -344,13 +347,15 @@ fun ItemStockScreen(
                         )
                         item.barcode?.let { Text("Barcode $it", style = MaterialTheme.typography.bodySmall) }
                         Row(Modifier.padding(top = Spacing.sm).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            OutlinedButton(onClick = onAdjust) { Text("Adjust") }
-                            OutlinedButton(onClick = onTransfer, enabled = godowns.size > 1) { Text("Transfer") }
+                            if (canManage) {
+                                OutlinedButton(onClick = onAdjust) { Text("Adjust") }
+                                OutlinedButton(onClick = onTransfer, enabled = godowns.size > 1) { Text("Transfer") }
+                            }
                             OutlinedButton(onClick = onLabels, enabled = item.barcode != null) { Text("Print labels") }
                         }
                         if (!item.trackInventory) {
                             Text(
-                                "Stock tracking is off for this item; turn it on in Edit to record stock.",
+                                if (canManage) "Stock tracking is off for this item; turn it on in Edit to record stock." else "Stock tracking is off for this item.",
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(top = Spacing.sm),
@@ -577,10 +582,12 @@ fun GodownsScreen(container: AppContainer, session: Session, onBack: () -> Unit)
     var adding by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val canManage = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
+    val canSettings = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.SETTINGS)
     Scaffold(
         topBar = {
             AppTopBar("Godowns", onBack = onBack) {
-                IconButton(onClick = { adding = true; name = ""; error = null }) { Icon(Icons.Filled.Add, contentDescription = "Add godown") }
+                if (canManage) IconButton(onClick = { adding = true; name = ""; error = null }) { Icon(Icons.Filled.Add, contentDescription = "Add godown") }
             }
         },
     ) { padding ->
@@ -590,15 +597,17 @@ fun GodownsScreen(container: AppContainer, session: Session, onBack: () -> Unit)
                     val isDefault = g.id == session.settings.defaultGodownId
                     ListItem(
                         headlineContent = { Text(g.name) },
-                        supportingContent = { Text(if (isDefault) "Default for invoices and purchases" else "Tap to rename") },
+                        supportingContent = if (isDefault || canManage) {
+                            { Text(if (isDefault) "Default for invoices and purchases" else "Tap to rename") }
+                        } else null,
                         trailingContent = {
-                            if (!isDefault) {
+                            if (!isDefault && canSettings) {
                                 TextButton(onClick = {
                                     scope.launch { repos.firms.saveSettings(session.settings.copy(defaultGodownId = g.id)) }
                                 }) { Text("Make default") }
                             }
                         },
-                        modifier = Modifier.clickable { editing = g; name = g.name; error = null },
+                        modifier = if (canManage) Modifier.clickable(onClickLabel = "Rename godown") { editing = g; name = g.name; error = null } else Modifier,
                     )
                 }
             }

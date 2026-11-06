@@ -64,8 +64,9 @@ sealed interface Route {
         get() = when (this) {
             is InvoiceEditor, is MoneyEditor, is Pos -> Permission.CREATE_VOUCHERS
             is StockEntry, Recurring -> Permission.MANAGE_MASTERS
-            is ItemEdit -> if (itemId == null) Permission.MANAGE_MASTERS else null
-            is PartyEdit -> if (partyId == null) Permission.EDIT_PARTIES else null
+            // Without these the lists open the read-only item stock / party ledger instead.
+            is ItemEdit -> Permission.MANAGE_MASTERS
+            is PartyEdit -> Permission.EDIT_PARTIES
             Reports, is Report -> Permission.VIEW_REPORTS
             AuditLog -> Permission.VIEW_ACTIVITY
             BusinessEdit, InvoiceTemplates, BooksLock -> Permission.SETTINGS

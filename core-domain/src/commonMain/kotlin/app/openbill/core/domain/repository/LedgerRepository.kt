@@ -26,7 +26,14 @@ interface LedgerRepository {
 
     fun observeAccounts(firmId: String): Flow<List<Account>>
 
+    /** Inserts or updates an account; needs [app.openbill.core.domain.model.Permission.MANAGE_MASTERS]. */
     suspend fun saveAccount(account: Account)
+
+    /**
+     * Inserts an account that system code needs (such as the settlement-discount ledgers) whatever
+     * the signed-in role; never updates an existing one.
+     */
+    suspend fun createSystemAccount(account: Account) = saveAccount(account)
 
     suspend fun journalEntriesForVoucher(voucherId: String): List<JournalEntry>
 

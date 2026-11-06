@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
@@ -227,7 +228,8 @@ fun LockScreen(container: AppContainer) {
     }
     LaunchedEffect(users != null, multi) { if (users != null && !multi && platform.supportsBiometric) biometric() }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.xl),
+        // imePadding: in landscape the keyboard would otherwise cover the PIN field and Sign in.
+        Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.md, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

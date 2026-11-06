@@ -28,9 +28,33 @@ class RoleAccessUiTest {
         assertEquals(Permission.MANAGE_USERS, Route.Users.permission)
         assertEquals(Permission.CREATE_VOUCHERS, Route.InvoiceEditor(null).permission)
         assertEquals(Permission.MANAGE_MASTERS, Route.ItemEdit(null).permission)
-        assertNull(Route.ItemEdit("i").permission, "viewing an item is fine; saving is checked")
+        // Lists open the read-only item stock / party ledger for users without edit rights.
+        assertEquals(Permission.MANAGE_MASTERS, Route.ItemEdit("i").permission)
+        assertEquals(Permission.EDIT_PARTIES, Route.PartyEdit("p").permission)
+        assertNull(Route.ItemStock("i").permission)
+        assertNull(Route.PartyLedger("p").permission)
         assertNull(Route.Home(Tab.INVOICES).permission)
         assertEquals(Route.Users, Route.fromKey(Route.Users.key))
+    }
+
+    @Test
+    fun paletteOffersOnlyAllowedScreens() {
+        val nav = app.openbill.ui.nav.Navigator()
+        val owner = app.openbill.ui.nav.paletteCommands(nav) {}.map { it.first }
+        Access.current = AppUser("u", "Ravi", Role.CASHIER, pinHash = "h", createdAt = Instant.fromEpochMilliseconds(0))
+        val cashier = app.openbill.ui.nav.paletteCommands(nav) {}.map { it.first }
+        assertEquals(listOf("New item", "Recurring invoices", "Reports", "Audit log", "Books lock", "Business details", "Invoice templates"), owner - cashier.toSet())
+    }
+
+    @Test
+    fun foreignCurrencyLineKeepsConvertedListPrice() {
+        Access.current = AppUser("u", "Ravi", Role.CASHIER, pinHash = "h", createdAt = Instant.fromEpochMilliseconds(0))
+        val form = LineForm(itemId = "i", description = "Widget", rate = "100.00", listPrices = listOf(Money.of(10_000), Money.of(9_500)))
+        val usd = LineRules.inCurrency(form, app.openbill.core.model.Quantity.parse("83.25"))
+        assertEquals("1.20", usd.rate)
+        assertEquals(emptyMap(), LineRules.validate(usd) { "k" }.second, "conversion is not a price change")
+        assertEquals(emptyMap(), LineRules.validate(usd.copy(rate = "1.14")) { "k" }.second, "converted wholesale price")
+        assertEquals(setOf("rate"), LineRules.validate(usd.copy(rate = "1.30")) { "k" }.second.keys)
     }
 
     @Test

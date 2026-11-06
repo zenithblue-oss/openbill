@@ -83,6 +83,47 @@ class RoomAccessTest {
     }
 
     @Test
+    fun cashierGetsSystemDiscountAccountButCannotSaveAccounts(): Unit = runBlocking {
+        Access.current = cashier
+        val type = app.openbill.core.domain.model.VoucherType.PAYMENT_IN
+        val made = app.openbill.core.domain.usecase.MoneyVouchers.discountAccount(repos.ledger, "firm-1", type, { "acc-d" }, CREATED_AT)
+        assertEquals("Discount allowed", made.name)
+        assertEquals("acc-d", app.openbill.core.domain.usecase.MoneyVouchers.discountAccount(repos.ledger, "firm-1", type, { "acc-x" }, CREATED_AT).id, "found, not made twice")
+        assertFailsWith<PermissionDeniedException> { repos.ledger.saveAccount(made.copy(name = "Renamed")) }
+        assertFailsWith<IllegalArgumentException>("never overwrites") { repos.ledger.createSystemAccount(made.copy(name = "Renamed")) }
+    }
+
+    @Test
+    fun cashierBillsForeignCurrencyAtConvertedListPrice(): Unit = runBlocking {
+        Access.current = cashier
+        val export = app.openbill.core.domain.model.ExportDetails(
+            app.openbill.core.domain.model.ExportType.EXPORT_UNDER_LUT,
+            currency = "USD",
+            exchangeRate = app.openbill.core.model.Quantity.parse("83.25"),
+        )
+        // ₹100.00 at ₹83.25 = $1.20 (₹99.90 back in rupees); wholesale ₹95.00 = $1.14.
+        fun fx(id: String, usd: Long) = testVoucher(
+            id = id,
+            lines = listOf(testLine(id = "$id-l", itemId = "item-1").copy(rate = Money.of(usd * 8325 / 100), foreignRate = Money.of(usd))),
+            charges = emptyList(),
+        ).copy(export = export)
+        repos.vouchers.saveDraft(fx("v-usd", 120))
+        repos.vouchers.saveDraft(fx("v-usd-w", 114))
+        assertFailsWith<PermissionDeniedException>("a different dollar rate is a price change") { repos.vouchers.saveDraft(fx("v-usd-x", 121)) }
+    }
+
+    @Test
+    fun draftCreationIsLoggedOnce(): Unit = runBlocking {
+        Access.current = cashier
+        repos.vouchers.saveDraft(service("v-1"))
+        repos.vouchers.saveDraft(service("v-1"))
+        Access.current = null
+        val events = repos.audit.observeRecent("firm-1", 100).first().filter { it.action == "voucher.draft_created" }
+        assertEquals(listOf("u-cash"), events.map { it.actor })
+        assertEquals("v-1", events.single().voucherId)
+    }
+
+    @Test
     fun accountantIsReadOnly(): Unit = runBlocking {
         Access.current = accountant
         assertFailsWith<PermissionDeniedException> { repos.vouchers.saveDraft(service("v-1")) }
@@ -104,7 +145,7 @@ class RoomAccessTest {
         Access.current = null
 
         val events = repos.audit.observeRecent("firm-1", 100).first()
-        assertEquals(listOf("u-cash", "u-cash", "owner"), events.filter { it.action == "voucher.posted" }.map { it.actor })
+        assertEquals(listOf("owner", "u-cash", "u-cash"), events.filter { it.action == "voucher.posted" }.map { it.actor.orEmpty() }.sorted())
         assertTrue(events.filter { it.action == "party.created" }.all { it.actor == "owner" })
 
         val period = ReportPeriod(LocalDate(2026, 4, 1), LocalDate(2027, 3, 31))

@@ -75,8 +75,14 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
         null
     }
 
-    SectionHeader("Import and export")
-    listOf("parties", "items").forEach { entity ->
+    // Each row needs the right its write or read does; the recycle bin is for whoever bills.
+    val can = { p: app.openbill.core.domain.model.Permission -> app.openbill.core.domain.model.Access.can(p) }
+    val imports = listOf("parties", "items").filter {
+        can(if (it == "parties") app.openbill.core.domain.model.Permission.EDIT_PARTIES else app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
+    }
+    val canExport = can(app.openbill.core.domain.model.Permission.EXPORT)
+    if (imports.isNotEmpty() || canExport) SectionHeader("Import and export")
+    imports.forEach { entity ->
         ListItem(
             headlineContent = { Text("Import $entity from CSV") },
             supportingContent = { Text("Header: ${(if (entity == "parties") MasterCsv.PARTY_COLUMNS else MasterCsv.ITEM_COLUMNS).joinToString(", ")}") },
@@ -85,7 +91,7 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
             modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { import(entity) },
         )
     }
-    ListItem(
+    if (canExport) ListItem(
         headlineContent = { Text("Export CSV") },
         supportingContent = { Text("Parties, items and sales invoices, for your accountant or another app") },
         leadingContent = { Icon(Icons.Outlined.Share, contentDescription = null) },
@@ -109,7 +115,7 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
 
     val bin by remember(firmId) { repos.vouchers.observeRecycleBin(firmId) }.collectAsState(initial = emptyList())
     var binOpen by remember { mutableStateOf(false) }
-    ListItem(
+    if (can(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)) ListItem(
         headlineContent = { Text("Recycle bin (${bin.size})") },
         supportingContent = { Text("Deleted drafts; restore them to keep working") },
         leadingContent = { Icon(Icons.Outlined.Delete, contentDescription = null) },
