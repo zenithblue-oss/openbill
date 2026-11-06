@@ -322,7 +322,7 @@ class SimpleLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
             listOf(
                 label("SUPPLY", labelSt, 4f * k),
                 kvBlock(
-                    listOf("Place" to doc.placeOfSupply, "Type" to if (doc.isIntraState) "Intra-state" else "Inter-state", "Reverse charge" to "No"),
+                    listOf("Place" to doc.placeOfSupply, "Type" to if (doc.isIntraState) "Intra-state" else "Inter-state", "Reverse charge" to if (doc.reverseCharge) "Yes" else "No"),
                     colW, ts(7.6f, color = Ink.MUTED), ts(7.6f, color = Ink.BLACK), valueX = 68f * k,
                 ),
             ),

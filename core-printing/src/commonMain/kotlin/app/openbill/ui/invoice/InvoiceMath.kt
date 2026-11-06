@@ -1,5 +1,6 @@
 package app.openbill.ui.invoice
 
+import app.openbill.core.domain.model.ExportType
 import app.openbill.core.domain.model.VoucherCharge
 import app.openbill.core.domain.model.VoucherChargePortion
 import app.openbill.core.domain.model.VoucherLine
@@ -38,6 +39,10 @@ data class DraftLine(
     val batchNumber: String? = null,
     val expiryDate: kotlinx.datetime.LocalDate? = null,
     val serialNumbers: List<String> = emptyList(),
+    /** Bonus units on top of [quantity]; not priced or taxed, but they move stock. */
+    val freeQuantity: Quantity = Quantity.of(0),
+    /** Purchase lines: GST claimable as input credit. */
+    val itcEligible: Boolean = true,
 ) {
     val gross: Money get() = InvoiceMath.gross(quantity, rate)
 }
@@ -84,6 +89,8 @@ data class TaxSummary(
     val chargeResults: List<ChargeTaxResult> = emptyList(),
     /** Number of lines whose rate already includes GST; their gross and discount contain tax. */
     val inclusiveLines: Int = 0,
+    /** Reverse charge: [totalTax] is shown but the recipient pays it, so [grandTotal] leaves it out. */
+    val reverseCharge: Boolean = false,
 ) {
     /** Label for [gross]: a plain "Items value" would not add up to the taxable value otherwise. */
     val grossLabel: String
@@ -111,14 +118,19 @@ object InvoiceMath {
         roundToRupee: Boolean,
         rounding: RoundingMode,
         charges: List<DraftCharge> = emptyList(),
+        reverseCharge: Boolean = false,
+        export: ExportType? = null,
     ): TaxSummary {
-        val context = TaxContext(firmStateCode, placeOfSupplyStateCode)
+        val context = TaxContext(firmStateCode, placeOfSupplyStateCode, forceInterState = export != null)
+        // Exports and SEZ supplies under LUT/bond are zero-rated: no IGST is charged.
+        val zeroRated = export != null && !export.withTax
         val inputs = lines.map { line ->
             TaxLineInput(
                 grossAmount = line.gross,
                 discount = line.discount,
-                gstRate = line.gstRate,
+                gstRate = if (zeroRated) Rate.ofPercent(0) else line.gstRate,
                 mode = line.taxMode,
+                treatment = if (zeroRated) TaxTreatment.ZERO_RATED else TaxTreatment.TAXABLE,
             )
         }
         val result = InvoiceTaxCalculator.calculate(
@@ -126,7 +138,7 @@ object InvoiceMath {
             context,
             rounding,
         )
-        return summaryOf(result.lines, lines.fold(Money.ZERO) { a, l -> a + l.gross }, lines.fold(Money.ZERO) { a, l -> a + l.discount }, result.roundOff, result.grandTotal, context.isIntraState, heads = result.charges.flatMap { c -> c.effectivePortions.map { it.result } }.let { rs ->
+        val summary = summaryOf(result.lines, lines.fold(Money.ZERO) { a, l -> a + l.gross }, lines.fold(Money.ZERO) { a, l -> a + l.discount }, result.roundOff, result.grandTotal, context.isIntraState, heads = result.charges.flatMap { c -> c.effectivePortions.map { it.result } }.let { rs ->
             Heads(
                 rs.fold(Money.ZERO) { a, r -> a + r.taxableValue },
                 { k -> rs.fold(Money.ZERO) { acc, r -> r.components.filter { it.kind == k }.fold(acc) { a, c -> a + c.amount } } },
@@ -134,6 +146,10 @@ object InvoiceMath {
             )
         })
             .copy(chargeResults = result.charges, inclusiveLines = lines.count { it.taxMode == TaxMode.INCLUSIVE })
+        if (!reverseCharge) return summary
+        val payable = summary.taxable + summary.chargesTaxable
+        val rounded = if (roundToRupee) payable.roundToRupee(rounding) else payable
+        return summary.copy(roundOff = rounded - payable, grandTotal = rounded, reverseCharge = true)
     }
 
     /** Rebuilds the per-head breakdown for a stored voucher's lines. */
@@ -145,8 +161,10 @@ object InvoiceMath {
         total: Money,
         rounding: RoundingMode,
         charges: List<VoucherCharge> = emptyList(),
+        reverseCharge: Boolean = false,
+        forceInterState: Boolean = false,
     ): TaxSummary {
-        val context = TaxContext(firmStateCode, placeOfSupplyStateCode)
+        val context = TaxContext(firmStateCode, placeOfSupplyStateCode, forceInterState)
         val results = lines.map { line ->
             GstCalculator.calculateLine(
                 TaxLineInput(
@@ -169,7 +187,7 @@ object InvoiceMath {
             total,
             context.isIntraState,
             storedChargeHeads(charges, context.isIntraState, rounding),
-        ).copy(inclusiveLines = lines.count { it.taxMode == TaxMode.INCLUSIVE })
+        ).copy(inclusiveLines = lines.count { it.taxMode == TaxMode.INCLUSIVE }, reverseCharge = reverseCharge)
     }
 
     private fun summaryOf(
@@ -266,10 +284,13 @@ object InvoiceMath {
         lines: List<DraftLine>,
         summary: TaxSummary,
         godownId: String? = null,
+        export: ExportType? = null,
         idFor: (DraftLine) -> String,
     ): List<VoucherLine> =
         lines.mapIndexed { index, line ->
             val r = summary.lineResults[index]
+            // ponytail: a zero-rated line stores 0%; switching back to a taxed supply needs the rate re-entered.
+            val zeroRated = export != null && !export.withTax
             VoucherLine(
                 id = idFor(line),
                 lineNumber = index + 1,
@@ -279,7 +300,10 @@ object InvoiceMath {
                 quantity = line.quantity,
                 rate = line.rate,
                 discount = line.discount,
-                taxRate = line.gstRate,
+                taxRate = if (zeroRated) Rate.ofPercent(0) else line.gstRate,
+                treatment = if (zeroRated) TaxTreatment.ZERO_RATED else TaxTreatment.TAXABLE,
+                freeQuantity = line.freeQuantity,
+                itcEligible = line.itcEligible,
                 taxMode = line.taxMode,
                 taxable = r.taxableValue,
                 tax = r.totalTax,
@@ -305,5 +329,7 @@ object InvoiceMath {
         batchNumber = line.batchNumber,
         expiryDate = line.expiryDate,
         serialNumbers = line.serialNumbers,
+        freeQuantity = line.freeQuantity,
+        itcEligible = line.itcEligible,
     )
 }

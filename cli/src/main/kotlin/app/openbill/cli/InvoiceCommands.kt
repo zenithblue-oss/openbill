@@ -78,18 +78,27 @@ suspend fun Data.findInvoice(firmId: String, ref: String): Voucher =
 
 suspend fun Data.invoiceJson(v: Voucher, withLines: Boolean): JsonObject {
     val party = v.partyId?.let { repos.parties.findParty(it) }
-    val base = mapOf(
+    val base: Map<String, Any?> = mapOf(
         "id" to v.id, "number" to v.number, "date" to v.date, "status" to v.status.name.lowercase(),
         "partyId" to v.partyId, "partyName" to party?.name, "placeOfSupply" to v.placeOfSupplyStateCode,
         "subtotal" to v.subtotal, "discount" to v.discount, "taxable" to v.taxable, "tax" to v.tax,
         "roundOff" to v.roundOff, "total" to v.total, "notes" to v.notes, "cancellationReason" to v.cancellationReason,
-    )
+    ) + buildMap<String, Any?> {
+        // Document fields appear only when set, so older scripts see the same keys.
+        if (v.reverseCharge) put("reverseCharge", true)
+        v.export?.let { put("exportType", it.type.code) }
+        v.detailRows().takeIf { it.isNotEmpty() }?.let { rows -> put("details", jsonOf(*rows.toTypedArray())) }
+    }
     val lines = if (!withLines) emptyMap() else mapOf(
         "lines" to v.lines.map {
             jsonOf(
-                "lineNumber" to it.lineNumber, "itemId" to it.itemId, "description" to it.description, "hsnSac" to it.hsnSac,
-                "quantity" to it.quantity.format(), "rate" to it.rate, "discount" to it.discount, "gstRate" to it.taxRate.percent(),
-                "inclusive" to (it.taxMode == TaxMode.INCLUSIVE), "taxable" to it.taxable, "tax" to it.tax, "total" to it.total,
+                *listOfNotNull(
+                    "lineNumber" to it.lineNumber, "itemId" to it.itemId, "description" to it.description, "hsnSac" to it.hsnSac,
+                    "quantity" to it.quantity.format(), "rate" to it.rate, "discount" to it.discount, "gstRate" to it.taxRate.percent(),
+                    "inclusive" to (it.taxMode == TaxMode.INCLUSIVE), "taxable" to it.taxable, "tax" to it.tax, "total" to it.total,
+                    ("freeQuantity" to it.freeQuantity.format()).takeIf { _ -> it.freeQuantity.scaledUnits > 0 },
+                    ("itcEligible" to false).takeIf { _ -> !it.itcEligible },
+                ).toTypedArray(),
             )
         },
     )
@@ -135,7 +144,7 @@ class InvoiceShow(private val cli: CliState) : CliktCommand("show") {
             listOf(
                 "Number" to (v.number ?: "(draft)"), "Id" to v.id, "Date" to v.date, "Party" to party?.name,
                 "Status" to v.status.name.lowercase(), "Place of supply" to v.placeOfSupplyStateCode,
-            ) + listOfNotNull(v.cancellationReason?.let { "Cancelled" to it }),
+            ) + listOfNotNull(v.cancellationReason?.let { "Cancelled" to it }, ("Reverse charge" to "Yes").takeIf { v.reverseCharge }) + v.detailRows(),
         )
         cli.out.println()
         cli.printTable(

@@ -67,7 +67,10 @@ object Fmt {
         qty(quantity) + (unit?.takeIf { it.isNotBlank() }?.let { " $it" } ?: "")
 
     fun stateName(code: String?): String =
-        code?.let { IndianState.fromCode(it)?.let { s -> "${s.displayName} (${s.code})" } ?: it } ?: "-"
+        code?.let {
+            // 96 is the GST portal's place-of-supply code for exports; it is not a state.
+            if (it == "96") "Other country (96)" else IndianState.fromCode(it)?.let { s -> "${s.displayName} (${s.code})" } ?: it
+        } ?: "-"
 
     fun financialYearLabel(startYear: Int): String =
         "FY $startYear-${(startYear + 1).toString().takeLast(2)}"

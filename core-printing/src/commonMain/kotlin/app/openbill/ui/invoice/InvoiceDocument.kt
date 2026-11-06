@@ -56,6 +56,10 @@ data class InvoiceDocument(
     val lineTotals: Line? = null,
     /** "Previous balance ... · Current balance ...", filled by the caller when the print option is on. */
     val partyBalance: String? = null,
+    /** GST on this document is payable by the recipient. */
+    val reverseCharge: Boolean = false,
+    /** Transport, export, PO, e-way bill and custom header fields, label to value. */
+    val details: List<Pair<String, String>> = emptyList(),
 ) {
     /** Plain-text summary sent along with a shared PDF; WhatsApp and SMS pick it up from the share sheet. */
     fun shareSummary(): String = buildString {
@@ -150,6 +154,8 @@ data class InvoiceDocument(
                 voucher.roundOff,
                 voucher.total,
                 settings.roundingMode,
+                reverseCharge = voucher.reverseCharge,
+                forceInterState = voucher.export != null,
             )
             val seller = PartyBlock(
                 name = firm.legalName?.takeIf { it.isNotBlank() } ?: firm.name,
@@ -205,7 +211,8 @@ data class InvoiceDocument(
                     index = i + 1,
                     description = line.description,
                     hsnSac = line.hsnSac ?: "",
-                    quantity = Fmt.qty(line.quantity) + (unit?.let { " $it" } ?: ""),
+                    quantity = Fmt.qty(line.quantity) + (unit?.let { " $it" } ?: "") +
+                        (if (line.freeQuantity.scaledUnits > 0) " (+${Fmt.qty(line.freeQuantity)} free)" else ""),
                     rate = Fmt.inr(line.rate, symbol = false),
                     discount = if (line.discount.paise == 0L) "-" else Fmt.inr(line.discount, symbol = false),
                     taxable = Fmt.inr(line.taxable, symbol = false),
@@ -282,6 +289,8 @@ data class InvoiceDocument(
                     add("IGST" to Fmt.inr(total.igst))
                 }
                 if (total.cess.paise != 0L) add("Cess" to Fmt.inr(total.cess))
+                val taxSum = total.cgst + total.sgst + total.igst + total.cess
+                if (voucher.reverseCharge && taxSum.paise != 0L) add("Less: GST on reverse charge" to Fmt.inrDeduction(taxSum))
                 if (voucher.roundOff.paise != 0L) add("Round off" to Fmt.inrSigned(voucher.roundOff))
             }
             val number = voucher.number ?: "DRAFT"
@@ -292,7 +301,7 @@ data class InvoiceDocument(
                 firm.bankIfsc?.takeIf { it.isNotBlank() }?.let { add("IFSC" to it) }
                 firm.bankBranch?.takeIf { it.isNotBlank() }?.let { add("Branch" to it) }
             }
-            val totalQty = voucher.lines.fold(0L) { a, l -> a + l.quantity.scaledUnits }
+            val totalQty = voucher.lines.fold(0L) { a, l -> a + l.stockQuantity.scaledUnits }
             return InvoiceDocument(
                 fileStem = pdfTitle(voucher.type, firm.gstin).replace(" ", "") + "-" + number.replace(Regex("[^A-Za-z0-9_-]"), "_"),
                 title = pdfTitle(voucher.type, firm.gstin),
@@ -325,6 +334,8 @@ data class InvoiceDocument(
                 itemCount = lines.size,
                 totalQuantity = app.openbill.core.model.Quantity.ofScaledUnits(totalQty).let { Fmt.qty(it) },
                 lineTotals = lineTotals,
+                reverseCharge = voucher.reverseCharge,
+                details = voucher.detailRows { Fmt.date(it) },
             )
         }
     }

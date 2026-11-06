@@ -372,7 +372,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         if (opt.showDueDate) doc.dueDate?.let { add("Due date" to it) }
         add("Place of supply" to doc.placeOfSupply)
         add("Supply type" to if (doc.isIntraState) "Intra-state" else "Inter-state")
-        add("Reverse charge" to "No")
+        add("Reverse charge" to if (doc.reverseCharge) "Yes" else "No")
     }
 
     fun partyLines(p: InvoiceDocument.PartyBlock, includeName: Boolean = false): List<Pair<String, Boolean>> = buildList {
@@ -463,11 +463,17 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
 
     fun notesAndTerms(width: Float, titleStyle: TextStyle, body: TextStyle): Block = Block.stack(
         listOfNotNull(
+            detailsText()?.let { noteBlock("Document details", it, width, titleStyle, body, 16) },
             doc.notes?.takeIf { opt.showNotes }?.let { noteBlock("Notes", it, width, titleStyle, body) },
             opt.terms.takeIf { opt.showTerms && it.isNotBlank() }?.let { noteBlock("Terms and conditions", it, width, titleStyle, body) },
         ),
         gap = 6f * k,
     )
+
+    /** Reverse charge statement plus transport, export, PO and custom fields, or null when there are none. */
+    fun detailsText(): String? =
+        (listOfNotNull(("Tax payable on reverse charge" to "Yes").takeIf { doc.reverseCharge }) + doc.details)
+            .takeIf { it.isNotEmpty() }?.joinToString("  ·  ") { (k, v) -> "$k: $v" }
 
     val upiId: String? get() = opt.upiId.trim().takeIf { it.isNotEmpty() && (opt.showBank || opt.showUpiQr) }
 

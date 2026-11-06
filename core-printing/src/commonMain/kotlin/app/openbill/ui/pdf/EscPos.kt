@@ -66,6 +66,8 @@ object EscPos {
         raw(0x1D, 0x21, 0x00)
         bold(false)
         wrap(doc.amountInWords).forEach(::line)
+        if (doc.reverseCharge) line("Tax payable on reverse charge: Yes")
+        doc.details.forEach { (k, v) -> wrap("$k: $v").forEach(::line) }
         rule()
         align(1)
         line("Thank you. Please visit again.")
