@@ -109,9 +109,10 @@ private fun UserDialog(container: AppContainer, session: Session, existing: AppU
     var pin by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    fun digits(s: String) = s.filter(Char::isDigit).take(12)
+    fun digits(s: String) = s.filter(Char::isDigit).take(AppLockController.PIN_MAX)
     val nameTaken = users.any { it.id != existing?.id && it.name.trim().equals(name.trim(), ignoreCase = true) }
-    val pinOk = if (existing == null) pin.length >= 4 && pin == confirm else pin.isEmpty() || (pin.length >= 4 && pin == confirm)
+    val newPinOk = AppLockController.pinError(pin) == null && pin == confirm
+    val pinOk = if (existing == null) newPinOk else pin.isEmpty() || newPinOk
     AlertDialog(
         onDismissRequest = close,
         title = { Text(if (existing == null) "Add user" else "Edit ${existing.name}") },
@@ -135,10 +136,14 @@ private fun UserDialog(container: AppContainer, session: Session, existing: AppU
                     }
                     val hidden = PasswordVisualTransformation()
                     FormField(
-                        if (existing == null) "PIN (4 or more digits)" else "New PIN (leave empty to keep)", pin, { pin = digits(it) },
+                        if (existing == null) "PIN" else "New PIN (leave empty to keep)", pin, { pin = digits(it) },
                         keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden,
+                        supporting = AppLockController.PIN_HINT,
                     )
-                    FormField("Repeat PIN", confirm, { confirm = digits(it) }, keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden)
+                    FormField(
+                        "Repeat PIN", confirm, { confirm = digits(it) }, keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden,
+                        error = "PINs do not match".takeIf { confirm.isNotEmpty() && confirm.length >= pin.length && confirm != pin },
+                    )
                     if (existing != null) {
                         Row(
                             Modifier.fillMaxWidth().toggleable(active, role = SemanticsRole.Switch) { active = it },

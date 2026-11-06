@@ -4,6 +4,7 @@ import app.openbill.ui.settings.AppLockController
 import app.openbill.ui.settings.InMemorySettingsStore
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -87,4 +88,27 @@ class AppLockTest {
         lock.lockNow()
         assertTrue(lock.locked.value, "switch user locks at once")
     }
+
+    @Test
+    fun newPinsAreFourToEightDigitsAndOlderLongerPinsStillWork(): Unit = runBlocking {
+        for (ok in listOf("1234", "123456", "12345678")) assertEquals(null, AppLockController.pinError(ok), ok)
+        for (bad in listOf("", "123", "123456789", "12a4", "12 34")) {
+            assertTrue(AppLockController.pinError(bad) != null, bad)
+            assertFailsWith<IllegalArgumentException>(bad) { AppLockController.hashPin(bad) }
+        }
+        val store = InMemorySettingsStore()
+        val lock = AppLockController(store)
+        lock.setPin("90817263")
+        assertTrue(lock.check("90817263"))
+        assertFalse(lock.check("9081"), "a prefix of a longer PIN does not open it")
+        assertFalse(lock.check("908172630"))
+        lock.setPin("4821")
+        assertTrue(lock.check("4821"), "4-digit PINs keep working")
+        // A 12-digit hash from before the 8-digit cap (same format) still verifies.
+        store.putString(AppLockController.KEY_PIN, "1:00:" + pbkdf2Hex("123456789012", byteArrayOf(0), 1))
+        assertTrue(lock.check("123456789012"))
+    }
+
+    private fun pbkdf2Hex(pin: String, salt: ByteArray, rounds: Int) =
+        app.openbill.ui.theme.pbkdf2(pin.toCharArray(), salt, rounds).joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
 }

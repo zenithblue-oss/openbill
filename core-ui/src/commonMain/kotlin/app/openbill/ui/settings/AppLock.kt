@@ -151,8 +151,22 @@ class AppLockController(private val store: SettingsStore) {
     }
 
     companion object {
+        /** A new PIN is [PIN_MIN] to [PIN_MAX] digits; PINs set before this rule (up to 12) still sign in. */
+        const val PIN_MIN = 4
+        const val PIN_MAX = 8
+        const val PIN_HINT = "4 to 8 digits. 6 or more is safer: backups hold the PIN hashes, and short PINs are easy to guess offline."
+
+        /** Null when [pin] can be set, else what to fix. The length is not stored; sign-in needs an explicit Sign in. */
+        fun pinError(pin: String): String? = when {
+            !pin.all(Char::isDigit) -> "Use digits only"
+            pin.length < PIN_MIN -> "Use at least $PIN_MIN digits"
+            pin.length > PIN_MAX -> "Use at most $PIN_MAX digits"
+            else -> null
+        }
+
         /** "iterations:salt:hash" with a fresh 16-byte salt; PINs are never stored in clear. */
         suspend fun hashPin(pin: String): String {
+            pinError(pin)?.let { throw IllegalArgumentException(it) }
             val salt = secureRandomBytes(16)
             return "$ITERATIONS:${salt.hex()}:${hash(pin, salt, ITERATIONS).hex()}"
         }
@@ -251,7 +265,7 @@ fun LockScreen(container: AppContainer) {
         }
         Column(Modifier.widthIn(max = 360.dp)) {
             FormField(
-                "PIN", pin, { pin = it.filter(Char::isDigit); error = null }, error = error,
+                "PIN", pin, { pin = it.filter(Char::isDigit).take(12); error = null }, error = error,
                 keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done, onImeAction = { submit() },
                 visualTransformation = PasswordVisualTransformation(),
             )
@@ -289,14 +303,17 @@ fun NotAllowedScreen(permission: Permission, onBack: () -> Unit) {
     }
 }
 
-/** More screen row: turn the PIN lock on (PIN twice) or off (current PIN). */
+/** More screen row: turn the PIN lock on (PIN twice), off (current PIN), or change the PIN (current, then new twice). */
 @Composable
 fun AppLockItem(container: AppContainer, colors: ListItemColors) {
     val lock = container.appLock
     val scope = rememberCoroutineScope()
     var enabled by remember { mutableStateOf(lock.isEnabled) }
     var open by remember { mutableStateOf(false) }
+    var changing by remember { mutableStateOf(false) }
+    val messages = app.openbill.ui.components.LocalAppMessages.current
     var pin by remember { mutableStateOf("") }
+    var newPin by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val staff by remember { container.repositories.users.observeUsers() }.collectAsState(initial = emptyList())
@@ -308,8 +325,16 @@ fun AppLockItem(container: AppContainer, colors: ListItemColors) {
         leadingContent = { Icon(Icons.Outlined.Lock, contentDescription = null) },
         trailingContent = { Switch(checked = enabled, onCheckedChange = null) },
         colors = colors,
-        modifier = Modifier.toggleable(value = enabled, role = Role.Switch) { pin = ""; confirm = ""; error = null; open = true },
+        modifier = Modifier.toggleable(value = enabled, role = Role.Switch) { pin = ""; newPin = ""; confirm = ""; error = null; changing = false; open = true },
     )
+    if (enabled) {
+        ListItem(
+            headlineContent = { Text("Change PIN") },
+            supportingContent = { Text("The owner's PIN; ${AppLockController.PIN_MIN} to ${AppLockController.PIN_MAX} digits") },
+            colors = colors,
+            modifier = Modifier.clickable(role = Role.Button) { pin = ""; newPin = ""; confirm = ""; error = null; changing = true; open = true },
+        )
+    }
     if (enabled && app.openbill.ui.theme.platformPrefersKeyboard) {
         var idle by remember { mutableStateOf(lock.idleMinutes) }
         ListItem(
@@ -324,21 +349,35 @@ fun AppLockItem(container: AppContainer, colors: ListItemColors) {
         )
     }
     if (!open) return
-    fun digits(s: String) = s.filter(Char::isDigit).take(12)
+    // The current PIN may be an older one of up to 12 digits; a new one is 4 to 8.
+    fun digits(s: String, max: Int = 12) = s.filter(Char::isDigit).take(max)
+    val setting = !enabled || changing
+    val next = if (changing) newPin else pin
     AlertDialog(
         onDismissRequest = { open = false },
-        title = { Text(if (enabled) "Turn off app lock" else "Set a PIN") },
+        title = { Text(if (changing) "Change PIN" else if (enabled) "Turn off app lock" else "Set a PIN") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 val hidden = PasswordVisualTransformation()
-                FormField(if (enabled) "Current PIN" else "PIN (4 or more digits)", pin, { pin = digits(it); error = null }, error = error, keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden)
-                if (!enabled) FormField("Repeat PIN", confirm, { confirm = digits(it) }, keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden)
+                if (enabled) FormField("Current PIN", pin, { pin = digits(it); error = null }, error = error, keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden)
+                if (setting) {
+                    val typed = { v: String -> digits(v, AppLockController.PIN_MAX).also { error = null } }
+                    FormField(
+                        if (changing) "New PIN" else "PIN", next, { if (changing) newPin = typed(it) else pin = typed(it) },
+                        error = error.takeIf { !enabled }, keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden,
+                        supporting = AppLockController.PIN_HINT,
+                    )
+                    FormField(
+                        "Repeat PIN", confirm, { confirm = digits(it, AppLockController.PIN_MAX) }, keyboardType = KeyboardType.NumberPassword, visualTransformation = hidden,
+                        error = "PINs do not match".takeIf { confirm.length >= next.length && confirm.isNotEmpty() && confirm != next },
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(enabled = pin.length >= 4 && (enabled || pin == confirm), onClick = {
+            TextButton(enabled = (!enabled || pin.length >= AppLockController.PIN_MIN) && (!setting || (AppLockController.pinError(next) == null && next == confirm)), onClick = {
                 scope.launch {
-                    if (enabled && staffActive) {
+                    if (enabled && !changing && staffActive) {
                         error = "Deactivate the other users first; they sign in through this lock"
                         return@launch
                     }
@@ -346,11 +385,12 @@ fun AppLockItem(container: AppContainer, colors: ListItemColors) {
                         error = lock.retryInMs(container.now().toEpochMilliseconds()).let { if (it > 0) "Wrong PIN. Wait ${(it + 999) / 1000} s" else "Wrong PIN" }
                         return@launch
                     }
-                    lock.setPin(if (enabled) null else pin)
-                    enabled = !enabled
+                    lock.setPin(if (setting) next else null)
+                    if (!changing) enabled = !enabled
                     open = false
+                    if (changing) messages?.show("PIN changed")
                 }
-            }) { Text(if (enabled) "Turn off" else "Turn on") }
+            }) { Text(if (changing) "Change" else if (enabled) "Turn off" else "Turn on") }
         },
         dismissButton = { TextButton(onClick = { open = false }) { Text("Cancel") } },
     )
