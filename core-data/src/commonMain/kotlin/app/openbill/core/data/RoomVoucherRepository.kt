@@ -178,10 +178,17 @@ class RoomVoucherRepository(
      * its own prices and carry no line discount, so a price can only be changed in the item.
      * On a foreign-currency invoice the entered rate must be a list price converted at the
      * invoice's exchange rate (as the editor fills it in), so conversion is not a price change.
+     * The exchange rate itself is a price too: a cashier keeps the currency and rate already on
+     * this draft or on the document it was made from (an order or quotation), and sets no other.
      */
     private suspend fun requireListPrices(voucher: Voucher) {
         if (Access.can(Permission.MANAGE_MASTERS) || voucher.type !in SALES_SIDE) return
         val fx = voucher.exchangeRate
+        if (fx != null) {
+            val allowed = listOfNotNull(voucher.id, voucher.referenceVoucherId).mapNotNull { vouchers.findById(it) }
+                .any { it.currency == voucher.currency && it.exchangeRate == fx.scaledUnits }
+            if (!allowed) throw PermissionDeniedException(Permission.MANAGE_MASTERS, Access.role)
+        }
         for (line in voucher.lines) {
             val item = line.itemId?.let { items.findById(it) } ?: continue
             val prices = listOfNotNull(item.salePrice, item.wholesalePrice).filter { it != 0L }

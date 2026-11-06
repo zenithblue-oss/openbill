@@ -272,12 +272,20 @@ fun DocumentFieldsSection(
                 { m -> FormField("LUT / bond reference", form.lutReference, { onChange(form.copy(lutReference = it)) }, m, capitalization = KeyboardCapitalization.Characters) },
             )
             val code = form.currency.trim().uppercase()
+            // The exchange rate is a price: without price rights the currency and rate stay as set
+            // by a manager (on this draft or its order); the repository enforces the same.
+            val canSetRate = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
             pair(
                 { m ->
                     FormField(
                         "Invoice currency", form.currency, { onChange(form.copy(currency = it.filter(Char::isLetter).take(3).uppercase())) }, m,
                         error = errors["currency"], capitalization = KeyboardCapitalization.Characters, placeholder = "INR",
-                        supporting = if (code.isEmpty()) "Blank for rupees; e.g. USD to bill in dollars" else "Rates and charges on this invoice are in $code",
+                        supporting = when {
+                            !canSetRate -> "Only an owner or manager can set the currency and exchange rate"
+                            code.isEmpty() -> "Blank for rupees; e.g. USD to bill in dollars"
+                            else -> "Rates and charges on this invoice are in $code"
+                        },
+                        readOnly = !canSetRate,
                     )
                 },
                 { m ->
@@ -286,6 +294,7 @@ fun DocumentFieldsSection(
                             "Exchange rate (₹ per 1 $code) *", form.exchangeRate, { onChange(form.copy(exchangeRate = it)) }, m,
                             error = errors["exchangeRate"], keyboardType = KeyboardType.Decimal, prefix = "₹",
                             supporting = "GST, ledger and returns use rupees at this rate",
+                            readOnly = !canSetRate,
                         )
                     }
                 },

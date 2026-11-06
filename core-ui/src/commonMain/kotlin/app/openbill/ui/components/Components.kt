@@ -206,9 +206,11 @@ fun FormField(
     imeAction: ImeAction = if (singleLine) ImeAction.Next else ImeAction.Default,
     onImeAction: (() -> Unit)? = null,
     visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    readOnly: Boolean = false,
 ) {
     OutlinedTextField(
         value = value,
+        readOnly = readOnly,
         visualTransformation = visualTransformation,
         onValueChange = onValueChange,
         label = { Text(label) },

@@ -95,21 +95,29 @@ class RoomAccessTest {
 
     @Test
     fun cashierBillsForeignCurrencyAtConvertedListPrice(): Unit = runBlocking {
-        Access.current = cashier
         val export = app.openbill.core.domain.model.ExportDetails(
             app.openbill.core.domain.model.ExportType.EXPORT_UNDER_LUT,
             currency = "USD",
             exchangeRate = app.openbill.core.model.Quantity.parse("83.25"),
         )
         // ₹100.00 at ₹83.25 = $1.20 (₹99.90 back in rupees); wholesale ₹95.00 = $1.14.
-        fun fx(id: String, usd: Long) = testVoucher(
+        fun fx(id: String, usd: Long, rate: String = "83.25", ref: String? = null, type: app.openbill.core.domain.model.VoucherType = app.openbill.core.domain.model.VoucherType.SALE) = testVoucher(
             id = id,
+            type = type,
             lines = listOf(testLine(id = "$id-l", itemId = "item-1").copy(rate = Money.of(usd * 8325 / 100), foreignRate = Money.of(usd))),
             charges = emptyList(),
-        ).copy(export = export)
+        ).copy(export = export.copy(exchangeRate = app.openbill.core.model.Quantity.parse(rate)), referenceVoucherId = ref)
+        // A manager or owner sets the rate on a draft and on an order.
         repos.vouchers.saveDraft(fx("v-usd", 120))
-        repos.vouchers.saveDraft(fx("v-usd-w", 114))
-        assertFailsWith<PermissionDeniedException>("a different dollar rate is a price change") { repos.vouchers.saveDraft(fx("v-usd-x", 121)) }
+        repos.vouchers.saveDraft(fx("so-usd", 120, type = app.openbill.core.domain.model.VoucherType.SALES_ORDER))
+
+        Access.current = cashier
+        repos.vouchers.saveDraft(fx("v-usd", 114))
+        assertFailsWith<PermissionDeniedException>("a different dollar rate is a price change") { repos.vouchers.saveDraft(fx("v-usd", 121)) }
+        assertFailsWith<PermissionDeniedException>("the exchange rate is a price too") { repos.vouchers.saveDraft(fx("v-usd", 111, rate = "90")) }
+        assertFailsWith<PermissionDeniedException>("a cashier sets no rate of their own") { repos.vouchers.saveDraft(fx("v-new", 120)) }
+        repos.vouchers.saveDraft(fx("v-from-order", 120, ref = "so-usd"))
+        assertFailsWith<PermissionDeniedException>("not another rate than the order's") { repos.vouchers.saveDraft(fx("v-from-order-2", 119, rate = "84", ref = "so-usd")) }
     }
 
     @Test
