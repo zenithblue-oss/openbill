@@ -91,6 +91,7 @@ import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PaymentMethod
 import app.openbill.core.domain.model.Voucher
+import app.openbill.core.domain.service.StockPosition
 import app.openbill.core.domain.usecase.PosCheckout
 import app.openbill.core.domain.usecase.PosCheckout.label
 import app.openbill.core.domain.usecase.PosSettlement
@@ -144,7 +145,24 @@ internal val POS_SHORTCUTS = listOf(
 /** One payment line in the pay dialog, as typed. */
 private data class TenderRow(val method: PaymentMethod, val accountId: String?, val amount: String, val reference: String = "")
 
-private data class SaleDone(val voucherId: String, val number: String?, val settlement: PosSettlement, val paymentError: String? = null)
+/**
+ * Stock on hand for a POS item tile in the bill's [godownId] (all godowns when none is set), as
+ * text plus whether it is short (out of stock or at/below the low-stock level). Null for services
+ * and items without stock tracking. The words carry the state, so it is not colour-only.
+ */
+internal fun posStockLabel(item: Item, position: StockPosition?, godownId: String?, unit: String?): Pair<String, Boolean>? {
+    if (!item.trackInventory || item.isService) return null
+    val byGodown = position?.byGodown.orEmpty()
+    val onHand = if (godownId != null) byGodown[godownId] ?: Quantity.of(0)
+    else Quantity.ofScaledUnits(byGodown.values.sumOf { it.scaledUnits })
+    return when {
+        onHand <= Quantity.of(0) -> (if (onHand < Quantity.of(0)) "Out of stock (${Fmt.qtyUnit(onHand, unit)})" else "Out of stock") to true
+        item.lowStockLevel?.let { onHand <= it } == true -> "Low stock: ${Fmt.qtyUnit(onHand, unit)}" to true
+        else -> "In stock: ${Fmt.qtyUnit(onHand, unit)}" to false
+    }
+}
+
+private data class SaleDone(val voucherId: String, val number: String?, val settlement: PosSettlement)
 
 /**
  * POS counter billing. The bill is an ordinary sale invoice edited through [InvoiceEditorModel]
@@ -177,6 +195,7 @@ fun PosScreen(
     val parties by remember { repos.parties.observeParties(firm.id) }.collectAsState(initial = emptyList())
     val accounts by remember { repos.ledger.observeAccounts(firm.id) }.collectAsState(initial = emptyList())
     val held by remember { repos.vouchers.observeHeldBills(firm.id) }.collectAsState(initial = emptyList())
+    val positions by remember { repos.stock.observeStockPositions(firm.id) }.collectAsState(initial = emptyMap())
     val unitSymbol = units.associate { it.id to it.symbol }
     LaunchedEffect(firm.id) { runCatching { repos.ledger.ensureSystemAccounts(firm.id, container.now()) } }
 
@@ -409,9 +428,12 @@ fun PosScreen(
                         modifier = Modifier.weight(1f),
                     ) {
                         items(shown, key = { it.id }) { item ->
+                            val stock = posStockLabel(item, positions[item.id], state.godownId, unitSymbol[item.unitId])
                             OutlinedCard(
                                 onClick = { addItem(item) },
-                                modifier = Modifier.heightIn(min = 76.dp).semantics { contentDescription = "Add ${item.name}, ${Fmt.inr(item.salePrice)}" },
+                                modifier = Modifier.heightIn(min = 76.dp).semantics {
+                                    contentDescription = "Add ${item.name}, ${Fmt.inr(item.salePrice)}" + (stock?.let { ", ${it.first}" } ?: "")
+                                },
                             ) {
                                 Column(Modifier.padding(Spacing.sm)) {
                                     Text(item.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -420,6 +442,16 @@ fun PosScreen(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    stock?.let { (text, short) ->
+                                        Text(
+                                            text,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (short) FontWeight.Bold else null,
+                                            color = if (short) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -560,22 +592,17 @@ fun PosScreen(
             failure = (state.errors.values + listOfNotNull(state.failure)).firstOrNull(),
             onDismiss = { if (!state.saving) paying = false },
             onComplete = { tenders, settlement ->
-                model.save(post = true) { id, posted ->
+                // Posting and payments are one transaction: a failure leaves the bill an unposted draft.
+                var number: String? = null
+                model.save(
+                    post = true,
+                    poster = { id ->
+                        number = PosCheckout.postAndSettle(repos, container.postVoucher, id, firm.stateCode, tenders, settlement, container::newId, container.now()).first.number
+                    },
+                ) { id, posted ->
                     if (!posted) return@save
-                    scope.launch {
-                        val v = repos.vouchers.findVoucher(id)
-                        val result = runCatching {
-                            PosCheckout.recordPayments(
-                                repos, container.postVoucher, id, v!!.partyId!!, firm.id, v.financialYearId, firm.stateCode, v.date,
-                                tenders, settlement, container::newId, container.now(),
-                            )
-                        }
-                        paying = false
-                        done = SaleDone(
-                            id, v?.number, settlement,
-                            result.exceptionOrNull()?.let { "The invoice is posted, but the payment was not recorded (${it.message}). Record it from the invoice." },
-                        )
-                    }
+                    paying = false
+                    done = SaleDone(id, number, settlement)
                 }
             },
         )
@@ -594,13 +621,12 @@ fun PosScreen(
                     }
                     AmountRow("Paid", d.settlement.paid)
                     if (d.settlement.credit > Money.ZERO) AmountRow("On the customer's account", d.settlement.credit)
-                    d.paymentError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
             confirmButton = { Button(onClick = finish) { Text("New bill") } },
             dismissButton = {
                 Row {
-                    if (d.paymentError != null) TextButton(onClick = { done = null; newBill(); onOpenInvoice(d.voucherId) }) { Text("Open invoice") }
+                    TextButton(onClick = { done = null; newBill(); onOpenInvoice(d.voucherId) }) { Text("Open invoice") }
                     TextButton(onClick = { done = null; newBill(); onReceipt(d.voucherId) }) { Text("Print receipt") }
                 }
             },

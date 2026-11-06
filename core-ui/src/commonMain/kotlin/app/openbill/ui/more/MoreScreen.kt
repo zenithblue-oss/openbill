@@ -142,7 +142,14 @@ fun MoreScreen(
                     )
                 }
 
-                SectionHeader("Invoices")
+                SectionHeader("Sales and invoices")
+                ListItem(
+                    headlineContent = { Text("POS billing") },
+                    supportingContent = { Text("Fast counter sales: scan items, split payment, hold bills") },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                    colors = listColors,
+                    modifier = Modifier.clickable(role = Role.Button, onClick = onPos),
+                )
                 val invoiceStyle by remember(firm.id) { container.invoiceStyles.style(firm.id) }.collectAsState()
                 ListItem(
                     headlineContent = { Text("Invoice templates") },
@@ -191,7 +198,6 @@ fun MoreScreen(
 
                 SectionHeader("Purchases and stock")
                 listOf(
-                    Triple("POS billing", "Fast counter sales: scan items, split payment, hold bills", onPos),
                     Triple("Purchases", "Supplier bills and purchase returns", onPurchases),
                     Triple("Stock", "Stock summary, valuation, adjustments and transfers", onStock),
                     Triple("Godowns", "Stock locations", onGodowns),

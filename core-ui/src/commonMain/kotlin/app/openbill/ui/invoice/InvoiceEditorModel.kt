@@ -416,9 +416,15 @@ class InvoiceEditorModel(
 
     /**
      * Saves the draft, and posts it (allocating the number) when [post] is true. [hold] parks the
-     * draft as a POS held bill; otherwise a held draft stays held until it is posted.
+     * draft as a POS held bill; otherwise a held draft stays held until it is posted. [poster]
+     * replaces the plain post (POS posts and records payments in one transaction).
      */
-    fun save(post: Boolean, hold: Boolean = false, onDone: (voucherId: String, posted: Boolean) -> Unit) {
+    fun save(
+        post: Boolean,
+        hold: Boolean = false,
+        poster: suspend (voucherId: String) -> Unit = { container.postVoucher(it, container.now()) },
+        onDone: (voucherId: String, posted: Boolean) -> Unit,
+    ) {
         if (!canSave()) return
         val errors = validateForSave(post)
         if (errors.isNotEmpty()) {
@@ -480,7 +486,7 @@ class InvoiceEditorModel(
                 onDone(id, false)
                 return@launch
             }
-            runCatching { container.postVoucher(id, container.now()) }
+            runCatching { poster(id) }
                 .onSuccess { onDone(id, true) }
                 .onFailure { e ->
                     _state.update { it.copy(saving = false, failure = "Saved as draft, but posting failed: ${e.message}") }

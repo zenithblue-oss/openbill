@@ -4,11 +4,11 @@ import app.openbill.core.domain.model.AllocationRequest
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyType
 import app.openbill.core.domain.model.PaymentMethod
+import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.repository.Repositories
 import app.openbill.core.model.Money
 import kotlin.time.Instant
-import kotlinx.datetime.LocalDate
 
 /** One way the customer pays at the counter: cash, UPI, card or bank, into [accountId]. */
 data class PosTender(val method: PaymentMethod, val accountId: String, val amount: Money, val reference: String? = null)
@@ -69,25 +69,26 @@ object PosCheckout {
     }
 
     /**
-     * Records [settlement] against the posted invoice [invoiceId] of [partyId]: one posted
-     * payment-in per tender that pays something, all in one transaction.
+     * Posts the saved draft invoice [invoiceId] and records [settlement] against it (one posted
+     * payment-in per tender that pays something) in one transaction: if any payment fails, the
+     * invoice stays an unposted draft too. Returns the posted invoice and the payment ids.
      */
-    suspend fun recordPayments(
+    suspend fun postAndSettle(
         repos: Repositories,
         post: PostVoucher,
         invoiceId: String,
-        partyId: String,
-        firmId: String,
-        financialYearId: String,
         stateCode: String,
-        date: LocalDate,
         tenders: List<PosTender>,
         settlement: PosSettlement,
         newId: () -> String,
         at: Instant,
-    ): List<String> {
+    ): Pair<Voucher, List<String>> {
         val ids = ArrayList<String>()
+        var invoice: Voucher? = null
         repos.transaction {
+            val v = post(invoiceId, at)
+            invoice = v
+            val partyId = requireNotNull(v.partyId) { "The bill has no customer" }
             val money = MoneyVouchers(repos.vouchers, repos.payments, repos.ledger, post)
             tenders.forEachIndexed { i, t ->
                 val amount = settlement.applied[i]
@@ -95,10 +96,10 @@ object PosCheckout {
                 val id = newId()
                 money.record(
                     MoneyVoucherInput(
-                        type = VoucherType.PAYMENT_IN, id = id, firmId = firmId, financialYearId = financialYearId,
-                        stateCode = stateCode, date = date, amount = amount, accountId = t.accountId, method = t.method,
+                        type = VoucherType.PAYMENT_IN, id = id, firmId = v.firmId, financialYearId = v.financialYearId,
+                        stateCode = stateCode, date = v.date, amount = amount, accountId = t.accountId, method = t.method,
                         partyId = partyId, instrumentNumber = t.reference?.trim()?.takeIf { t.method != PaymentMethod.CASH },
-                        instrumentDate = date.takeIf { t.method == PaymentMethod.BANK || t.method == PaymentMethod.CHEQUE },
+                        instrumentDate = v.date.takeIf { t.method == PaymentMethod.BANK || t.method == PaymentMethod.CHEQUE },
                         allocations = listOf(AllocationRequest(invoiceId, amount)),
                     ),
                     at,
@@ -106,7 +107,7 @@ object PosCheckout {
                 ids += id
             }
         }
-        return ids
+        return invoice!! to ids
     }
 
     fun PaymentMethod.label(): String = when (this) {
