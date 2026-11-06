@@ -134,7 +134,8 @@ fun MoneyEditorScreen(
 
     fun autoAllocate() {
         alloc.clear()
-        MoneyVouchers.fifo(open, amountMoney ?: Money.ZERO).forEach { alloc[it.invoiceVoucherId] = it.amount.format() }
+        val disc = Parse.money(discount)?.takeIf { it > Money.ZERO && type.isPayment() } ?: Money.ZERO
+        MoneyVouchers.fifo(open, (amountMoney ?: Money.ZERO) + disc).forEach { alloc[it.invoiceVoucherId] = it.amount.format() }
     }
 
     fun submit() {
@@ -157,14 +158,10 @@ fun MoneyEditorScreen(
             if (t.accountId == null) { error = "Choose an account for each mode"; return }
             if (t.method != PaymentMethod.CASH && t.ref.isBlank()) { error = "Enter the ${refLabel(t.method).lowercase()}"; return }
         }
-        val split = MoneyVouchers.splitAcross(requests, amounts).toMutableList()
-        if (disc > Money.ZERO) {
-            // The discount settles what this payment leaves open, oldest first, on the first voucher.
-            val paid = requests.groupBy { it.invoiceVoucherId }.mapValues { (_, r) -> r.fold(Money.ZERO) { t, a -> t + a.amount } }
-            val left = open.map { it.copy(allocated = it.allocated + (paid[it.voucherId] ?: Money.ZERO)) }.filter { it.outstanding > Money.ZERO }
-            if (disc > left.fold(Money.ZERO) { t, i -> t + i.outstanding }) { error = "The discount is more than the balance this payment leaves open"; return }
-            split[0] = (split[0] + MoneyVouchers.fifo(left, disc)).groupBy { it.invoiceVoucherId }
-                .map { (id, r) -> AllocationRequest(id, r.fold(Money.ZERO) { t, a -> t + a.amount }) }
+        val split = try {
+            MoneyVouchers.splitWithDiscount(requests, open, amounts, disc)
+        } catch (e: IllegalArgumentException) {
+            error = e.message; return
         }
         busy = true
         error = null
@@ -291,9 +288,12 @@ fun MoneyEditorScreen(
                             )
                         }
                     }
-                    val advance = (amountMoney ?: Money.ZERO) - allocated
+                    // Allocations above the money are covered by the settlement discount.
+                    val disc = Parse.money(discount)?.takeIf { it > Money.ZERO } ?: Money.ZERO
+                    val paidIn = amountMoney ?: Money.ZERO
+                    val advance = paidIn - allocated + minOf(maxOf(allocated - paidIn, Money.ZERO), disc)
                     Text(
-                        if (advance < Money.ZERO) "Allocated ${Fmt.inr(allocated)} is more than the amount"
+                        if (advance < Money.ZERO) "Allocated ${Fmt.inr(allocated)} is more than the amount" + (if (disc > Money.ZERO) " and discount" else "")
                         else "Allocated ${Fmt.inr(allocated)} · on account (advance) ${Fmt.inr(advance)}",
                         color = if (advance < Money.ZERO) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
@@ -305,7 +305,8 @@ fun MoneyEditorScreen(
                         { discount = it; error = null },
                         keyboardType = KeyboardType.Decimal,
                         prefix = "₹",
-                        supporting = "Settles what is still open after this payment, oldest first; posted to $discountLedger. " +
+                        supporting = "Settles ${if (type == VoucherType.PAYMENT_IN) "invoices" else "bills"} together with the amount (₹980 paid + ₹20 discount clears ₹1,000); any part not allocated above " +
+                            "settles what is still open, oldest first. Posted to $discountLedger. " +
                             "With a discount the amount can be left blank to write off the balance.",
                     )
                 } else if (type.isPayment() && party != null) {

@@ -85,6 +85,20 @@ class MoneyVouchersTest {
     }
 
     @Test
+    fun settlementDiscountAllocationsCountTheDiscountOnce() {
+        val inv = app.openbill.core.domain.model.OutstandingInvoice("a", "INV-1", LocalDate(2026, 5, 1), null, "p1", VoucherType.SALE, Money.of(100_000), Money.ZERO)
+        val full = listOf(AllocationRequest("a", Money.of(100_000)))
+        // ₹980 paid + ₹20 discount with ₹1,000 allocated (fully allocated invoice used to crash).
+        assertEquals(listOf(full), MoneyVouchers.splitWithDiscount(full, listOf(inv), listOf(Money.of(98_000)), Money.of(2_000)))
+        // ₹980 allocated: the discount tops the invoice up to ₹1,000.
+        assertEquals(listOf(full), MoneyVouchers.splitWithDiscount(listOf(AllocationRequest("a", Money.of(98_000))), listOf(inv), listOf(Money.of(98_000)), Money.of(2_000)))
+        // Discount-only write-off.
+        assertEquals(listOf(full), MoneyVouchers.splitWithDiscount(emptyList(), listOf(inv), listOf(Money.ZERO), Money.of(100_000)))
+        assertFailsWith<IllegalArgumentException> { MoneyVouchers.splitWithDiscount(full, listOf(inv), listOf(Money.of(98_000)), Money.of(5_000)) }
+        assertFailsWith<IllegalArgumentException> { MoneyVouchers.splitWithDiscount(emptyList(), listOf(inv), listOf(Money.of(98_000)), Money.of(150_000)) }
+    }
+
+    @Test
     fun paymentInAllocatesFifoAndKeepsRemainderAsAdvance(): Unit = runBlocking {
         val (cash, _) = setup()
         sale("s1", 10_000, LocalDate(2026, 5, 1))

@@ -142,6 +142,27 @@ class MoneyVouchers(
             if (paymentType == VoucherType.PAYMENT_OUT) VoucherType.PURCHASE else VoucherType.SALE
 
         /**
+         * [splitAcross] with a settlement [discount] carried by the first tender. Allocations above the
+         * money already include the discount (₹980 paid + ₹20 discount against ₹1,000); any discount
+         * left over settles what [open] still has outstanding, oldest first.
+         * With a discount, throws [IllegalArgumentException] when allocations exceed money plus discount
+         * or the discount exceeds what is open.
+         */
+        fun splitWithDiscount(requests: List<AllocationRequest>, open: List<OutstandingInvoice>, amounts: List<Money>, discount: Money): List<List<AllocationRequest>> {
+            if (discount == Money.ZERO) return splitAcross(requests, amounts)
+            val money = amounts.fold(Money.ZERO) { t, a -> t + a }
+            val requested = requests.fold(Money.ZERO) { t, a -> t + a.amount }
+            require(requested <= money + discount) { "Allocations are more than the amount and discount" }
+            val topUp = discount - minOf(maxOf(requested - money, Money.ZERO), discount)
+            val paid = requests.groupBy { it.invoiceVoucherId }.mapValues { (_, r) -> r.fold(Money.ZERO) { t, a -> t + a.amount } }
+            val left = open.mapNotNull { inv -> (paid[inv.voucherId] ?: Money.ZERO).takeIf { it < inv.outstanding }?.let { inv.copy(allocated = inv.allocated + it) } }
+            require(topUp <= left.fold(Money.ZERO) { t, i -> t + i.outstanding }) { "The discount is more than the balance this payment leaves open" }
+            val all = (requests + fifo(left, topUp)).groupBy { it.invoiceVoucherId }
+                .map { (id, r) -> AllocationRequest(id, r.fold(Money.ZERO) { t, a -> t + a.amount }) }
+            return splitAcross(all, listOf(amounts[0] + discount) + amounts.drop(1))
+        }
+
+        /**
          * Split tender: one payment voucher per mode. Hands [requests] to the tenders in order, each
          * taking allocations up to its own amount; returns one allocation list per tender.
          */
