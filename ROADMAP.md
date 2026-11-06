@@ -373,7 +373,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C | Done (FEFO batch picker on sale lines; alternate units with conversion; batch or serial per item, not both) |
 | Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L | Stable; EXE, MSI, portable ZIP, DEB, and tar.gz packages ship; code signing pending |
 | Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Done (silent print setting, tray notification, portable mode, Ctrl+K palette; ESC/POS thermal printing on all surfaces) |
-| Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Delivery challans done; rest planned |
+| Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Delivery challans and reverse charge done; rest planned |
 | Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Editable reminder message done; scheduling planned |
 | Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Planned |
 | Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Planned |

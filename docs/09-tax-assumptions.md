@@ -93,8 +93,10 @@ The split is an equal division. A rate whose units cannot be halved exactly is r
 intra-state: 18% (180,000 units) splits 90,000 each, 0.25% (2,500) splits 1,250 each; an
 odd unit count is accepted for inter-state IGST but rejected intra-state.
 
-There are no special place-of-supply rules in 1.0 for services, immovable property, SEZ,
-exports, imports, bill-to/ship-to, or overrides; only code equality applies. Both codes
+Exports and SEZ supplies (schema 12) are always inter-state: `TaxContext.forceInterState`
+skips the code comparison. An export sets the place of supply to `96` (other country). There
+are no other special place-of-supply rules for services, immovable property, imports, or
+bill-to/ship-to; only code equality applies. Both codes
 must be two ASCII digits, which does not prove they are known states: validity is enforced
 by GSTIN validation, so a raw `TaxContext` with `00` cannot come from a valid GSTIN.
 
@@ -307,8 +309,8 @@ historical document does not change when the schedule is updated.
 
 ## 12. Exclusions from 1.0
 
-Not supported: reverse charge; composition dealers (regular dealers only); SEZ, export,
-and import special rules beyond selecting a treatment; TDS and TCS; e-invoice and e-way
+Not supported: composition dealers (regular dealers only); import special rules beyond
+selecting a treatment; TDS and TCS; e-invoice and e-way
 bill generation or validation; GSTIN autofill or online verification (checksum only); ITC
 ledgers; GSTR filing; negative lines or credit-note lines; and multi-currency (INR only).
 Additional charges are supported (section 7.1), including proportional apportionment of one
@@ -326,17 +328,25 @@ are not recorded here.
   Portal, request an IRN, or produce a signed QR code. A business that must issue e-invoices
   must do so outside OpenBill. Integration is post-1.0, uses the user's own credentials, and
   is described in [10-server.md](10-server.md).
-- **E-way bill.** 1.0 neither generates nor validates e-way bills. Structured transport
-  details are post-1.0 together with the integration.
-- **Reverse charge (RCM).** 1.0 treats every supply as forward charge. A purchase subject to
-  reverse charge is recorded as an ordinary purchase; the self-assessed liability and its
-  credit are not computed.
+- **E-way bill.** OpenBill neither generates nor validates e-way bills. Since schema 12 a
+  document records transport details and an e-way bill number (12 digits, entered by hand)
+  and prints them.
+- **Reverse charge (RCM).** Since schema 12 a sale, purchase, credit note or debit note can be
+  flagged reverse charge. GST is still computed and printed, but the document total leaves it
+  out. A reverse-charge sale books no output GST (the recipient pays it) and needs a
+  registered customer. A reverse-charge purchase books the self-assessed liability to output
+  GST and the matching input credit, unless the line is marked ITC-ineligible. The cash
+  payment of RCM tax is not modelled.
+- **Ineligible ITC.** A purchase-side line can be marked not eligible for input credit. Its GST
+  is added to the purchase cost and the stock cost, and appears in GSTR-3B 4(D)(2) instead of
+  4(A).
 - **TCS and TDS.** 1.0 computes neither and creates no withholding ledger entries. Treatment of
   amounts deducted or collected is left to the accountant.
-- **Export and SEZ.** 1.0 supports only the `ZERO_RATED` treatment selected by the user (see
-  section 9). It does not model LUT or bond status, shipping bill details, refund claims,
-  foreign currency, or the SEZ place-of-supply rules, and an export invoice is not
-  identified as such in GSTR-1 output.
+- **Export and SEZ.** Since schema 12 a sale, credit note, quotation or proforma can be marked
+  export or SEZ, with IGST paid or under LUT/bond. Lines under LUT/bond are zero-rated at 0%.
+  The shipping bill, port code, LUT reference and a currency note are recorded and printed.
+  Totals stay in rupees. Refund claims and foreign-currency accounting are not modelled. An
+  SEZ supply needs the SEZ unit's GSTIN.
 - **Composition scheme.** Regular dealers only. A composition dealer would need a bill of
   supply with no tax shown and different returns; neither is supported, and a composition
   dealer must not use the 1.0 tax engine as is.
@@ -436,12 +446,21 @@ with `inum`, `idt` (dd-mm-yyyy), `val`, `pos`, `rchrg`, `inv_typ`, `itms[].num/i
   rejects them.
 - Document summary (table 13): nature 1 (invoices) and 5 (credit notes), one range per
   nature from the lowest to the highest number, with cancelled counts.
-- Not supported: exports (EXP), SEZ, deemed exports, reverse charge, e-commerce operators,
-  amendments, advances (AT/ATADJ), CDNUR, `gt`/`cur_gt`, and the offline tool's `hash`.
+- Schema 12: `rchrg` is `Y` on reverse-charge documents (b2b, cdnr). SEZ supplies go to b2b
+  with `inv_typ` `SEZWP`/`SEZWOP`. Exports go to `exp` (`WPAY`/`WOPAY`, with shipping bill
+  number, date and port when recorded) and to summary row 6A. The e-commerce operator GSTIN
+  is sent as `etin` on b2b and b2cl, and b2cs rows split by operator with `typ` `E`. A credit
+  note against an export is skipped with a note because it belongs in CDNUR.
+- Not supported: deemed exports, amendments, advances (AT/ATADJ), CDNUR, the e-commerce
+  sections 14/15, `gt`/`cur_gt`, and the offline tool's `hash`.
 
-**GSTR-3B summary.** 3.1(a) taxable outward, 3.1(b) zero rated, 3.1(c) nil/exempt, 3.1(e)
-non-GST; 4(A)(5) all other ITC from purchases, debit notes (negative) and expense input
-GST; tax payable is output minus ITC per head, without cross-head set-off. Working only.
+**GSTR-3B summary.** 3.1(a) taxable outward (no exports, no reverse charge), 3.1(b) zero
+rated plus export/SEZ, 3.1(c) nil/exempt plus reverse-charge outward (taxable value only),
+3.1(d) inward supplies on reverse charge, 3.1(e) non-GST. ITC: 4(A)(3) reverse charge,
+4(A)(5) all other ITC from purchases, debit notes (negative) and expense input GST, 4(C) net,
+and 4(D)(2) ineligible ITC (shown, not claimed). Tax payable is 3.1(a) + 3.1(b) + 3.1(d)
+output minus 4(C) per head, without cross-head set-off. RCM tax must be paid in cash. Working
+only.
 
 **Tally XML.** One `ENVELOPE` / `IMPORTDATA` with `REPORTNAME` "Vouchers": ledger masters
 (`LEDGER ACTION="Create"`, `PARENT`, `PARTYGSTIN`, GST `TAXTYPE`/`GSTDUTYHEAD`) then

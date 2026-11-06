@@ -181,7 +181,7 @@ Inventory invariants:
 | Additional charges | Freight, packing, etc. | P0 | Done | Taxable or non-taxable flag |
 | Round-off | Nearest rupee | P0 | Done | Ledger rounding account |
 | Multi-currency | Exchange rate and currency | P1 | Not started | Phase 7 groundwork |
-| Reverse charge | GST reverse charge flag | P1 | Not started | After 1.0 |
+| Reverse charge | GST reverse charge flag | P1 | Done | Sales and purchases; GSTR-1 rchrg and GSTR-3B 3.1(c)/3.1(d)/4(A)(3) |
 | TDS and TCS | Threshold-based | P2 | Not started | After 1.0 |
 | Attachments | Receipt or reference image | P0 | Done | Files included in backup; expense receipt attachments are post-1.0 |
 | Duplicate invoice | Copy lines into a new draft | P0 | Done | New number required |
@@ -190,23 +190,23 @@ Inventory invariants:
 | E-invoice | IRN generation via portal or GSP | P1 | Not started | Bring-your-own credentials |
 | E-way bill | Generate and share | P1 | Not started | Bring-your-own credentials |
 | Delivery challan | Non-posting movement document | P1 | Done | After 1.0 |
-| Delivery challan with e-way bill | Challan carries transport details and can drive e-way generation | P1 | Not started | Bring-your-own credentials |
+| Delivery challan with e-way bill | Challan carries transport details and can drive e-way generation | P1 | Partial | Transport details and e-way bill number print on challans; generation not started |
 | Purchase order | Order to a supplier; convert to purchase bill | P1 | Not started | Non-posting; preserves source link; partial receipt |
 | Sales order | Customer order that can be converted to an invoice | P1 | Not started | Non-posting; preserves source link; partial fulfilment; mirrors purchase order |
 | Sales return e-invoice | E-invoice for credit notes | P1 | Not started | With e-invoice support |
 | Bulk e-invoice and e-way generation | Select many invoices and generate in one run | P2 | Not started | Rate-limited queue with per-document results |
 | E-way expiry alerts | Notify before an e-way bill expires | P2 | Not started | Local notification |
-| Transport details | Transporter ID, document number and date, mode, vehicle, distance | P1 | Not started | Needed for e-way bill and challan |
-| Export and shipping details | Shipping bill number and date, port, export type, LUT or bond reference | P1 | Not started | Part of foreign-currency billing |
-| E-commerce operator GSTIN | Marketplace GSTIN recorded on the invoice | P1 | Not started | Optional header field; the ship-to GSTIN itself is P0 (section 3) |
-| ITC applicable flag | Mark purchase lines eligible or ineligible for input credit | P1 | Not started | Feeds GST working |
-| Tax-rate change advisory | After a scheduled rate change, prompt the user to review items still on the old rate | P1 | Not started | Driven by the versioned rate schedule; never rewrites posted documents |
-| Price-change prompt | When a line price differs from the item master, offer to update the master | P1 | Not started | Explicit confirmation; audit event on change |
-| Filing-period warning | Warn before cancelling or deleting a document inside a period already exported for GSTR-1 | P1 | Not started | Warn, do not block; audit event records the acknowledgement |
+| Transport details | Transporter ID, document number and date, mode, vehicle, distance | P1 | Done | Needed for e-way bill and challan |
+| Export and shipping details | Shipping bill number and date, port, export type, LUT or bond reference | P1 | Done | Exports (WPAY/WOPAY) and SEZ (SEZWP/SEZWOP) in GSTR-1; currency is a printed note only |
+| E-commerce operator GSTIN | Marketplace GSTIN recorded on the invoice | P1 | Done | Optional header field; the ship-to GSTIN itself is P0 (section 3) |
+| ITC applicable flag | Mark purchase lines eligible or ineligible for input credit | P1 | Done | Blocked ITC goes to cost and GSTR-3B 4(D)(2) |
+| Tax-rate change advisory | After a scheduled rate change, prompt the user to review items still on the old rate | P1 | Done | Driven by the versioned rate schedule; never rewrites posted documents |
+| Price-change prompt | When a line price differs from the item master, offer to update the master | P1 | Done | Explicit confirmation; audit event on change |
+| Filing-period warning | Warn before cancelling or deleting a document inside a period already exported for GSTR-1 | P1 | Done | Cutoff is the GSTR-1 due date (11th of next month); warn, do not block; audit event records the acknowledgement |
 | Discount before or after tax | Per-firm choice on whether invoice discount is applied before tax (and spread across lines) or after | P0 | Done | Explicit setting; documented in the tax engine |
-| Free quantity | Bonus quantity on a line that does not change price | P1 | Not started | Stock moves, revenue does not |
+| Free quantity | Bonus quantity on a line that does not change price | P1 | Done | Stock moves, revenue does not |
 | Item description on line | Free text under each line | P0 | Done | Printed under item name |
-| Additional document fields | Custom header fields (PO number, vehicle number) | P1 | Not started | Typed, optional on print |
+| Additional document fields | Custom header fields (PO number, vehicle number) | P1 | Done | PO, e-way bill number and custom labelled fields per business |
 | Split payment on invoice | Several tenders recorded as separate payments against one invoice | P0 | Done | Creates multiple payment-in entries |
 | Party-level discount on payment | Single discount settled against all outstanding invoices of a party | P1 | Not started | Posted as an adjustment |
 | TDS and TCS on payments | Pre-defined and custom rates applied when linking payments to invoices | P2 | Not started | After 1.0; enable per firm |

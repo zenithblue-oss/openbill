@@ -78,7 +78,7 @@ against what is usable in the app today. A feature counts 1 when it works end to
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
 **1.0 scope: 100% (136 of 136 P0 features)** `████████████████████`
-**Full parity: about 53% (146.5 of 277 P0+P1+P2 features)** `███████████░░░░░░░░░`
+**Full parity: about 57% (157 of 277 P0+P1+P2 features)** `███████████░░░░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
