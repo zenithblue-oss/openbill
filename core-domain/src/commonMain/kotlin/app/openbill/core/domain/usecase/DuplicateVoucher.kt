@@ -15,7 +15,7 @@ fun Voucher.duplicateAsDraft(id: String, date: LocalDate, financialYearId: Strin
     copy(
         id = id, financialYearId = financialYearId, number = null, date = date, dueDate = null, referenceVoucherId = null,
         status = VoucherStatus.DRAFT, cancellationReason = null, postedAt = null, cancelledAt = null, restoredAt = null,
-        createdAt = at, updatedAt = at, deletedAt = null, fulfilment = OrderFulfilment.NONE,
+        createdAt = at, updatedAt = at, deletedAt = null, fulfilment = OrderFulfilment.NONE, heldAt = null,
         lines = lines.mapIndexed { i, l -> l.copy(id = newId(i), batchId = null, serialNumbers = emptyList(), sourceLineId = null) },
         charges = charges.mapIndexed { i, c -> c.copy(id = newId(lines.size + i)) },
     )

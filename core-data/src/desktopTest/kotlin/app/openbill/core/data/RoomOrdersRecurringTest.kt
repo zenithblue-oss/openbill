@@ -71,6 +71,20 @@ class RoomOrdersRecurringTest {
     }
 
     @Test
+    fun heldBillsAreListedUntilPostedOrDiscarded(): Unit = runBlocking {
+        val r = seed()
+        fun held(id: String) = testVoucher(id, lines = listOf(testLine("$id-l")), charges = emptyList())
+        r.vouchers.saveDraft(held("h1").copy(heldAt = POSTED_AT))
+        r.vouchers.saveDraft(held("h2").copy(heldAt = CREATED_AT))
+        r.vouchers.saveDraft(held("d3"))
+        assertEquals(listOf("h2", "h1"), r.vouchers.observeHeldBills("firm-1").first().map { it.id }, "oldest hold first, plain drafts left out")
+        assertTrue(r.vouchers.observeHeldBills("firm-1").first().all { it.lines.isNotEmpty() })
+        r.vouchers.post("h1", POSTED_AT)
+        r.vouchers.softDeleteDraft("h2", POSTED_AT)
+        assertTrue(r.vouchers.observeHeldBills("firm-1").first().isEmpty())
+    }
+
+    @Test
     fun recurringClaimIsAtomicAndIdempotent(): Unit = runBlocking {
         val r = seed()
         r.vouchers.saveDraft(testVoucher("tpl", charges = emptyList()))

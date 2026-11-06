@@ -232,6 +232,9 @@ class RoomVoucherRepository(
     override fun observeConversions(sourceId: String): Flow<List<Voucher>> =
         vouchers.observeByReference(sourceId).map { values -> withDetails(values) }
 
+    override fun observeHeldBills(firmId: String): Flow<List<Voucher>> =
+        vouchers.observeHeld(firmId).map { values -> withDetails(values) }
+
     /** Keeps an order's fulfilment in step after one of its conversions is posted, cancelled or restored (inside the write). */
     private suspend fun refreshOrder(orderId: String?) {
         val order = orderId?.let { vouchers.findById(it) } ?: return

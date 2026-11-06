@@ -9,6 +9,8 @@ enum class PaymentMethod {
     BANK,
     UPI,
     CHEQUE,
+    /** Debit/credit card on a terminal; settles into a bank account. */
+    CARD,
 }
 
 data class PaymentDetails(
@@ -58,6 +60,11 @@ data class PaymentDetails(
                 require(instrumentNumber != null) {
                     "UPI payments require an instrument number"
                 }
+            }
+
+            PaymentMethod.CARD -> {
+                require(instrumentNumber != null) { "Card payments require the approval code or last digits" }
+                require(upiId == null) { "Card payments cannot have a UPI id" }
             }
 
             PaymentMethod.CHEQUE -> {

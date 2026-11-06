@@ -96,6 +96,8 @@ data class VoucherEntity(
     @ColumnInfo(defaultValue = "NULL") val customFields: String? = null,
     /** v13, orders only: `partial` or `complete` once invoiced/billed; NULL while nothing is. */
     @ColumnInfo(defaultValue = "NULL") val fulfilment: String? = null,
+    /** v14, POS: epoch millis the draft was put on hold at the counter; NULL otherwise. */
+    @ColumnInfo(defaultValue = "NULL") val heldAt: Long? = null,
 )
 
 @Entity(

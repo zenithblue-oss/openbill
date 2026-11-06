@@ -256,6 +256,8 @@ data class Voucher(
     val customFields: List<DocumentField> = emptyList(),
     /** Orders only: how much has been invoiced or billed, kept in step by the repository. */
     val fulfilment: OrderFulfilment = OrderFulfilment.NONE,
+    /** POS: when this draft was put on hold at the counter; held drafts are listed for resuming. */
+    val heldAt: Instant? = null,
 ) {
     /** Supplies to SEZ and exports are inter-state whatever the place of supply. */
     fun isIntraState(firmStateCode: String): Boolean = export == null && firmStateCode == placeOfSupplyStateCode

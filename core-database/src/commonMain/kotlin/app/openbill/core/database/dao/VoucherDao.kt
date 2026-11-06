@@ -88,6 +88,12 @@ interface VoucherDao {
         toDate: String,
     ): Flow<List<VoucherEntity>>
 
+    @Query(
+        "SELECT * FROM vouchers WHERE firmId = :firmId AND status = 'draft' AND heldAt IS NOT NULL " +
+            "AND deletedAt IS NULL ORDER BY heldAt, id",
+    )
+    fun observeHeld(firmId: String): Flow<List<VoucherEntity>>
+
     @Query("SELECT * FROM vouchers WHERE referenceVoucherId = :sourceId AND deletedAt IS NULL ORDER BY createdAt, id")
     fun observeByReference(sourceId: String): Flow<List<VoucherEntity>>
 

@@ -52,6 +52,12 @@ interface VoucherRepository {
     /** Non-deleted vouchers made from [sourceId] (its referenceVoucherId), with lines: order and quotation conversions, returns. */
     fun observeConversions(sourceId: String): Flow<List<Voucher>>
 
+    /** POS bills on hold: non-deleted drafts with [Voucher.heldAt], oldest first, with lines. */
+    fun observeHeldBills(firmId: String): Flow<List<Voucher>> =
+        observeVouchers(firmId, LocalDate(1900, 1, 1), LocalDate(9999, 12, 31)).map { all ->
+            all.filter { it.heldAt != null && it.status == VoucherStatus.DRAFT && it.deletedAt == null }.sortedBy { it.heldAt }
+        }
+
     suspend fun findVoucher(id: String): Voucher?
 
     suspend fun saveDraft(voucher: Voucher)

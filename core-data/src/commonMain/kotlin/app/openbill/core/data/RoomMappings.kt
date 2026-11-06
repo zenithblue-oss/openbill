@@ -437,6 +437,7 @@ internal fun VoucherEntity.toDomain(
     ewayBillNumber = ewayBillNumber,
     customFields = DocumentField.decode(customFields),
     fulfilment = fulfilment?.let { decodeEnum<OrderFulfilment>(it, "order fulfilment") } ?: OrderFulfilment.NONE,
+    heldAt = heldAt?.toInstant(),
 )
 
 internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = VoucherEntity(
@@ -460,6 +461,7 @@ internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = Voucher
     ewayBillNumber = ewayBillNumber,
     customFields = DocumentField.encode(customFields),
     fulfilment = fulfilment.takeIf { it != OrderFulfilment.NONE }?.name?.lowercase(),
+    heldAt = heldAt?.toEpochMillis(),
     id = id,
     firmId = firmId,
     financialYearId = financialYearId,
