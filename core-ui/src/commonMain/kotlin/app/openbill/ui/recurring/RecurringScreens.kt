@@ -64,6 +64,9 @@ fun RecurringSchedule.describe(): String = buildString {
     maxCount?.let { append(", ").append(if (it == 1) "1 invoice" else "$it invoices") }
 }
 
+private const val COPY_ORIGINAL = "Original invoice"
+private const val COPY_LATEST = "Latest generated invoice"
+
 internal enum class EndKind(val label: String) { NEVER("No end"), ON_DATE("On a date"), AFTER("After a number") }
 
 /** Inputs of the schedule form, checked by [validate]. */
@@ -75,6 +78,7 @@ internal data class ScheduleForm(
     val end: LocalDate? = null,
     val count: String = "",
     val autoPost: Boolean = false,
+    val copyLatest: Boolean = false,
 ) {
     fun validate(endKind: EndKind): Map<String, String> = buildMap {
         if (name.isBlank()) put("name", "Give the schedule a name")
@@ -133,6 +137,17 @@ fun RecurringScheduleDialog(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier.toggleable(value = form.autoPost, role = Role.Switch) { form = form.copy(autoPost = it) },
                 )
+                Text("Copy from", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    SelectableChip(COPY_ORIGINAL, !form.copyLatest, { form = form.copy(copyLatest = false) })
+                    SelectableChip(COPY_LATEST, form.copyLatest, { form = form.copy(copyLatest = true) })
+                }
+                Text(
+                    if (form.copyLatest) "Each invoice copies the last one this schedule made, so price or item changes you make there carry on. Until one exists, or if it is deleted, the original is copied."
+                    else "Each invoice copies ${template.number ?: "this draft"} as it is now.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Text(
                     "Missed dates (while the app was closed) are made the next time it opens, once each.",
                     style = MaterialTheme.typography.bodySmall,
@@ -155,7 +170,7 @@ fun RecurringScheduleDialog(
                                 id = container.newId(), firmId = session.firm.id, templateVoucherId = template.id, name = form.name.trim(),
                                 frequency = form.frequency, interval = form.every.toInt(), startDate = form.start!!,
                                 endDate = form.end.takeIf { endKind == EndKind.ON_DATE }, maxCount = form.count.toIntOrNull().takeIf { endKind == EndKind.AFTER },
-                                autoPost = form.autoPost, createdAt = now, updatedAt = now,
+                                autoPost = form.autoPost, createdAt = now, updatedAt = now, copyLatest = form.copyLatest,
                             ),
                         )
                         generateRecurring(container, session)
@@ -207,17 +222,21 @@ fun RecurringListScreen(container: AppContainer, session: Session, onBack: () ->
                             Column {
                                 Text(s.describe())
                                 Text("$status · ${s.generatedCount} made · ${if (s.autoPost) "posted" else "drafts"}")
+                                Text("Copies: ${if (s.copyLatest) COPY_LATEST.lowercase() else COPY_ORIGINAL.lowercase()}")
                                 s.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                             }
                         },
                         trailingContent = {
-                            Column {
+                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
                                 if (!s.finished) {
                                     TextButton(onClick = {
                                         val now = container.now()
                                         if (s.paused) update(GenerateRecurring.resumed(s, container.today(), now), "Resumed")
                                         else update(s.copy(paused = true, updatedAt = now), "Paused")
                                     }) { Text(if (s.paused) "Resume" else "Pause") }
+                                    TextButton(onClick = {
+                                        update(s.copy(copyLatest = !s.copyLatest, updatedAt = container.now()), if (s.copyLatest) "Copies the original invoice" else "Copies the latest invoice")
+                                    }) { Text(if (s.copyLatest) "Copy original" else "Copy latest") }
                                 }
                                 TextButton(onClick = { deleting = s }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
                             }

@@ -33,7 +33,9 @@ class GenerateRecurring(
         for (s in recurring.observeSchedules(firmId).first()) {
             val due = s.dueIndexes(today)
             if (due.isEmpty()) continue
-            val template = vouchers.findVoucher(s.templateVoucherId)?.takeIf { it.deletedAt == null }
+            // "Copy from latest": the newest invoice this schedule made, else (none yet, or deleted) the original.
+            val latest = s.lastVoucherId?.takeIf { s.copyLatest }?.let { vouchers.findVoucher(it) }?.takeIf { it.deletedAt == null }
+            val template = latest ?: vouchers.findVoucher(s.templateVoucherId)?.takeIf { it.deletedAt == null }
             if (template == null) {
                 setError(s.id, "The invoice this schedule copies was deleted; delete the schedule or make a new one")
                 continue

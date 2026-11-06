@@ -144,6 +144,11 @@ class RoomOrdersRecurringTest {
         val drafts = r.vouchers.observeVouchers("firm-1", LocalDate(2026, 6, 1), LocalDate(2026, 12, 31)).first().filter { it.id != "tpl" }
         assertEquals(listOf(LocalDate(2026, 6, 5), LocalDate(2026, 7, 5), LocalDate(2026, 8, 5)), drafts.map { it.date }.sorted())
         assertEquals(3, r.recurring.findSchedule("rs")!!.nextIndex)
+        val latest = drafts.maxBy { it.date }.id
+        assertEquals(latest, r.recurring.findSchedule("rs")!!.lastVoucherId, "the newest invoice is remembered for copy-latest")
+        r.recurring.saveSchedule(r.recurring.findSchedule("rs")!!.copy(copyLatest = true, lastVoucherId = null))
+        assertEquals(latest, r.recurring.findSchedule("rs")!!.lastVoucherId, "a stale save does not forget it")
+        assertTrue(r.recurring.findSchedule("rs")!!.copyLatest)
         assertFalse(r.recurring.claimOccurrence("rs", 1, null), "a handled period cannot be claimed again")
         // Pausing from a stale copy (nextIndex 0) must not rewind the claimed periods.
         r.recurring.saveSchedule(r.recurring.findSchedule("rs")!!.copy(nextIndex = 0, generatedCount = 0, paused = true))

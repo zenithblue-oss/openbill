@@ -129,6 +129,32 @@ class OrdersAndRecurringTest {
     }
 
     @Test
+    fun copyFromOriginalOrLatestThroughCatchUp(): Unit = runBlocking {
+        suspend fun run(copyLatest: Boolean): Pair<List<Long>, List<Long>> {
+            val vouchers = InMemoryVoucherRepository()
+            val recurring = InMemoryRecurringRepository(vouchers)
+            vouchers.saveDraft(voucher("tpl", VoucherType.SALE, listOf(line("l1", 1))))
+            recurring.saveSchedule(schedule(LocalDate(2026, 6, 10)).copy(copyLatest = copyLatest))
+            val generate = GenerateRecurring(recurring, vouchers) { _, _ -> }
+            fun rates(from: LocalDate) = vouchers.observeVouchers("f", from, LocalDate(2027, 3, 31))
+            assertEquals(2, generate("f", LocalDate(2026, 7, 15), at, ::id) { "fy" }) // Jun, Jul
+            // The user raises the price on the newest invoice the schedule made (July).
+            val july = vouchers.findVoucher(recurring.findSchedule("r")!!.lastVoucherId!!)!!
+            assertEquals(LocalDate(2026, 7, 10), july.date)
+            vouchers.saveDraft(july.copy(lines = july.lines.map { it.copy(rate = Money.of(15_000)) }))
+            assertEquals(2, generate("f", LocalDate(2026, 9, 15), at, ::id) { "fy" }) // catch-up: Aug, Sep
+            val catchUp = rates(LocalDate(2026, 8, 1)).first().sortedBy { it.date }.map { it.lines.single().rate.paise }
+            // The latest invoice is deleted: the next one falls back to the original.
+            vouchers.deleteDraft(recurring.findSchedule("r")!!.lastVoucherId!!.also { assertEquals(LocalDate(2026, 9, 10), vouchers.findVoucher(it)!!.date) })
+            assertEquals(1, generate("f", LocalDate(2026, 10, 10), at, ::id) { "fy" })
+            val afterDelete = rates(LocalDate(2026, 10, 1)).first().map { it.lines.single().rate.paise }
+            return catchUp to afterDelete
+        }
+        assertEquals(listOf(10_000L, 10_000L) to listOf(10_000L), run(copyLatest = false), "original: the template's price every time")
+        assertEquals(listOf(15_000L, 15_000L) to listOf(10_000L), run(copyLatest = true), "latest: July's new price carries through the catch-up; deleted latest falls back")
+    }
+
+    @Test
     fun leapYearsAndMonthEndsClampWithoutDrift() {
         val monthly = schedule(LocalDate(2028, 1, 31))
         assertEquals(LocalDate(2028, 2, 29), monthly.occurrence(1), "leap February")
