@@ -9,4 +9,11 @@ interface AuditRepository {
     fun observeRecent(firmId: String, limit: Int): Flow<List<AuditEvent>>
 
     suspend fun record(event: AuditEvent)
+
+    /** Voucher id to the user id that posted it (the "voucher.posted" event's actor, if any). */
+    suspend fun postedBy(firmId: String): Map<String, String>
+
+    companion object {
+        const val POSTED_ACTION = "voucher.posted"
+    }
 }

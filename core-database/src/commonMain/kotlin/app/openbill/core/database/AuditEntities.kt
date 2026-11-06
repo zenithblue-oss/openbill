@@ -34,6 +34,27 @@ data class AuditEventEntity(
     val createdAt: Long,
 )
 
+/** Install-wide sign-in users (not per firm). The fixed `owner` row signs in with the app-lock PIN. */
+@Entity(tableName = "users")
+data class UserEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val role: String,
+    val active: Boolean,
+    val pinHash: String?,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+object Users {
+    const val CREATE_TABLE = "CREATE TABLE IF NOT EXISTS `users` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `role` TEXT NOT NULL, " +
+        "`active` INTEGER NOT NULL, `pinHash` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+    /** Every install, migrated or new, has its owner; history without a user belongs to them. */
+    const val SEED_OWNER = "INSERT OR IGNORE INTO `users` (`id`, `name`, `role`, `active`, `pinHash`, `createdAt`, `updatedAt`) " +
+        "VALUES ('owner', 'Owner', 'owner', 1, NULL, 0, 0)"
+}
+
 @Entity(
     tableName = "attachments",
     foreignKeys = [

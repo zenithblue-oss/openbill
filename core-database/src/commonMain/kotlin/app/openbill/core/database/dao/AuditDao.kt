@@ -27,4 +27,12 @@ interface AuditDao {
             "ORDER BY createdAt DESC, id DESC LIMIT :limit",
     )
     fun observeRecent(firmId: String, limit: Int): Flow<List<AuditEventEntity>>
+
+    @Query(
+        "SELECT voucherId, actor FROM audit_events WHERE firmId = :firmId AND action = 'voucher.posted' " +
+            "AND voucherId IS NOT NULL AND actor IS NOT NULL",
+    )
+    suspend fun postedBy(firmId: String): List<VoucherActor>
 }
+
+data class VoucherActor(val voucherId: String, val actor: String)

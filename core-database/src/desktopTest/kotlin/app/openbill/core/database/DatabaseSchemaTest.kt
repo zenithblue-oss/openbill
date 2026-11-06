@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(15, OPENBILL_DATABASE_VERSION)
+        assertEquals(16, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/16.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/15.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/14.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/13.json").exists())
@@ -324,7 +325,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(14, migrations.size)
+        assertEquals(15, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -343,7 +344,8 @@ class DatabaseSchemaTest {
         assertEquals(13, migrations[11].endVersion)
         assertEquals(14, migrations[12].endVersion)
         assertEquals(15, migrations[13].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(15).isEmpty())
+        assertEquals(16, migrations[14].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(16).isEmpty())
     }
 
     @Test
@@ -601,6 +603,31 @@ class DatabaseSchemaTest {
                 assertEquals("USD 120", it.getText(2))
                 assertEquals(11800L, it.getLong(3))
             }
+        }
+    }
+
+    @Test
+    fun schemaV15MigratesToV16WithTheOwnerAsOnlyUser() {
+        helper.createDatabase(15).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO audit_events (id, firmId, entityType, entityId, voucherId, action, detailsJson, actor, createdAt) " +
+                    "VALUES ('a-1', 'firm-1', 'voucher', 'v-1', 'v-1', 'voucher.posted', NULL, NULL, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(16, DatabaseMigrations.migrationsFor(15)).use { connection ->
+            connection.prepare("SELECT id, role, active, pinHash FROM users").use {
+                assertTrue(it.step())
+                assertEquals("owner", it.getText(0))
+                assertEquals("owner", it.getText(1))
+                assertEquals(1L, it.getLong(2))
+                assertTrue(it.isNull(3), "the owner signs in with the device app-lock PIN, never stored here")
+                assertTrue(!it.step(), "only the owner")
+            }
+            connection.prepare("SELECT COUNT(*) FROM audit_events").use { assertTrue(it.step()); assertEquals(1L, it.getLong(0)) }
         }
     }
 

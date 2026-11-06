@@ -498,7 +498,7 @@ fun ItemEditScreen(
                 if (itemId != null && form.trackInventory) {
                     TextButton(onClick = { onOpenStock(itemId) }) { Text("Stock") }
                 }
-                if (itemId != null) {
+                if (itemId != null && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CANCEL_DELETE)) {
                     IconButton(onClick = { confirmRemove = true }, enabled = !form.saving) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove item")
                     }

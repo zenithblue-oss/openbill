@@ -10,6 +10,7 @@ data class Repositories(
     val payments: PaymentRepository,
     val audit: AuditRepository = app.openbill.core.domain.fake.InMemoryAuditRepository(),
     val recurring: RecurringRepository = app.openbill.core.domain.fake.InMemoryRecurringRepository(vouchers),
+    val users: UserRepository = app.openbill.core.domain.fake.InMemoryUserRepository(),
     /** Runs [block] in one database transaction; repository writes inside it roll back together. */
     val transaction: suspend (block: suspend () -> Unit) -> Unit = { it() },
 )

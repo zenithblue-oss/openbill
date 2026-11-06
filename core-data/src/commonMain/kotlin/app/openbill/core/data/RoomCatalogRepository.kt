@@ -2,7 +2,9 @@ package app.openbill.core.data
 
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.Godown
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.ItemCategory
 import app.openbill.core.domain.model.UnitOfMeasure
@@ -27,6 +29,7 @@ class RoomCatalogRepository(
     override suspend fun findItem(id: String): Item? = items.findById(id)?.toDomain()
 
     override suspend fun saveItem(item: Item) {
+        Access.require(Permission.MANAGE_MASTERS)
         transactions.write {
             val existing = items.findById(item.id)
             item.barcode?.let { code ->
@@ -41,16 +44,24 @@ class RoomCatalogRepository(
             } else {
                 items.update(entity)
             }
+            val priceChanged = existing != null && (existing.salePrice != entity.salePrice || existing.purchasePrice != entity.purchasePrice)
+            database.audit(
+                item.firmId, "item", item.id, if (existing == null) "item.created" else "item.updated",
+                if (priceChanged) AuditDetails.json("salePrice" to entity.salePrice, "oldSalePrice" to existing?.salePrice) else null,
+            )
         }
     }
 
     override suspend fun archiveItem(id: String, at: Instant) {
+        Access.require(Permission.CANCEL_DELETE)
         transactions.write {
+            val firmId = items.findById(id)?.firmId
             items.softDelete(
                 id = id,
                 deletedAt = at.toEpochMillis(),
                 updatedAt = at.toEpochMillis(),
             )
+            firmId?.let { database.audit(it, "item", id, "item.deleted", at = at) }
         }
     }
 
@@ -70,6 +81,7 @@ class RoomCatalogRepository(
         catalog.findCategoryById(id)?.toDomain()
 
     override suspend fun saveCategory(category: ItemCategory) {
+        Access.require(Permission.MANAGE_MASTERS)
         transactions.write {
             val existing = catalog.findCategoryById(category.id)
             val entity = category.toEntity(existing)
@@ -82,6 +94,7 @@ class RoomCatalogRepository(
     }
 
     override suspend fun archiveCategory(id: String, at: Instant) {
+        Access.require(Permission.CANCEL_DELETE)
         transactions.write {
             catalog.softDeleteCategory(
                 id = id,
@@ -116,6 +129,7 @@ class RoomCatalogRepository(
         catalog.findGodownById(id)?.toDomain()
 
     override suspend fun saveGodown(godown: Godown) {
+        Access.require(Permission.MANAGE_MASTERS)
         transactions.write {
             val existing = catalog.findGodownById(godown.id)
             val entity = godown.toEntity(existing)

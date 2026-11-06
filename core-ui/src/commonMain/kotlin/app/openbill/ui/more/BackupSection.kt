@@ -81,7 +81,11 @@ fun BackupSection(listColors: ListItemColors) {
     fun run(block: suspend () -> String?) {
         busy = true
         scope.launch {
-            val msg = runCatching { block() }.getOrElse { it.message ?: "Something went wrong" }
+            // Owner only: a backup holds every staff PIN hash, and a restore replaces the users table.
+            val msg = runCatching {
+                app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.BACKUP_RESTORE)
+                block()
+            }.getOrElse { it.message ?: "Something went wrong" }
             busy = false
             progress = null
             msg?.let { messages?.show(it) }

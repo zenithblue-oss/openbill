@@ -15,6 +15,10 @@ class InMemoryAuditRepository : AuditRepository {
     }
 
     override suspend fun record(event: AuditEvent) {
-        events.update { it + event }
+        events.update { it + event.copy(actor = event.actor ?: app.openbill.core.domain.model.Access.actorId) }
     }
+
+    override suspend fun postedBy(firmId: String): Map<String, String> = events.value
+        .filter { it.firmId == firmId && it.action == AuditRepository.POSTED_ACTION && it.voucherId != null && it.actor != null }
+        .associate { it.voucherId!! to it.actor!! }
 }

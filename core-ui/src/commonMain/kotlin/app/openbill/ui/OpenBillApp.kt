@@ -87,8 +87,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.model.FirmSettings
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.ui.inventory.GodownsScreen
@@ -241,7 +243,8 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
     val session by rememberUpdatedState(s)
     LaunchedEffect(firm.id) {
         while (true) {
-            val made = runCatching { app.openbill.ui.recurring.generateRecurring(container, session) }.getOrDefault(0)
+            // Made by whoever is signed in; a read-only accountant leaves them for the next sign-in.
+            val made = if (!Access.can(Permission.CREATE_VOUCHERS)) 0 else runCatching { app.openbill.ui.recurring.generateRecurring(container, session) }.getOrDefault(0)
             if (made > 0) messages.show(if (made == 1) "1 recurring invoice made" else "$made recurring invoices made")
             delay(60 * 60 * 1000L)
         }
@@ -431,12 +434,15 @@ private fun AppNavigationRail(selectedTab: Tab?, onSelect: (Tab) -> Unit, create
 /** The primary create action of a home tab, shown in the rail header. */
 private class CreateAction(val label: String, val tooltip: String, val onClick: () -> Unit)
 
-private fun Tab.createAction(nav: Navigator): CreateAction? = when (this) {
-    Tab.INVOICES -> CreateAction("New invoice", "New invoice (Ctrl+N)") { nav.push(Route.InvoiceEditor(null)) }
-    Tab.PARTIES -> CreateAction("New party", "New party") { nav.push(Route.PartyEdit(null)) }
-    Tab.ITEMS -> CreateAction("New item", "New item") { nav.push(Route.ItemEdit(null)) }
-    Tab.MONEY -> CreateAction("Payment in", "Record payment received") { nav.push(Route.MoneyEditor(VoucherType.PAYMENT_IN)) }
-    Tab.MORE -> null
+private fun Tab.createAction(nav: Navigator): CreateAction? {
+    val (label, tooltip, target) = when (this) {
+        Tab.INVOICES -> Triple("New invoice", "New invoice (Ctrl+N)", Route.InvoiceEditor(null))
+        Tab.PARTIES -> Triple("New party", "New party", Route.PartyEdit(null))
+        Tab.ITEMS -> Triple("New item", "New item", Route.ItemEdit(null))
+        Tab.MONEY -> Triple("Payment in", "Record payment received", Route.MoneyEditor(VoucherType.PAYMENT_IN))
+        Tab.MORE -> return null
+    }
+    return CreateAction(label, tooltip) { nav.push(target) }.takeIf { target.permission?.let(Access::can) != false }
 }
 
 private val Tab.selectedIcon: ImageVector
@@ -493,6 +499,12 @@ private fun RouteContent(
     route: Route,
     backHandler: BackHandlerSlot,
 ) {
+    route.permission?.let { needed ->
+        if (!Access.can(needed)) {
+            app.openbill.ui.settings.NotAllowedScreen(needed, onBack = nav::pop)
+            return
+        }
+    }
     when (route) {
         is Route.Home -> when (route.tab) {
             Tab.INVOICES -> InvoiceListScreen(
@@ -534,6 +546,7 @@ private fun RouteContent(
                 onBooks = { nav.push(Route.BooksLock) },
                 onAudit = { nav.push(Route.AuditLog) },
                 onPos = { nav.push(Route.Pos()) },
+                onUsers = { nav.push(Route.Users) },
             )
         }
         is Route.PartyEdit -> PartyEditScreen(
@@ -640,6 +653,7 @@ private fun RouteContent(
         Route.AuditLog -> AuditLogScreen(container, s, onBack = nav::pop)
         Route.Recurring -> app.openbill.ui.recurring.RecurringListScreen(container, s, onBack = nav::pop, onOpenInvoice = { id -> nav.push(Route.InvoiceDetail(id)) })
         Route.BooksLock -> BooksLockScreen(container, s, onBack = nav::pop)
+        Route.Users -> app.openbill.ui.settings.UsersScreen(container, s, onBack = nav::pop)
         is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler, receipt = route.receipt)
         is Route.Pos -> app.openbill.ui.pos.PosScreen(
             container, s, route.voucherId,

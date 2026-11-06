@@ -1,5 +1,6 @@
 package app.openbill.ui.nav
 
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.model.VoucherType
 
 import androidx.compose.runtime.mutableStateListOf
@@ -53,9 +54,24 @@ sealed interface Route {
     data object AuditLog : Route
     data object BooksLock : Route
     data object Recurring : Route
+    data object Users : Route
 
     /** The introduction, replayed from More. */
     data object Introduction : Route
+
+    /** What the signed-in user needs to open this screen; writes inside are checked again by the repositories. */
+    val permission: Permission?
+        get() = when (this) {
+            is InvoiceEditor, is MoneyEditor, is Pos -> Permission.CREATE_VOUCHERS
+            is StockEntry, Recurring -> Permission.MANAGE_MASTERS
+            is ItemEdit -> if (itemId == null) Permission.MANAGE_MASTERS else null
+            is PartyEdit -> if (partyId == null) Permission.EDIT_PARTIES else null
+            Reports, is Report -> Permission.VIEW_REPORTS
+            AuditLog -> Permission.VIEW_ACTIVITY
+            BusinessEdit, InvoiceTemplates, BooksLock -> Permission.SETTINGS
+            Users -> Permission.MANAGE_USERS
+            else -> null
+        }
 
     /** Stable string form, used as the saved-state key and to survive process death. */
     val key: String
@@ -88,6 +104,7 @@ sealed interface Route {
             AuditLog -> "audit:"
             BooksLock -> "books:"
             Recurring -> "recurring:"
+            Users -> "users:"
         }
 
     companion object {
@@ -132,6 +149,7 @@ sealed interface Route {
                 "audit" -> AuditLog
                 "books" -> BooksLock
                 "recurring" -> Recurring
+                "users" -> Users
                 else -> null
             }
         }

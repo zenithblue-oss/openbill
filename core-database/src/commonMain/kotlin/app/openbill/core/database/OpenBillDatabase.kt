@@ -3,6 +3,7 @@ package app.openbill.core.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import app.openbill.core.database.dao.AttachmentDao
 import app.openbill.core.database.dao.AuditDao
@@ -22,7 +23,7 @@ import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 15
+const val OPENBILL_DATABASE_VERSION = 16
 
 @Database(
     entities = [
@@ -50,6 +51,7 @@ const val OPENBILL_DATABASE_VERSION = 15
         AuditEventEntity::class,
         AttachmentEntity::class,
         RecurringScheduleEntity::class,
+        UserEntity::class,
     ],
     version = OPENBILL_DATABASE_VERSION,
     exportSchema = true,
@@ -88,11 +90,14 @@ abstract class OpenBillDatabase : RoomDatabase() {
     abstract fun attachmentDao(): AttachmentDao
 
     abstract fun recurringDao(): RecurringDao
+
+    abstract fun userDao(): app.openbill.core.database.dao.UserDao
 }
 
 private object AuditTriggerCallback : RoomDatabase.Callback() {
     override fun onOpen(connection: SQLiteConnection) {
         AuditTriggers.install(connection)
+        connection.execSQL(Users.SEED_OWNER)
     }
 }
 

@@ -232,7 +232,15 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+    /** Local users: the table plus the owner row, so existing history and the app-lock holder become the owner's. */
+    private val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL(Users.CREATE_TABLE)
+            connection.execSQL(Users.SEED_OWNER)
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
 
     fun migrationsFor(
         startVersion: Int,

@@ -1,5 +1,6 @@
 package app.openbill.cli
 
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.report.ColumnKind
 import app.openbill.core.domain.report.Gstr1
 import app.openbill.core.domain.report.ReportData
@@ -187,10 +188,12 @@ class AuditList(private val cli: CliState) : CliktCommand("list") {
 
     override fun run() = cli.withData(write = false) {
         val events = repos.audit.observeRecent(firm().id, limit).first()
+        val names = repos.users.observeUsers().first().associate { it.id to it.name }
+        fun user(actor: String?) = (actor ?: Access.OWNER_ID).let { names[it] ?: it }
         if (cli.json) {
-            cli.printJson(toJson(events.map { jsonOf("id" to it.id, "at" to it.createdAt.toString(), "action" to it.action, "entityType" to it.entityType, "entityId" to it.entityId, "voucherId" to it.voucherId, "details" to it.detailsJson) }))
+            cli.printJson(toJson(events.map { jsonOf("id" to it.id, "at" to it.createdAt.toString(), "user" to user(it.actor), "action" to it.action, "entityType" to it.entityType, "entityId" to it.entityId, "voucherId" to it.voucherId, "details" to it.detailsJson) }))
         } else {
-            cli.printTable(listOf(Col("AT"), Col("ACTION"), Col("ENTITY"), Col("DETAILS")), events.map { listOf(it.createdAt.toString(), it.action, "${it.entityType}:${it.entityId}", it.detailsJson.orEmpty()) })
+            cli.printTable(listOf(Col("AT"), Col("USER"), Col("ACTION"), Col("ENTITY"), Col("DETAILS")), events.map { listOf(it.createdAt.toString(), user(it.actor), it.action, "${it.entityType}:${it.entityId}", it.detailsJson.orEmpty()) })
         }
     }
 }

@@ -3,7 +3,10 @@ package app.openbill.core.data
 import app.openbill.core.database.AuditEventEntity
 import app.openbill.core.database.BatchEntity
 import app.openbill.core.database.SerialNumberEntity
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.Item
+import app.openbill.core.domain.model.Permission
+import app.openbill.core.domain.model.PermissionDeniedException
 import app.openbill.core.domain.model.SerialStatus
 import app.openbill.core.domain.service.InventoryRules
 import app.openbill.core.database.DatabaseTransactionRunner
@@ -126,9 +129,12 @@ class RoomVoucherRepository(
     }
 
     override suspend fun saveDraft(voucher: Voucher) {
+        Access.require(Permission.CREATE_VOUCHERS)
+        if (voucher.type == VoucherType.STOCK_ADJUSTMENT || voucher.type == VoucherType.STOCK_TRANSFER) Access.require(Permission.MANAGE_MASTERS)
         require(voucher.status == VoucherStatus.DRAFT) { "Only drafts can be saved here" }
         require(voucher.number == null) { "Draft voucher must not have a number" }
         transactions.write {
+            requireListPrices(voucher)
             val existing = vouchers.findById(voucher.id)
             if (existing != null) {
                 require(
@@ -164,7 +170,24 @@ class RoomVoucherRepository(
         }
     }
 
+    /**
+     * Without [Permission.MANAGE_MASTERS] (cashiers), sales-side lines of a stocked item keep one of
+     * its own prices and carry no line discount, so a price can only be changed in the item.
+     */
+    private suspend fun requireListPrices(voucher: Voucher) {
+        if (Access.can(Permission.MANAGE_MASTERS) || voucher.type !in SALES_SIDE) return
+        for (line in voucher.lines) {
+            val item = line.itemId?.let { items.findById(it) } ?: continue
+            val prices = listOfNotNull(item.salePrice, item.wholesalePrice).filter { it != 0L }
+            if (prices.isEmpty()) continue
+            if (line.rate.paise !in prices || line.discount.paise != 0L) {
+                throw PermissionDeniedException(Permission.MANAGE_MASTERS, Access.role)
+            }
+        }
+    }
+
     override suspend fun deleteDraft(id: String) {
+        Access.require(Permission.CREATE_VOUCHERS)
         transactions.write {
             val entity = vouchers.findById(id)
                 ?: throw IllegalArgumentException("Unknown voucher: $id")
@@ -187,6 +210,7 @@ class RoomVoucherRepository(
     }
 
     override suspend fun post(voucherId: String, at: Instant): Voucher = transactions.write {
+        Access.require(Permission.CREATE_VOUCHERS)
         val entity = vouchers.findById(voucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
         require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
@@ -249,6 +273,7 @@ class RoomVoucherRepository(
         reason: String,
         at: Instant,
     ): Voucher = transactions.write {
+        Access.require(Permission.CANCEL_DELETE)
         val entity = vouchers.findById(voucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
         require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.POSTED) {
@@ -296,6 +321,7 @@ class RoomVoucherRepository(
         restoreReason: String,
         at: Instant,
     ): Voucher = transactions.write {
+        Access.require(Permission.CANCEL_DELETE)
         val entity = vouchers.findById(voucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
         require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.CANCELLED) {
@@ -357,6 +383,7 @@ class RoomVoucherRepository(
     }
 
     override suspend fun softDeleteDraft(id: String, at: Instant): Voucher = transactions.write {
+        Access.require(Permission.CREATE_VOUCHERS)
         val entity = vouchers.findById(id)
             ?: throw IllegalArgumentException("Unknown voucher: $id")
         require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
@@ -380,6 +407,7 @@ class RoomVoucherRepository(
     }
 
     override suspend fun restoreDraft(id: String, at: Instant): Voucher = transactions.write {
+        Access.require(Permission.CREATE_VOUCHERS)
         val entity = vouchers.findById(id)
             ?: throw IllegalArgumentException("Unknown voucher: $id")
         require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
@@ -396,6 +424,7 @@ class RoomVoucherRepository(
     }
 
     override suspend fun purgeDraft(id: String) {
+        Access.require(Permission.CANCEL_DELETE)
         transactions.write {
             val entity = vouchers.findById(id)
                 ?: throw IllegalArgumentException("Unknown voucher: $id")
@@ -657,7 +686,7 @@ class RoomVoucherRepository(
         voucherId = voucher.id,
         action = action,
         detailsJson = detailsJson,
-        actor = null,
+        actor = Access.actorId,
         createdAt = at.toEpochMilliseconds(),
     )
 
@@ -670,6 +699,10 @@ class RoomVoucherRepository(
 
     private companion object {
         const val DEFAULT_PADDING = 4
+        val SALES_SIDE = setOf(
+            VoucherType.SALE, VoucherType.CREDIT_NOTE, VoucherType.QUOTATION, VoucherType.PROFORMA,
+            VoucherType.DELIVERY_CHALLAN, VoucherType.SALES_ORDER,
+        )
         const val VOUCHER_ENTITY_TYPE = "voucher"
         const val POSTED_ACTION = "voucher.posted"
         const val CANCELLED_ACTION = "voucher.cancelled"

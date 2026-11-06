@@ -3,7 +3,9 @@ package app.openbill.core.data
 import app.openbill.core.database.AuditEventEntity
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.AllocationRequest
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.model.OutstandingInvoice
 import app.openbill.core.domain.model.PaymentAllocation
 import app.openbill.core.domain.model.PaymentDetails
@@ -34,6 +36,7 @@ class RoomPaymentRepository(
     private val policy = PaymentAllocationPolicy()
 
     override suspend fun savePaymentDetails(details: PaymentDetails) {
+        Access.require(Permission.CREATE_VOUCHERS)
         transactions.write {
             val voucher = loadVoucher(details.voucherId)
                 ?: throw IllegalArgumentException("Unknown voucher: ${details.voucherId}")
@@ -69,6 +72,7 @@ class RoomPaymentRepository(
         details.observeForVoucher(voucherId).map { it?.toDomain() }
 
     override suspend fun deletePaymentDetails(voucherId: String) {
+        Access.require(Permission.CREATE_VOUCHERS)
         transactions.write {
             details.deleteForDraftVoucher(voucherId)
         }
@@ -79,6 +83,7 @@ class RoomPaymentRepository(
         requests: List<AllocationRequest>,
         at: Instant,
     ): List<PaymentAllocation> = transactions.write {
+        Access.require(Permission.CREATE_VOUCHERS)
         val payment = loadVoucher(paymentVoucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $paymentVoucherId")
         policy.requireAllocatablePayment(payment)
@@ -120,7 +125,7 @@ class RoomPaymentRepository(
                 voucherId = payment.id,
                 action = "payment.allocated",
                 detailsJson = null,
-                actor = null,
+                actor = Access.actorId,
                 createdAt = at.toEpochMilliseconds(),
             ),
         )

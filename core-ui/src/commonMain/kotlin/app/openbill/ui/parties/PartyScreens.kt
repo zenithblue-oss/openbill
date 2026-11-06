@@ -468,7 +468,7 @@ fun PartyEditScreen(
                 if (partyId != null && onLedger != null) {
                     androidx.compose.material3.TextButton(onClick = { onLedger(partyId) }) { Text("Ledger") }
                 }
-                if (partyId != null) {
+                if (partyId != null && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CANCEL_DELETE)) {
                     IconButton(onClick = { confirmRemove = true }, enabled = !form.saving) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove party")
                     }

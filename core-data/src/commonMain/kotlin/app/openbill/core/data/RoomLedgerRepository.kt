@@ -95,6 +95,7 @@ class RoomLedgerRepository(
         accounts.observeAccounts(firmId).map { values -> values.map { it.toDomain() } }
 
     override suspend fun saveAccount(account: Account) {
+        app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
         transactions.write {
             val existing = accounts.findAccountById(account.id)
             val entity = account.toEntity(existing)
@@ -226,6 +227,7 @@ class RoomLedgerRepository(
         accounts.observeAccountNet(accountId).map { Money.of(it.net) to Money.of(it.clearedNet) }
 
     override suspend fun setCleared(entryId: String, clearedOn: LocalDate?) {
+        app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
         val changed = accounts.setCleared(entryId, clearedOn?.toString())
         require(changed == 1) { "Unknown journal entry: $entryId" }
     }

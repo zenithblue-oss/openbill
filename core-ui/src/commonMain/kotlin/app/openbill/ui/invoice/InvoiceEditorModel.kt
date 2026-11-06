@@ -1,6 +1,8 @@
 package app.openbill.ui.invoice
 
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.Item
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.model.Orders
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.isOrder
@@ -48,6 +50,8 @@ data class LineForm(
     /** Bonus units given or received free, on top of [quantity]. */
     val freeQuantity: String = "",
     val itcEligible: Boolean = true,
+    /** The item's own sale prices; a user who cannot change prices must keep one (also enforced on save). */
+    val listPrices: List<Money> = emptyList(),
 )
 
 object LineRules {
@@ -66,6 +70,7 @@ object LineRules {
             trackSerial = stock && item.trackSerial,
             altUnit = altUnitSymbol?.takeIf { item.alternateUnitFactor != null },
             altFactor = item.alternateUnitFactor.takeIf { altUnitSymbol != null },
+            listPrices = if (purchase) emptyList() else listOfNotNull(item.salePrice, item.wholesalePrice).filter { it.paise != 0L },
         )
     }
 
@@ -137,6 +142,10 @@ object LineRules {
         if (qty == null || qty <= Quantity.of(0)) errors["quantity"] = "Enter a quantity above zero"
         val rate = Parse.money(form.rate)
         if (rate == null || rate.paise < 0) errors["rate"] = "Enter a valid rate"
+        if (form.listPrices.isNotEmpty() && !Access.can(Permission.MANAGE_MASTERS)) {
+            if (rate != null && rate !in form.listPrices) errors["rate"] = "Only an owner or manager can change the price"
+            if (form.discount.isNotBlank() && discountAmount(form.discount, Money.of(100_000_00L))?.paise != 0L) errors["discount"] = "Only an owner or manager can give a discount"
+        }
         Validation.hsnError(form.hsnSac.orEmpty())?.let { errors["hsn"] = it }
         if (form.trackBatch && form.batchNumber.isBlank()) errors["batch"] = "Enter the batch number"
         val free = if (form.freeQuantity.isBlank()) Quantity.of(0) else Parse.quantity(form.freeQuantity)

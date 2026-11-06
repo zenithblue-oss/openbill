@@ -39,6 +39,7 @@ class RoomRecurringRepository(
     }
 
     override suspend fun claimOccurrence(scheduleId: String, index: Int, draft: Voucher?): Boolean = transactions.write {
+        app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)
         if (draft != null) require(draft.status == VoucherStatus.DRAFT && draft.number == null) { "Recurring invoices start as drafts" }
         val claimed = dao.advance(scheduleId, index, if (draft != null) 1 else 0, draft?.createdAt?.toEpochMillis() ?: 0L) == 1
         if (claimed && draft != null) {

@@ -51,7 +51,13 @@ class ReportData(
     val accountNets: Map<String, Money>? = null,
     /** Ageing inputs per party as of [period] end; when set, outstanding uses it instead of [partyMovements]. */
     val partyAgeing: Map<String, AgeingSums>? = null,
+    /** Voucher id to the name of the user who posted it; loaded for the by-user reports. */
+    val postedBy: Map<String, String> = emptyMap(),
+    /** Name for vouchers with no recorded poster (before users existed, or the CLI): the owner. */
+    val defaultUser: String = "Owner",
 ) {
+    fun userOf(v: Voucher): String = postedBy[v.id] ?: defaultUser
+
     val from get() = period.from
     val to get() = period.to
     val rounding: RoundingMode get() = settings?.roundingMode ?: RoundingMode.HALF_UP
@@ -119,7 +125,12 @@ suspend fun Repositories.loadReportData(
     val accountNets = if (kind == ReportKind.PROFIT_LOSS) ledger.accountNets(firmId, period.from, period.to) else null
     if (kind == ReportKind.OUTSTANDING) onProgress(Progress("Ageing party balances"))
     val partyAgeing = if (kind == ReportKind.OUTSTANDING) ledger.partyAgeingSums(firmId, period.to) else null
+    val byUser = all || kind == ReportKind.SALES_BY_USER || kind == ReportKind.DAY_BOOK_BY_USER
+    val names = if (byUser) users.observeUsers().first().associate { it.id to it.name } else emptyMap()
+    val postedBy = if (byUser) audit.postedBy(firmId).mapValues { (_, actor) -> names[actor] ?: actor } else emptyMap()
     return ReportData(
+        postedBy = postedBy,
+        defaultUser = names[app.openbill.core.domain.model.Access.OWNER_ID] ?: "Owner",
         firm = firm,
         settings = settings,
         period = period,

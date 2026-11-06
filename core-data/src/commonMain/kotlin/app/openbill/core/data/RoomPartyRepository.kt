@@ -2,7 +2,9 @@ package app.openbill.core.data
 
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.Party
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.model.PartyType
 import app.openbill.core.domain.repository.PartyRepository
 import kotlin.time.Instant
@@ -39,8 +41,10 @@ class RoomPartyRepository(
     }
 
     override suspend fun saveParty(party: Party) {
+        Access.require(Permission.EDIT_PARTIES)
         transactions.write {
             val existing = parties.findById(party.id)
+            database.audit(party.firmId, "party", party.id, if (existing == null) "party.created" else "party.updated")
             val addressEntities = parties.addressesFor(party.id).associateBy { it.id }
             val entity = party.toEntity(existing)
             if (existing == null) {
@@ -63,12 +67,15 @@ class RoomPartyRepository(
     }
 
     override suspend fun archiveParty(id: String, at: Instant) {
+        Access.require(Permission.CANCEL_DELETE)
         transactions.write {
+            val firmId = parties.findById(id)?.firmId
             parties.softDelete(
                 id = id,
                 deletedAt = at.toEpochMillis(),
                 updatedAt = at.toEpochMillis(),
             )
+            firmId?.let { database.audit(it, "party", id, "party.deleted", at = at) }
         }
     }
 

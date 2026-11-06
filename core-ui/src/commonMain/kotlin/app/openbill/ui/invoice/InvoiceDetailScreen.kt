@@ -279,7 +279,9 @@ fun InvoiceDetailScreen(
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                     Text(if (busy) "Preparing PDF…" else "Share PDF")
                 }
-                when (v.status) {
+                val canCreate = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)
+                val canCancel = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CANCEL_DELETE)
+                if (if (v.status == VoucherStatus.DRAFT) canCreate else canCancel) when (v.status) {
                     VoucherStatus.DRAFT -> OutlinedButton(onClick = { onEditDraft(v.id) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
@@ -294,7 +296,7 @@ fun InvoiceDetailScreen(
                         Text("Restore ${docLabels(v.type).noun}")
                     }
                 }
-                OutlinedButton(onClick = {
+                if (canCreate) OutlinedButton(onClick = {
                     scope.launch {
                         runCatching {
                             val today = container.today()
@@ -305,7 +307,7 @@ fun InvoiceDetailScreen(
                         }.onSuccess(onEditDraft).onFailure { messages?.show(it.message ?: "Could not duplicate") }
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Duplicate as new draft") }
-                if (v.status == VoucherStatus.DRAFT) {
+                if (v.status == VoucherStatus.DRAFT && canCreate) {
                     TextButton(
                         onClick = {
                             scope.launch {
@@ -318,7 +320,9 @@ fun InvoiceDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Delete draft") }
                 }
-                if (v.status == VoucherStatus.POSTED && v.type.isOrder()) {
+                if (!canCreate) {
+                    // Read-only roles (accountant/CA): view and share only.
+                } else if (v.status == VoucherStatus.POSTED && v.type.isOrder()) {
                     val target = v.type.orderTarget()!!
                     if (v.fulfilment != OrderFulfilment.COMPLETE) {
                         PrimaryButton(if (target == VoucherType.SALE) "Convert to invoice" else "Convert to purchase bill", { onConvert(v.id, target) }, Modifier.fillMaxWidth())
@@ -346,7 +350,7 @@ fun InvoiceDetailScreen(
                         )
                     }
                 }
-                if (v.type == VoucherType.SALE && v.status != VoucherStatus.CANCELLED) {
+                if (v.type == VoucherType.SALE && v.status != VoucherStatus.CANCELLED && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) {
                     OutlinedButton(onClick = { recurringOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Repeat on a schedule") }
                 }
                 val due = outstanding
@@ -354,11 +358,11 @@ fun InvoiceDetailScreen(
                     (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE || v.type == app.openbill.core.domain.model.VoucherType.SALE)
                 ) {
                     AmountRow("Balance due", due, emphasize = true)
-                    OutlinedButton(onClick = { onRecordPayment(v) }, modifier = Modifier.fillMaxWidth()) {
+                    if (canCreate) OutlinedButton(onClick = { onRecordPayment(v) }, modifier = Modifier.fillMaxWidth()) {
                         Text(if (v.type == app.openbill.core.domain.model.VoucherType.SALE) "Record payment received" else "Record payment made")
                     }
                 }
-                if (v.status == VoucherStatus.POSTED && (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE || v.type == app.openbill.core.domain.model.VoucherType.SALE)) {
+                if (canCreate && v.status == VoucherStatus.POSTED && (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE || v.type == app.openbill.core.domain.model.VoucherType.SALE)) {
                     OutlinedButton(onClick = { onReturn(v.id) }, modifier = Modifier.fillMaxWidth()) {
                         Text(if (v.type == app.openbill.core.domain.model.VoucherType.PURCHASE) "Return to supplier (debit note)" else "Sales return (credit note)")
                     }

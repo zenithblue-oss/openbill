@@ -122,24 +122,31 @@ fun BooksLockScreen(container: AppContainer, session: Session, onBack: () -> Uni
     }
 }
 
-/** Newest audit events, exportable as CSV. */
+/** Newest audit events with who made each, filterable by user and exportable as CSV. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AuditLogScreen(container: AppContainer, session: Session, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
-    val events by remember { container.repositories.audit.observeRecent(session.firm.id, 1000) }.collectAsState(initial = emptyList())
+    val all by remember { container.repositories.audit.observeRecent(session.firm.id, 1000) }.collectAsState(initial = emptyList())
+    val users by remember { container.repositories.users.observeUsers() }.collectAsState(initial = emptyList())
+    val names = users.associate { it.id to it.name }
+    // No actor: written before users existed (or by the CLI), so the owner's.
+    fun who(e: app.openbill.core.domain.model.AuditEvent) = names[e.actor ?: app.openbill.core.domain.model.Access.OWNER_ID] ?: e.actor ?: "Owner"
+    var filter by remember { mutableStateOf<String?>(null) }
+    val events = filter?.let { id -> all.filter { (it.actor ?: app.openbill.core.domain.model.Access.OWNER_ID) == id } } ?: all
     fun at(e: app.openbill.core.domain.model.AuditEvent) = e.createdAt.toLocalDateTime(container.timeZone).let { "${Fmt.date(it.date)} ${it.time.toString().take(5)}" }
     Scaffold(
         topBar = {
-            AppTopBar("Audit log", onBack = onBack) {
+            AppTopBar("Activity log", onBack = onBack) {
                 IconButton(onClick = {
                     scope.launch {
                         val table = ReportTable(
-                            "Audit log",
-                            listOf("at", "action", "entity_type", "entity_id", "voucher_id", "details").map { app.openbill.core.domain.report.ReportColumn(it, it) },
-                            events.map { listOf(it.createdAt.toLocalDateTime(TimeZone.UTC).toString() + "Z", it.action, it.entityType, it.entityId, it.voucherId.orEmpty(), it.detailsJson.orEmpty()) },
+                            "Activity log",
+                            listOf("at", "user", "action", "entity_type", "entity_id", "voucher_id", "details").map { app.openbill.core.domain.report.ReportColumn(it, it) },
+                            events.map { listOf(it.createdAt.toLocalDateTime(TimeZone.UTC).toString() + "Z", who(it), it.action, it.entityType, it.entityId, it.voucherId.orEmpty(), it.detailsJson.orEmpty()) },
                         )
-                        (runCatching { container.platform.saveTextFile("audit-log.csv", table.toCsv()) }.getOrElse { it.message })?.let { messages?.show(it) }
+                        (runCatching { container.platform.saveTextFile("activity-log.csv", table.toCsv()) }.getOrElse { it.message })?.let { messages?.show(it) }
                     }
                 }) { Icon(Icons.Filled.Share, contentDescription = "Export CSV") }
             }
@@ -148,12 +155,23 @@ fun AuditLogScreen(container: AppContainer, session: Session, onBack: () -> Unit
     ) { padding ->
         CenteredContent(Modifier.padding(padding)) {
             LazyColumn(contentPadding = PaddingValues(bottom = Spacing.xl)) {
-                if (events.isEmpty()) item { SectionHeader("No audit events yet", Modifier.padding(horizontal = pageGutter)) }
+                if (users.size > 1) item {
+                    androidx.compose.foundation.layout.FlowRow(
+                        Modifier.padding(horizontal = pageGutter),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        androidx.compose.material3.FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("Everyone") })
+                        users.forEach { u ->
+                            androidx.compose.material3.FilterChip(selected = filter == u.id, onClick = { filter = u.id }, label = { Text(u.name) })
+                        }
+                    }
+                }
+                if (events.isEmpty()) item { SectionHeader("No activity yet", Modifier.padding(horizontal = pageGutter)) }
                 items(events, key = { it.id }) { e ->
                     ListItem(
                         headlineContent = { Text(e.action.replace('.', ' ').replace('_', ' ').replaceFirstChar { it.uppercase() }) },
                         supportingContent = {
-                            Text(listOfNotNull(at(e), e.entityType, e.detailsJson).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(listOfNotNull(at(e), who(e), e.entityType, e.detailsJson).joinToString(" · "), maxLines = 2, overflow = TextOverflow.Ellipsis)
                         },
                     )
                 }

@@ -1,14 +1,14 @@
 package app.openbill.core.data
 
-import app.openbill.core.database.AuditEventEntity
 import app.openbill.core.database.AuditTriggers
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
+import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.FinancialYear
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.model.FirmSettings
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.repository.FirmRepository
-import app.openbill.core.model.Ulid
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +28,7 @@ class RoomFirmRepository(
     override suspend fun findFirm(id: String): Firm? = firms.findById(id)?.toDomain()
 
     override suspend fun saveFirm(firm: Firm) {
+        Access.require(Permission.SETTINGS)
         transactions.write {
             val existing = firms.findById(firm.id)
             val entity = firm.toEntity(existing)
@@ -36,10 +37,12 @@ class RoomFirmRepository(
             } else {
                 firms.update(entity)
             }
+            audit(firm.id, "firm", firm.id, if (existing == null) "firm.created" else "firm.updated", null, Clock.System.now())
         }
     }
 
     override suspend fun archiveFirm(id: String, at: Instant) {
+        Access.require(Permission.SETTINGS)
         transactions.write {
             firms.softDelete(
                 id = id,
@@ -55,6 +58,7 @@ class RoomFirmRepository(
      * any failure rolls back both the rows and the trigger change.
      */
     override suspend fun eraseFirm(id: String): List<String> {
+        Access.require(Permission.SETTINGS)
         val inVouchers = "voucherId IN (SELECT id FROM vouchers WHERE firmId = ?)"
         val inItems = "itemId IN (SELECT id FROM items WHERE firmId = ?)"
         val deletes = listOf(
@@ -86,6 +90,7 @@ class RoomFirmRepository(
         settings.findByFirm(firmId)?.toDomain()
 
     override suspend fun saveSettings(settings: FirmSettings) {
+        Access.require(Permission.SETTINGS)
         transactions.write {
             val existing = this@RoomFirmRepository.settings.findByFirm(settings.firmId)
             val now = Clock.System.now()
@@ -94,6 +99,8 @@ class RoomFirmRepository(
             val newLock = settings.lockDate?.toString()
             if (oldLock != newLock) {
                 audit(settings.firmId, "firm", settings.firmId, "books.lock_changed", AuditDetails.json("from" to oldLock, "to" to newLock), now)
+            } else {
+                audit(settings.firmId, "firm", settings.firmId, "settings.saved", null, now)
             }
         }
     }
@@ -124,19 +131,6 @@ class RoomFirmRepository(
         }
     }
 
-    private suspend fun audit(firmId: String, type: String, id: String, action: String, details: String, at: Instant) {
-        database.auditDao().insert(
-            AuditEventEntity(
-                id = Ulid.create(at.toEpochMilliseconds()).toString(),
-                firmId = firmId,
-                entityType = type,
-                entityId = id,
-                voucherId = null,
-                action = action,
-                detailsJson = details,
-                actor = null,
-                createdAt = at.toEpochMilliseconds(),
-            ),
-        )
-    }
+    private suspend fun audit(firmId: String, type: String, id: String, action: String, details: String?, at: Instant) =
+        database.audit(firmId, type, id, action, details, at)
 }

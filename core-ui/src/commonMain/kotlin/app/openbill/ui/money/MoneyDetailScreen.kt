@@ -137,7 +137,7 @@ fun MoneyDetailScreen(container: AppContainer, session: Session, voucherId: Stri
                         }, Modifier.fillMaxWidth())
                     }
                 }
-                if (v.status == VoucherStatus.POSTED) {
+                if (v.status == VoucherStatus.POSTED && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CANCEL_DELETE)) {
                     OutlinedButton(
                         onClick = { cancelOpen = true },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),

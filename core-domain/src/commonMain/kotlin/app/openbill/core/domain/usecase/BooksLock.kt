@@ -30,6 +30,7 @@ class BooksLock(
 
     /** Closes [yearId] and makes sure the following year exists. Returns the closed year. */
     suspend fun closeYear(yearId: String, at: Instant): FinancialYear {
+        app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.SETTINGS)
         val year = firms.findFinancialYear(yearId) ?: throw IllegalArgumentException("Unknown financial year: $yearId")
         require(year.closedAt == null) { "This financial year is already closed" }
         val years = firms.observeFinancialYears(year.firmId).first()
@@ -45,6 +46,7 @@ class BooksLock(
 
     /** Reopens a closed year while no later-dated voucher has been posted since it was closed. */
     suspend fun reopenYear(yearId: String): FinancialYear {
+        app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.SETTINGS)
         val year = firms.findFinancialYear(yearId) ?: throw IllegalArgumentException("Unknown financial year: $yearId")
         val closedAt = year.closedAt ?: throw IllegalArgumentException("This financial year is not closed")
         val years = firms.observeFinancialYears(year.firmId).first()

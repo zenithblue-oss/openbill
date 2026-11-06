@@ -216,6 +216,8 @@ private val REPORT_HINTS = mapOf(
     ReportKind.SALES_REGISTER to "Invoices and credit notes with tax heads",
     ReportKind.PURCHASE_REGISTER to "Supplier bills and debit notes",
     ReportKind.DAY_BOOK to "Every voucher by date",
+    ReportKind.SALES_BY_USER to "Sales and credit notes per user who posted them",
+    ReportKind.DAY_BOOK_BY_USER to "Every voucher, grouped by who posted it",
     ReportKind.CASH_BANK_BOOK to "Receipts, payments and running balance per account",
     ReportKind.EXPENSES to "Expenses by category",
     ReportKind.OUTSTANDING to "Receivables and payables with ageing",

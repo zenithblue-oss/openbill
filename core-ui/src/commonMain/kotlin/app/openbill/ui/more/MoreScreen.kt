@@ -49,6 +49,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
+import app.openbill.core.domain.model.Access
+import app.openbill.core.domain.model.Permission
 import app.openbill.ui.AppContainer
 import app.openbill.ui.Session
 import app.openbill.ui.components.AppSnackbarHost
@@ -81,7 +83,9 @@ fun MoreScreen(
     onBooks: () -> Unit = {},
     onAudit: () -> Unit = {},
     onPos: () -> Unit = {},
+    onUsers: () -> Unit = {},
 ) {
+    val can = { p: Permission -> Access.can(p) }
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     val messages = LocalAppMessages.current
@@ -97,6 +101,18 @@ fun MoreScreen(
     ) { padding ->
         CenteredContent(Modifier.padding(padding)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = pageGutter)) {
+                val users by remember { container.repositories.users.observeUsers() }.collectAsState(initial = emptyList())
+                if (users.count { it.active } > 1) {
+                    SectionHeader("Signed in")
+                    val me = Access.current ?: users.firstOrNull { it.isOwner }
+                    ListItem(
+                        headlineContent = { Text(me?.name ?: "Owner") },
+                        supportingContent = { Text(Access.role.label) },
+                        trailingContent = { Text("Switch user", color = MaterialTheme.colorScheme.primary) },
+                        colors = listColors,
+                        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Switch user") { container.appLock.lockNow() },
+                    )
+                }
                 SectionHeader("Business")
                 OutlinedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(Spacing.lg)) {
@@ -116,14 +132,16 @@ fun MoreScreen(
                         )
                     }
                     HorizontalDivider()
-                    ListItem(
-                        headlineContent = { Text("Edit business details") },
-                        leadingContent = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)),
-                        modifier = Modifier.clickable(role = Role.Button, onClick = onEditBusiness),
-                    )
-                    HorizontalDivider()
+                    if (can(Permission.SETTINGS)) {
+                        ListItem(
+                            headlineContent = { Text("Edit business details") },
+                            leadingContent = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)),
+                            modifier = Modifier.clickable(role = Role.Button, onClick = onEditBusiness),
+                        )
+                        HorizontalDivider()
+                    }
                     val firms by remember { container.repositories.firms.observeFirms() }.collectAsState(initial = emptyList())
                     firms.filter { it.id != firm.id }.forEach { other ->
                         ListItem(
@@ -133,7 +151,7 @@ fun MoreScreen(
                             modifier = Modifier.clickable(role = Role.Button) { container.activeFirm.select(other.id) },
                         )
                     }
-                    ListItem(
+                    if (can(Permission.SETTINGS)) ListItem(
                         headlineContent = { Text("Add another business") },
                         supportingContent = { Text("Each business has its own parties, items, invoices and numbering") },
                         leadingContent = { Icon(Icons.Outlined.Add, contentDescription = null) },
@@ -142,8 +160,8 @@ fun MoreScreen(
                     )
                 }
 
-                SectionHeader("Sales and invoices")
-                ListItem(
+                if (can(Permission.CREATE_VOUCHERS) || can(Permission.SETTINGS)) SectionHeader("Sales and invoices")
+                if (can(Permission.CREATE_VOUCHERS)) ListItem(
                     headlineContent = { Text("POS billing") },
                     supportingContent = { Text("Fast counter sales: scan items, split payment, hold bills") },
                     trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
@@ -151,7 +169,7 @@ fun MoreScreen(
                     modifier = Modifier.clickable(role = Role.Button, onClick = onPos),
                 )
                 val invoiceStyle by remember(firm.id) { container.invoiceStyles.style(firm.id) }.collectAsState()
-                ListItem(
+                if (can(Permission.SETTINGS)) ListItem(
                     headlineContent = { Text("Invoice templates") },
                     supportingContent = { Text("${invoiceStyle.template.title} · ${invoiceStyle.template.paper.label} · print options") },
                     leadingContent = { Icon(AppIcons.Invoice, contentDescription = null) },
@@ -181,12 +199,13 @@ fun MoreScreen(
                     }
                 }
 
-                SectionHeader("Reports and compliance")
-                listOf(
-                    Triple("Reports", "Registers, P&L, stock, GSTR-1, GSTR-3B and Tally export", onReports),
-                    Triple("Lock books and close year", "Stop changes to filed periods", onBooks),
-                    Triple("Audit log", "Every post, cancel, restore and lock", onAudit),
-                ).forEach { (title, sub, action) ->
+                val compliance = listOfNotNull(
+                    Triple("Reports", "Registers, P&L, stock, GSTR-1, GSTR-3B and Tally export", onReports).takeIf { can(Permission.VIEW_REPORTS) },
+                    Triple("Lock books and close year", "Stop changes to filed periods", onBooks).takeIf { can(Permission.SETTINGS) },
+                    Triple("Activity log", "Who posted, cancelled, changed or signed in, and when", onAudit).takeIf { can(Permission.VIEW_ACTIVITY) },
+                )
+                if (compliance.isNotEmpty()) SectionHeader("Reports and compliance")
+                compliance.forEach { (title, sub, action) ->
                     ListItem(
                         headlineContent = { Text(title) },
                         supportingContent = { Text(sub) },
@@ -210,7 +229,7 @@ fun MoreScreen(
                         modifier = Modifier.clickable(role = Role.Button, onClick = action),
                     )
                 }
-                app.openbill.ui.inventory.SwitchRow(
+                if (can(Permission.SETTINGS)) app.openbill.ui.inventory.SwitchRow(
                     "Allow negative stock",
                     if (session.settings.negativeStockAllowed) "Sales can post even when stock is short" else "Posting is blocked when stock would go below zero",
                     session.settings.negativeStockAllowed,
@@ -266,7 +285,7 @@ fun MoreScreen(
                     ),
                 )
 
-                if (container.platform.isDebugBuild) {
+                if (container.platform.isDebugBuild && can(Permission.SETTINGS)) {
                     SectionHeader("Developer")
                     ListItem(
                         headlineContent = { Text(if (busy) "Loading sample data…" else "Load sample data") },
@@ -286,11 +305,18 @@ fun MoreScreen(
                     )
                 }
 
-                ReminderTemplateItem(container, firm.id, listColors)
-                CsvSection(container, session, listColors)
-                app.openbill.ui.settings.AppLockItem(container, listColors)
-                BackupSection(listColors)
-                DeleteFirmItem(firm.name, listColors) {
+                if (can(Permission.SETTINGS)) ReminderTemplateItem(container, firm.id, listColors)
+                if (can(Permission.EXPORT)) CsvSection(container, session, listColors)
+                if (can(Permission.SETTINGS)) app.openbill.ui.settings.AppLockItem(container, listColors)
+                if (can(Permission.MANAGE_USERS)) ListItem(
+                    headlineContent = { Text("Users and roles") },
+                    supportingContent = { Text("Staff with their own PIN: manager, cashier, accountant (CA)") },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                    colors = listColors,
+                    modifier = Modifier.clickable(role = Role.Button, onClick = onUsers),
+                )
+                if (can(Permission.BACKUP_RESTORE)) BackupSection(listColors)
+                if (can(Permission.SETTINGS)) DeleteFirmItem(firm.name, listColors) {
                     // Files go only after the erase transaction commits, so a rollback never loses them.
                     container.repositories.firms.eraseFirm(firm.id).forEach { runCatching { container.platform.deleteAllAttachments(it) } }
                     app.openbill.ui.pdf.ImageKind.entries.forEach { runCatching { container.platform.saveFirmImage(firm.id, it, null) } }

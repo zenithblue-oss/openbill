@@ -22,6 +22,8 @@ enum class ReportKind(val key: String, val title: String, val group: ReportGroup
     SALES_REGISTER("sales-register", "Sales register", ReportGroup.TRANSACTIONS),
     PURCHASE_REGISTER("purchase-register", "Purchase register", ReportGroup.TRANSACTIONS),
     DAY_BOOK("day-book", "Day book", ReportGroup.TRANSACTIONS),
+    SALES_BY_USER("sales-by-user", "Sales summary by user", ReportGroup.TRANSACTIONS),
+    DAY_BOOK_BY_USER("day-book-by-user", "Day book by user", ReportGroup.TRANSACTIONS),
     CASH_BANK_BOOK("cash-bank-book", "Cash and bank book", ReportGroup.PARTIES),
     EXPENSES("expenses", "Expense report", ReportGroup.PARTIES),
     OUTSTANDING("outstanding", "Party-wise outstanding", ReportGroup.PARTIES),
@@ -51,6 +53,8 @@ object Reports {
         ReportKind.SALES_REGISTER -> register(data, sales = true)
         ReportKind.PURCHASE_REGISTER -> register(data, sales = false)
         ReportKind.DAY_BOOK -> dayBook(data)
+        ReportKind.SALES_BY_USER -> salesByUser(data)
+        ReportKind.DAY_BOOK_BY_USER -> dayBookByUser(data)
         ReportKind.CASH_BANK_BOOK -> cashBankBook(data)
         ReportKind.EXPENSES -> expenses(data)
         ReportKind.OUTSTANDING -> outstanding(data)
@@ -128,6 +132,43 @@ object Reports {
                     ?: v.ledgerAccountId?.let { data.accountById[it]?.name } ?: v.notes.orEmpty()
                 listOf(v.date.toString(), typeLabel(v.type), v.number.orEmpty(), particulars, v.status.name.lowercase(), v.total.cell())
             },
+        )
+    }
+
+    /** [dayBook] with who posted each voucher, grouped by user. */
+    fun dayBookByUser(data: ReportData): ReportTable {
+        val book = dayBook(data)
+        val list = data.vouchers.filter { it.status != VoucherStatus.DRAFT && !it.type.isOrder() }
+            .sortedWith(compareBy<Voucher>({ it.date }, { it.number ?: "" }, { it.id }))
+        val rows = list.zip(book.rows) { v, row -> listOf(data.userOf(v)) + row }.sortedBy { it[0].lowercase() }
+        return ReportTable("Day book by user", listOf(col("user", "User")) + book.columns, rows)
+    }
+
+    /** Per user: sales invoices and credit notes they posted (credit notes negative), with tax and totals. */
+    fun salesByUser(data: ReportData): ReportTable {
+        val sales = setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE)
+        val byUser = data.posted.filter { it.type in sales }.groupBy { data.userOf(it) }.entries.sortedBy { it.key.lowercase() }
+        var count = 0
+        var returns = 0
+        var sum = TaxAmounts()
+        var total = Money.ZERO
+        val rows = byUser.map { (user, list) ->
+            val invoices = list.count { it.type == VoucherType.SALE }
+            val notes = list.size - invoices
+            val a = list.fold(TaxAmounts()) { acc, v -> acc + amounts(v, data) }
+            val t = list.fold(Money.ZERO) { acc, v -> if (v.type.isReturn()) acc - v.total else acc + v.total }
+            count += invoices
+            returns += notes
+            sum += a
+            total += t
+            listOf(user, invoices.toString(), notes.toString()) + a.cells() + t.cell()
+        }
+        return ReportTable(
+            "Sales summary by user",
+            listOf(col("user", "User"), col("invoices", "Invoices", ColumnKind.NUMBER), col("credit_notes", "Credit notes", ColumnKind.NUMBER)) +
+                TAX_COLUMNS + money("total", "Total"),
+            rows,
+            listOf("Total", count.toString(), returns.toString()) + sum.cells() + total.cell(),
         )
     }
 
