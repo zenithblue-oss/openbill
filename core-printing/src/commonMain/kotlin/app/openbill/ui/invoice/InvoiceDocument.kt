@@ -160,7 +160,7 @@ data class InvoiceDocument(
                 forceInterState = voucher.export != null,
                 exchangeRate = voucher.exchangeRate,
             )
-            // Foreign-currency export: rates print in that currency; taxable values, GST and the total stay in rupees.
+            // Foreign-currency export: line columns print in that currency; the totals block, tax summaries and the total stay in rupees.
             val currency = voucher.currency
             val foreign = InvoiceMath.foreignSummary(voucher, firm.stateCode, settings.roundingMode)
             val seller = PartyBlock(
@@ -193,20 +193,28 @@ data class InvoiceDocument(
                 null
             }
 
-            fun dashIfZero(m: Money) = if (m.paise == 0L) "-" else Fmt.inr(m, symbol = false)
             val rateGroups = LinkedHashMap<String, Acc>()
             val hsnGroups = LinkedHashMap<Pair<String, String>, Acc>()
             val total = Acc()
             var hasCess = false
 
+            fun comp(r: app.openbill.core.tax.TaxLineResult?, kind: TaxKind) =
+                r?.components?.filter { it.kind == kind }?.fold(Money.ZERO) { a, c -> a + c.amount } ?: Money.ZERO
+            // Foreign-currency lines print every money column in that currency, never mixed with rupees.
+            val fx = currency?.takeIf { foreign != null && foreign.lineResults.size == voucher.lines.size }
+            fun lineMoney(foreignValue: Money?, inr: Money) =
+                if (fx != null && foreignValue != null) Fmt.money(foreignValue, fx) else Fmt.inr(inr, symbol = false)
+            fun lineDash(foreignValue: Money?, inr: Money) =
+                if ((if (fx != null) foreignValue ?: Money.ZERO else inr).paise == 0L) "-" else lineMoney(foreignValue, inr)
+
             val lines = voucher.lines.mapIndexed { i, line ->
                 val unit = line.itemId?.let { unitsByItemId[it] }
                 val r = summary.lineResults.getOrNull(i)
-                fun comp(kind: TaxKind) = r?.components?.filter { it.kind == kind }?.fold(Money.ZERO) { a, c -> a + c.amount } ?: Money.ZERO
-                val cgst = comp(TaxKind.CGST)
-                val sgst = comp(TaxKind.SGST)
-                val igst = comp(TaxKind.IGST)
-                val cess = comp(TaxKind.CESS)
+                val fr = foreign?.lineResults?.getOrNull(i)
+                val cgst = comp(r, TaxKind.CGST)
+                val sgst = comp(r, TaxKind.SGST)
+                val igst = comp(r, TaxKind.IGST)
+                val cess = comp(r, TaxKind.CESS)
                 if (cess.paise != 0L) hasCess = true
                 val label = rateLabel(line.treatment, line.taxRate)
                 val taxable = r?.taxableValue ?: line.taxable
@@ -219,37 +227,37 @@ data class InvoiceDocument(
                     hsnSac = line.hsnSac ?: "",
                     quantity = Fmt.qty(line.quantity) + (unit?.let { " $it" } ?: "") +
                         (if (line.freeQuantity.scaledUnits > 0) " (+${Fmt.qty(line.freeQuantity)} free)" else ""),
-                    rate = line.foreignRate?.takeIf { currency != null }?.let { Fmt.money(it, currency) } ?: Fmt.inr(line.rate, symbol = false),
-                    discount = if (line.discount.paise == 0L) "-" else Fmt.inr(line.discount, symbol = false),
-                    taxable = Fmt.inr(line.taxable, symbol = false),
+                    rate = lineMoney(line.foreignRate, line.rate),
+                    discount = lineDash(line.foreignDiscount, line.discount),
+                    taxable = lineMoney(fr?.taxableValue, line.taxable),
                     gstRate = Fmt.percent(line.taxRate) + "%",
-                    tax = Fmt.inr(line.tax, symbol = false),
-                    amount = Fmt.inr(line.total, symbol = false),
-                    cgst = dashIfZero(cgst),
-                    sgst = dashIfZero(sgst),
-                    igst = dashIfZero(igst),
+                    tax = lineMoney(fr?.totalTax, line.tax),
+                    amount = lineMoney(fr?.totalAmount, line.total),
+                    cgst = lineDash(fr?.let { comp(it, TaxKind.CGST) }, cgst),
+                    sgst = lineDash(fr?.let { comp(it, TaxKind.SGST) }, sgst),
+                    igst = lineDash(fr?.let { comp(it, TaxKind.IGST) }, igst),
                     halfRate = if (line.taxRate.units % 2L == 0L) Fmt.percent(line.taxRate.half()) + "%" else "",
                 )
             }
 
             fun sumOf(f: (app.openbill.core.domain.model.VoucherLine) -> Money) = voucher.lines.fold(Money.ZERO) { a, l -> a + f(l) }
-            fun compSum(kind: TaxKind) = summary.lineResults.fold(Money.ZERO) { a, r ->
-                r.components.filter { it.kind == kind }.fold(a) { b, c -> b + c.amount }
-            }
+            fun compSum(results: List<app.openbill.core.tax.TaxLineResult>, kind: TaxKind) = results.fold(Money.ZERO) { a, r -> a + comp(r, kind) }
+            val fl = foreign?.lineResults.orEmpty()
+            fun fSum(f: (app.openbill.core.tax.TaxLineResult) -> Money) = fl.fold(Money.ZERO) { a, r -> a + f(r) }
             val lineTotals = Line(
                 index = 0,
                 description = "Total",
                 hsnSac = "",
                 quantity = "",
                 rate = "",
-                discount = Fmt.inr(sumOf { it.discount }, symbol = false),
-                taxable = Fmt.inr(sumOf { it.taxable }, symbol = false),
+                discount = lineMoney(sumOf { it.foreignDiscount ?: Money.ZERO }, sumOf { it.discount }),
+                taxable = lineMoney(fSum { it.taxableValue }, sumOf { it.taxable }),
                 gstRate = "",
-                tax = Fmt.inr(sumOf { it.tax }, symbol = false),
-                amount = Fmt.inr(sumOf { it.total }, symbol = false),
-                cgst = Fmt.inr(compSum(TaxKind.CGST), symbol = false),
-                sgst = Fmt.inr(compSum(TaxKind.SGST), symbol = false),
-                igst = Fmt.inr(compSum(TaxKind.IGST), symbol = false),
+                tax = lineMoney(fSum { it.totalTax }, sumOf { it.tax }),
+                amount = lineMoney(fSum { it.totalAmount }, sumOf { it.total }),
+                cgst = lineMoney(compSum(fl, TaxKind.CGST), compSum(summary.lineResults, TaxKind.CGST)),
+                sgst = lineMoney(compSum(fl, TaxKind.SGST), compSum(summary.lineResults, TaxKind.SGST)),
+                igst = lineMoney(compSum(fl, TaxKind.IGST), compSum(summary.lineResults, TaxKind.IGST)),
             )
 
             // Additional charges: each rate portion joins the matching rate group.

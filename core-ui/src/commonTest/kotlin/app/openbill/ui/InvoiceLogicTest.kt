@@ -108,6 +108,22 @@ class InvoiceLogicTest {
         assertEquals(Money.parse("1.50"), InvoiceMath.fromVoucherLine(stored[0], null).discount)
         assertEquals(Money.parse("10"), InvoiceMath.fromVoucherCharge(storedCharges[0]).amount)
         assertEquals(Money.parse("1000"), InvoiceMath.fromInr(Money.parse("83250"), fx))
+
+        // PDF: every line money column is in USD; the totals block stays in rupees.
+        val firm = app.openbill.ui.pdf.SampleInvoice.demoFirm("27")
+        val at = kotlin.time.Instant.fromEpochMilliseconds(0)
+        val voucher = app.openbill.core.domain.model.Voucher(
+            id = "v", firmId = firm.id, financialYearId = "fy", type = app.openbill.core.domain.model.VoucherType.SALE,
+            date = kotlinx.datetime.LocalDate(2026, 11, 6), placeOfSupplyStateCode = "27", lines = stored,
+            total = inr.grandTotal, createdAt = at, updatedAt = at,
+            export = app.openbill.core.domain.model.ExportDetails(export, currency = "USD", exchangeRate = fx),
+        )
+        val doc = app.openbill.ui.invoice.InvoiceDocument.build(voucher, firm, app.openbill.core.domain.model.FirmSettings(firmId = firm.id), null, emptyMap())
+        val row = doc.lines.single()
+        assertEquals(listOf("USD 12.50", "USD 1.50", "USD 36.00", "USD 6.48", "USD 42.48", "USD 6.48"), listOf(row.rate, row.discount, row.taxable, row.tax, row.amount, row.igst))
+        assertEquals("USD 1.50", doc.lineTotals!!.discount)
+        assertEquals("USD 36.00", doc.lineTotals!!.taxable)
+        assertTrue(doc.totals.any { it.first == "IGST" && it.second.startsWith("₹") })
     }
 
     @Test
