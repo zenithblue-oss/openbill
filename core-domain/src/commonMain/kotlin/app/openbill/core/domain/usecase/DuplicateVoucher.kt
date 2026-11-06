@@ -1,5 +1,6 @@
 package app.openbill.core.domain.usecase
 
+import app.openbill.core.domain.model.OrderFulfilment
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherStatus
 import kotlin.time.Instant
@@ -14,7 +15,7 @@ fun Voucher.duplicateAsDraft(id: String, date: LocalDate, financialYearId: Strin
     copy(
         id = id, financialYearId = financialYearId, number = null, date = date, dueDate = null, referenceVoucherId = null,
         status = VoucherStatus.DRAFT, cancellationReason = null, postedAt = null, cancelledAt = null, restoredAt = null,
-        createdAt = at, updatedAt = at, deletedAt = null,
-        lines = lines.mapIndexed { i, l -> l.copy(id = newId(i), batchId = null, serialNumbers = emptyList()) },
+        createdAt = at, updatedAt = at, deletedAt = null, fulfilment = OrderFulfilment.NONE,
+        lines = lines.mapIndexed { i, l -> l.copy(id = newId(i), batchId = null, serialNumbers = emptyList(), sourceLineId = null) },
         charges = charges.mapIndexed { i, c -> c.copy(id = newId(lines.size + i)) },
     )

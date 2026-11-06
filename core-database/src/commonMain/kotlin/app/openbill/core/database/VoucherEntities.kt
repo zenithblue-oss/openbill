@@ -94,6 +94,8 @@ data class VoucherEntity(
     @ColumnInfo(defaultValue = "NULL") val ewayBillNumber: String? = null,
     /** One "label<TAB>value" pair per line. */
     @ColumnInfo(defaultValue = "NULL") val customFields: String? = null,
+    /** v13, orders only: `partial` or `complete` once invoiced/billed; NULL while nothing is. */
+    @ColumnInfo(defaultValue = "NULL") val fulfilment: String? = null,
 )
 
 @Entity(
@@ -161,6 +163,8 @@ data class VoucherLineEntity(
     @ColumnInfo(defaultValue = "0") val freeQuantity: Long = 0,
     /** v12: false when the line's GST is not claimable as input credit. */
     @ColumnInfo(defaultValue = "1") val itcEligible: Boolean = true,
+    /** v13: the order line an invoice/bill line fulfils (no foreign key: orders keep their lines). */
+    @ColumnInfo(defaultValue = "NULL") val sourceLineId: String? = null,
 )
 
 @Entity(

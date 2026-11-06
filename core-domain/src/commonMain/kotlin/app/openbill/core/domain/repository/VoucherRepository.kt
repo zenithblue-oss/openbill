@@ -49,6 +49,9 @@ interface VoucherRepository {
 
     fun observeVoucher(id: String): Flow<Voucher?>
 
+    /** Non-deleted vouchers made from [sourceId] (its referenceVoucherId), with lines: order and quotation conversions, returns. */
+    fun observeConversions(sourceId: String): Flow<List<Voucher>>
+
     suspend fun findVoucher(id: String): Voucher?
 
     suspend fun saveDraft(voucher: Voucher)

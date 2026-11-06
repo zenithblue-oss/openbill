@@ -43,6 +43,8 @@ data class DraftLine(
     val freeQuantity: Quantity = Quantity.of(0),
     /** Purchase lines: GST claimable as input credit. */
     val itcEligible: Boolean = true,
+    /** Order line this line fulfils, when converted from a sales/purchase order. */
+    val sourceLineId: String? = null,
 ) {
     val gross: Money get() = InvoiceMath.gross(quantity, rate)
 }
@@ -304,6 +306,7 @@ object InvoiceMath {
                 treatment = if (zeroRated) TaxTreatment.ZERO_RATED else TaxTreatment.TAXABLE,
                 freeQuantity = line.freeQuantity,
                 itcEligible = line.itcEligible,
+                sourceLineId = line.sourceLineId,
                 taxMode = line.taxMode,
                 taxable = r.taxableValue,
                 tax = r.totalTax,
@@ -331,5 +334,6 @@ object InvoiceMath {
         serialNumbers = line.serialNumbers,
         freeQuantity = line.freeQuantity,
         itcEligible = line.itcEligible,
+        sourceLineId = line.sourceLineId,
     )
 }

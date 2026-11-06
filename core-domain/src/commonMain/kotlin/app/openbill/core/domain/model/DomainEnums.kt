@@ -33,6 +33,17 @@ enum class VoucherType {
     DELIVERY_CHALLAN,
     /** Transfer between two cash/bank accounts. */
     CONTRA,
+    /** Customer order; no stock or ledger effect until converted to an invoice. */
+    SALES_ORDER,
+    /** Order to a supplier; no stock or ledger effect until converted to a purchase bill. */
+    PURCHASE_ORDER,
+}
+
+/** How much of an issued order has been converted into posted invoices or bills. */
+enum class OrderFulfilment {
+    NONE,
+    PARTIAL,
+    COMPLETE,
 }
 
 enum class VoucherStatus {

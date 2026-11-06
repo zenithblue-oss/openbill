@@ -16,12 +16,13 @@ import app.openbill.core.database.dao.LedgerDao
 import app.openbill.core.database.dao.PartyDao
 import app.openbill.core.database.dao.PaymentAllocationDao
 import app.openbill.core.database.dao.PaymentDetailsDao
+import app.openbill.core.database.dao.RecurringDao
 import app.openbill.core.database.dao.SerialNumberDao
 import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 12
+const val OPENBILL_DATABASE_VERSION = 13
 
 @Database(
     entities = [
@@ -48,6 +49,7 @@ const val OPENBILL_DATABASE_VERSION = 12
         JournalEntryEntity::class,
         AuditEventEntity::class,
         AttachmentEntity::class,
+        RecurringScheduleEntity::class,
     ],
     version = OPENBILL_DATABASE_VERSION,
     exportSchema = true,
@@ -84,6 +86,8 @@ abstract class OpenBillDatabase : RoomDatabase() {
     abstract fun auditDao(): AuditDao
 
     abstract fun attachmentDao(): AttachmentDao
+
+    abstract fun recurringDao(): RecurringDao
 }
 
 private object AuditTriggerCallback : RoomDatabase.Callback() {

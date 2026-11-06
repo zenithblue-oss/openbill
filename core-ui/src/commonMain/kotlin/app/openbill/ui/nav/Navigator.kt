@@ -49,6 +49,7 @@ sealed interface Route {
     data class Report(val report: String, val from: String, val to: String, val partyId: String? = null) : Route
     data object AuditLog : Route
     data object BooksLock : Route
+    data object Recurring : Route
 
     /** The introduction, replayed from More. */
     data object Introduction : Route
@@ -82,6 +83,7 @@ sealed interface Route {
             is Report -> "report:$report|$from|$to|${partyId.orEmpty()}"
             AuditLog -> "audit:"
             BooksLock -> "books:"
+            Recurring -> "recurring:"
         }
 
     companion object {
@@ -124,6 +126,7 @@ sealed interface Route {
                 "report" -> arg.split('|').takeIf { it.size >= 3 }?.let { p -> Report(p[0], p[1], p[2], p.getOrNull(3)?.ifEmpty { null }) }
                 "audit" -> AuditLog
                 "books" -> BooksLock
+                "recurring" -> Recurring
                 else -> null
             }
         }

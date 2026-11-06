@@ -6,6 +6,7 @@ import app.openbill.ui.barcode.BarcodeScanButton
 
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.model.Batch
+import app.openbill.core.domain.model.isOrder
 import app.openbill.core.model.Quantity
 import app.openbill.ui.inventory.Inventory
 import app.openbill.ui.components.SelectableChip
@@ -124,7 +125,7 @@ fun InvoiceEditorScreen(
     val model = remember(voucherId) { InvoiceEditorModel(container, session, voucherId, scope, newType, returnOf) }
     val state by model.state.collectAsState()
     val doc = docLabels(state.type)
-    val purchaseSide = state.type == VoucherType.PURCHASE || state.type == VoucherType.DEBIT_NOTE
+    val purchaseSide = state.type.isPurchaseSide()
     val godowns by remember { container.repositories.catalog.observeGodowns(session.firm.id) }.collectAsState(initial = emptyList())
     var pickGodown by remember { mutableStateOf(false) }
     var scanText by remember { mutableStateOf("") }
@@ -192,8 +193,8 @@ fun InvoiceEditorScreen(
             }
             CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
                 FormColumn(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = pageGutter, vertical = Spacing.sm)) {
-                    PartyCard(state.party, state.errors["party"], if (purchaseSide) "Supplier *" else "Bill to *", if (purchaseSide) "Supplier you are buying from" else "Customer this invoice is for") { pickParty = true }
-                    if (purchaseSide) {
+                    PartyCard(state.party, state.errors["party"], if (purchaseSide) "Supplier *" else "Bill to *", if (purchaseSide) "Supplier you are buying from" else "Customer this ${doc.noun} is for") { pickParty = true }
+                    if (purchaseSide && state.type != VoucherType.PURCHASE_ORDER) {
                         FormField(
                             if (state.type == VoucherType.PURCHASE) "Supplier bill number" else "Debit note against",
                             state.referenceNumber,
@@ -312,7 +313,8 @@ fun InvoiceEditorScreen(
         }
         val docDate = Parse.date(state.dateText) ?: container.today()
         LineEditor(
-            form = lineForm,
+            // Batches and serials are picked when goods move, not on a quotation or order.
+            form = lineForm?.let { if (state.type.isIssueOnly()) it.copy(trackBatch = false, trackSerial = false) else it },
             batches = batches,
             slabs = remember(docDate) { gstSlabsOn(docDate) },
             slabDate = docDate,
@@ -399,6 +401,14 @@ fun InvoiceEditorScreen(
             dismissButton = { TextButton(onClick = { filingWarning = null }) { Text("Go back") } },
         )
     }
+    state.rateNotice?.let { text ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = model::dismissRateNotice,
+            title = { Text("Check GST rates") },
+            text = { Text(text) },
+            confirmButton = { TextButton(onClick = model::dismissRateNotice) { Text("OK") } },
+        )
+    }
     priceChange?.let { (item, rate) ->
         val which = if (purchaseSide) "purchase" else "sale"
         androidx.compose.material3.AlertDialog(
@@ -445,7 +455,7 @@ fun InvoiceEditorScreen(
             header = {
                 ListItem(
                     headlineContent = { Text("New party") },
-                    supportingContent = { Text("Add a customer without leaving the invoice") },
+                    supportingContent = { Text("Add a ${if (purchaseSide) "supplier" else "customer"} without leaving the ${doc.noun}") },
                     leadingContent = { Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                     modifier = Modifier.clickable(role = Role.Button) {
@@ -755,7 +765,7 @@ private fun LineEditor(
             } else if (current.trackBatch) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     FormField("Batch number *", current.batchNumber, { edit = edit.copy(batchNumber = it) }, Modifier.weight(1f), error = errors["batch"])
-                    DateField("Expiry", current.expiryDate, { edit = edit.copy(expiryDate = it) }, Modifier.weight(1f))
+                    DateField("Expiry", current.expiryDate, { edit = edit.copy(expiryDate = it) }, Modifier.weight(1f), onClear = { edit = edit.copy(expiryDate = null) })
                 }
             }
             if (current.trackSerial) {
@@ -808,9 +818,15 @@ internal fun docLabels(type: VoucherType): DocLabels = when (type) {
     VoucherType.QUOTATION -> DocLabels("Quotation", "quotation")
     VoucherType.PROFORMA -> DocLabels("Proforma invoice", "proforma invoice")
     VoucherType.DELIVERY_CHALLAN -> DocLabels("Delivery challan", "delivery challan")
+    VoucherType.SALES_ORDER -> DocLabels("Sales order", "sales order")
+    VoucherType.PURCHASE_ORDER -> DocLabels("Purchase order", "purchase order")
     else -> DocLabels("Invoice", "invoice")
 }
 
 /** Non-posting documents: numbered when issued, no stock or ledger effect. */
 internal fun VoucherType.isIssueOnly(): Boolean =
-    this == VoucherType.QUOTATION || this == VoucherType.PROFORMA || this == VoucherType.DELIVERY_CHALLAN
+    this == VoucherType.QUOTATION || this == VoucherType.PROFORMA || this == VoucherType.DELIVERY_CHALLAN || isOrder()
+
+/** Supplier-side documents: party is a supplier, items are priced at purchase price. */
+internal fun VoucherType.isPurchaseSide(): Boolean =
+    this == VoucherType.PURCHASE || this == VoucherType.DEBIT_NOTE || this == VoucherType.PURCHASE_ORDER

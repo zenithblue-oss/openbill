@@ -52,9 +52,13 @@ import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherLine
 import app.openbill.core.domain.model.VoucherStatus
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
-import kotlinx.datetime.LocalDate
+import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.domain.model.OrderFulfilment
+import app.openbill.core.domain.model.Orders
+import app.openbill.core.domain.model.isOrder
+import app.openbill.core.domain.model.orderTarget
+import app.openbill.core.model.Quantity
+import app.openbill.ui.recurring.RecurringScheduleDialog
 import app.openbill.ui.AppContainer
 import app.openbill.core.domain.usecase.duplicateAsDraft
 import app.openbill.ui.Session
@@ -112,20 +116,18 @@ fun InvoiceDetailScreen(
     onEditDraft: (String) -> Unit,
     onViewPdf: (String) -> Unit = {},
     onReturn: (String) -> Unit = {},
-    /** Quotation/proforma/challan to a new invoice. */
-    onConvert: (String) -> Unit = {},
+    /** Quotation/proforma/challan/order to a new document of the given type. */
+    onConvert: (String, VoucherType) -> Unit = { _, _ -> },
     onRecordPayment: (Voucher) -> Unit = {},
+    onOpen: (String) -> Unit = {},
+    onRecurring: () -> Unit = {},
 ) {
     val outstanding by remember(voucherId) { container.repositories.payments.observeInvoiceOutstanding(voucherId) }
         .collectAsState(initial = null)
     val voucher by remember(voucherId) { container.repositories.vouchers.observeVoucher(voucherId) }.collectAsState(initial = null)
-    // shortcut: scans vouchers dated on/after this one; conversions are never back-dated.
-    val converted by remember(voucher?.id) {
-        val v = voucher
-        if (v == null || !v.type.isIssueOnly()) flowOf(null)
-        else container.repositories.vouchers.observeVouchers(session.firm.id, v.date, LocalDate(2100, 1, 1))
-            .map { all -> all.firstOrNull { it.referenceVoucherId == v.id && it.status != VoucherStatus.CANCELLED } }
-    }.collectAsState(initial = null)
+    val conversions by remember(voucherId) { container.repositories.vouchers.observeConversions(voucherId) }.collectAsState(initial = emptyList())
+    val converted = conversions.firstOrNull { it.status != VoucherStatus.CANCELLED && it.type != VoucherType.CREDIT_NOTE && it.type != VoucherType.DEBIT_NOTE }
+    var recurringOpen by remember { mutableStateOf(false) }
     var party by remember { mutableStateOf<Party?>(null) }
     var units by remember { mutableStateOf(emptyMap<String, String>()) }
     var cancelOpen by remember { mutableStateOf(false) }
@@ -186,7 +188,7 @@ fun InvoiceDetailScreen(
                                 style = MaterialTheme.typography.titleLarge,
                                 modifier = Modifier.weight(1f).padding(end = Spacing.sm),
                             )
-                            StatusChip(v.status, issued = v.type.isIssueOnly())
+                            StatusChip(v.status, issued = v.type.isIssueOnly(), postedLabel = Orders.status(v).label.takeIf { v.type.isOrder() })
                         }
                         Text(
                             party?.gstin?.let { "GSTIN $it" } ?: "Unregistered (no GSTIN)",
@@ -216,7 +218,12 @@ fun InvoiceDetailScreen(
                 }
 
                 SectionHeader("Items (${v.lines.size})")
-                v.lines.forEach { line -> LineCard(line, line.itemId?.let { units[it] }) }
+                // Issued orders show how much of each line is already invoiced or billed.
+                val showBilled = v.type.isOrder() && v.status != VoucherStatus.DRAFT
+                val billed = if (showBilled) Orders.converted(conversions) else emptyMap()
+                v.lines.forEach { line ->
+                    LineCard(line, line.itemId?.let { units[it] }, if (showBilled) billed[line.id] ?: Quantity.of(0) else null)
+                }
 
                 SectionHeader("Totals")
                 OutlinedCard(Modifier.fillMaxWidth()) {
@@ -300,10 +307,36 @@ fun InvoiceDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Delete draft") }
                 }
-                if (v.status == VoucherStatus.POSTED && v.type.isIssueOnly()) {
+                if (v.status == VoucherStatus.POSTED && v.type.isOrder()) {
+                    val target = v.type.orderTarget()!!
+                    if (v.fulfilment != OrderFulfilment.COMPLETE) {
+                        PrimaryButton(if (target == VoucherType.SALE) "Convert to invoice" else "Convert to purchase bill", { onConvert(v.id, target) }, Modifier.fillMaxWidth())
+                    }
+                } else if (v.status == VoucherStatus.POSTED && v.type.isIssueOnly()) {
                     val inv = converted
-                    if (inv == null) PrimaryButton("Convert to invoice", { onConvert(v.id) }, Modifier.fillMaxWidth())
-                    else Text("Converted \u2192 ${inv.number ?: "draft invoice"}", style = MaterialTheme.typography.bodyMedium)
+                    if (inv == null) {
+                        PrimaryButton("Convert to invoice", { onConvert(v.id, VoucherType.SALE) }, Modifier.fillMaxWidth())
+                        if (v.type == VoucherType.QUOTATION) {
+                            OutlinedButton(onClick = { onConvert(v.id, VoucherType.SALES_ORDER) }, modifier = Modifier.fillMaxWidth()) { Text("Convert to sales order") }
+                        }
+                    } else {
+                        Text("Converted \u2192 ${docLabels(inv.type).noun} ${inv.number ?: "(draft)"}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                if (v.type.isOrder() && conversions.isNotEmpty()) {
+                    SectionHeader(if (v.type == VoucherType.SALES_ORDER) "Invoices from this order" else "Bills from this order")
+                    conversions.forEach { c ->
+                        val qty = c.lines.filter { it.sourceLineId != null }.fold(0L) { a, l -> a + l.quantity.scaledUnits }
+                        ListItem(
+                            headlineContent = { Text("${c.number ?: "Draft"} \u00b7 ${Fmt.date(c.date)}") },
+                            supportingContent = { Text("Qty ${Fmt.qty(Quantity.ofScaledUnits(qty))} \u00b7 ${Fmt.inr(c.total)}") },
+                            trailingContent = { StatusChip(c.status) },
+                            modifier = Modifier.clickable(onClickLabel = "Open ${c.number ?: "draft"}") { onOpen(c.id) },
+                        )
+                    }
+                }
+                if (v.type == VoucherType.SALE && v.status != VoucherStatus.CANCELLED) {
+                    OutlinedButton(onClick = { recurringOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Repeat on a schedule") }
                 }
                 val due = outstanding
                 if (v.status == VoucherStatus.POSTED && due != null && due > app.openbill.core.model.Money.ZERO &&
@@ -329,13 +362,17 @@ fun InvoiceDetailScreen(
         var error by remember { mutableStateOf<String?>(null) }
         var cancelling by remember { mutableStateOf(false) }
         val filing = voucher?.let { FilingPeriod.warning(it.type, it.date, container.today()) }
+        val noun = docLabels(voucher?.type ?: VoucherType.SALE).noun
         AlertDialog(
             onDismissRequest = { if (!cancelling) cancelOpen = false },
             icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
-            title = { Text("Cancel this invoice?") },
+            title = { Text("Cancel this ${noun}?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    Text("The invoice keeps its number and stays in your records, marked as cancelled. Its ledger entries are reversed.")
+                    Text(
+                        "The $noun keeps its number and stays in your records, marked as cancelled. " +
+                            if (voucher?.type?.isIssueOnly() == true) "It has no stock or ledger entries to reverse." else "Its ledger entries are reversed.",
+                    )
                     filing?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                     FormField("Reason *", reason, { reason = it; error = null }, error = error)
                 }
@@ -361,14 +398,29 @@ fun InvoiceDetailScreen(
                         }
                             .onSuccess {
                                 cancelOpen = false
-                                messages?.show("Invoice cancelled")
+                                messages?.show("${noun.replaceFirstChar { it.uppercase() }} cancelled")
                             }
                             .onFailure { error = it.message ?: "Could not cancel" }
                         cancelling = false
                     }
-                }) { Text("Cancel invoice", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Cancel $noun", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { cancelOpen = false }, enabled = !cancelling) { Text("Keep") } },
+        )
+    }
+
+    voucher?.takeIf { recurringOpen }?.let { v ->
+        RecurringScheduleDialog(
+            container = container,
+            session = session,
+            template = v,
+            partyName = party?.name,
+            onDismiss = { recurringOpen = false },
+            onSaved = {
+                recurringOpen = false
+                messages?.show("Schedule saved. Manage it under Money > Recurring invoices")
+                onRecurring()
+            },
         )
     }
 
@@ -409,7 +461,7 @@ private fun MetaRow(label: String, value: String) {
 
 /** One invoice line: name and amount on top, then a label/value grid that never breaks mid-figure. */
 @Composable
-private fun LineCard(line: VoucherLine, unit: String?) {
+private fun LineCard(line: VoucherLine, unit: String?, billed: Quantity? = null) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.md)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
@@ -431,6 +483,10 @@ private fun LineCard(line: VoucherLine, unit: String?) {
             AmountRow("Taxable value", Fmt.inr(line.taxable))
             AmountRow("GST ${Fmt.percent(line.taxRate)}%" + if (line.taxMode.name == "INCLUSIVE") " (incl.)" else "", Fmt.inr(line.tax))
             line.hsnSac?.let { AmountRow("HSN/SAC", it) }
+            billed?.let {
+                val pending = Quantity.ofScaledUnits(maxOf(0L, line.quantity.scaledUnits - it.scaledUnits))
+                AmountRow("Billed ${Fmt.qtyUnit(it, unit)}", if (pending.scaledUnits == 0L) "Done" else "Pending ${Fmt.qtyUnit(pending, unit)}")
+            }
         }
     }
 }

@@ -1,7 +1,10 @@
 package app.openbill.ui.invoice
 
 import app.openbill.core.domain.model.Item
+import app.openbill.core.domain.model.Orders
 import app.openbill.core.domain.model.Party
+import app.openbill.core.domain.model.isOrder
+import app.openbill.core.domain.model.orderTarget
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
@@ -205,6 +208,8 @@ data class InvoiceEditorState(
     val rejectedSaves: Int = 0,
     /** True once the user has changed anything since the editor opened or last saved. */
     val dirty: Boolean = false,
+    /** Shown once when leaving zero-rated export with custom lines still at the stored 0%. */
+    val rateNotice: String? = null,
 )
 
 class InvoiceEditorModel(
@@ -212,8 +217,8 @@ class InvoiceEditorModel(
     private val session: Session,
     private val voucherId: String?,
     private val scope: CoroutineScope,
-    newType: VoucherType = VoucherType.SALE,
-    /** A posted purchase bill or sale to prefill a return (debit/credit note) from. */
+    private val newType: VoucherType = VoucherType.SALE,
+    /** A posted purchase bill or sale to prefill a return (debit/credit note) from, or a document to convert. */
     private val returnOf: String? = null,
 ) {
     private val firm = session.firm
@@ -230,6 +235,8 @@ class InvoiceEditorModel(
     )
     val state: StateFlow<InvoiceEditorState> = _state
     private var existing: Voucher? = null
+    /** Keys of custom lines loaded from a zero-rated draft (their real rate was not stored). */
+    private var zeroRatedCustom: Set<String> = emptySet()
 
     init {
         if (voucherId != null) scope.launch { load(voucherId) }
@@ -240,14 +247,30 @@ class InvoiceEditorModel(
         val repos = container.repositories
         val found = repos.vouchers.findVoucher(id)
         val v = if (asReturn && found != null) {
-            // A quotation/proforma/challan converts to an invoice; a bill or invoice to its return.
+            // A quotation/proforma/challan converts to an invoice (a quotation also to a sales
+            // order), an order to its invoice or bill for what is still pending; a bill or
+            // invoice to its return.
             val convert = found.type.isIssueOnly()
             if (found.status != VoucherStatus.POSTED) {
                 _state.update { it.copy(loaded = true, failure = if (convert) "Issue the document before converting it" else "Only posted documents can be returned") }
                 return
             }
+            val order = found.type.isOrder()
+            val earlier = if (order) repos.vouchers.observeConversions(found.id).first() else emptyList()
+            val lines = if (order) {
+                Orders.conversionLines(found, earlier, container::newId) ?: run {
+                    _state.update { it.copy(loaded = true, failure = "Nothing is pending on this order: it is fully invoiced, or a draft already holds the rest") }
+                    return
+                }
+            } else {
+                found.lines.map { it.copy(id = container.newId()) }
+            }
+            // Charges (freight, packing) are billed once, with the first conversion of an order.
+            val chargesOnce = !order || earlier.none { it.status != VoucherStatus.CANCELLED }
             found.copy(
                 type = when {
+                    order -> found.type.orderTarget()!!
+                    convert && found.type == VoucherType.QUOTATION && newType == VoucherType.SALES_ORDER -> VoucherType.SALES_ORDER
                     convert -> VoucherType.SALE
                     found.type == VoucherType.PURCHASE -> VoucherType.DEBIT_NOTE
                     else -> VoucherType.CREDIT_NOTE
@@ -257,9 +280,13 @@ class InvoiceEditorModel(
                 status = VoucherStatus.DRAFT,
                 number = null,
                 date = container.today(),
-                lines = found.lines.map { it.copy(id = container.newId()) },
-                charges = if (convert) found.charges.map { it.copy(id = container.newId()) } else emptyList(),
+                lines = lines,
+                charges = if (convert && chargesOnce) found.charges.map { it.copy(id = container.newId()) } else emptyList(),
                 notes = if (convert) found.notes else null,
+                fulfilment = app.openbill.core.domain.model.OrderFulfilment.NONE,
+                // A bill made from our purchase order quotes it.
+                poNumber = if (found.type == VoucherType.PURCHASE_ORDER) found.number else found.poNumber,
+                poDate = if (found.type == VoucherType.PURCHASE_ORDER) found.date else found.poDate,
             )
         } else {
             found
@@ -272,13 +299,14 @@ class InvoiceEditorModel(
         val party = v.partyId?.let { repos.parties.findParty(it) }
         val units = repos.catalog.observeUnits(firm.id).first().associateBy { it.id }
         // Zero-rated exports store 0% lines; reload the item's own rate so switching back to a
-        // regular supply taxes them again. ponytail: custom lines keep 0%, the user re-enters it.
+        // regular supply taxes them again. Custom lines have no master rate: [setFields] prompts.
         val zeroRated = v.export?.type?.withTax == false
         val lines = v.lines.map { line ->
             val item = line.itemId?.let { repos.catalog.findItem(it) }
             val draft = InvoiceMath.fromVoucherLine(line, item?.let { units[it.unitId]?.symbol })
             if (zeroRated && item != null) draft.copy(gstRate = item.taxRate) else draft
         }
+        zeroRatedCustom = if (zeroRated) lines.filter { it.itemId == null }.map { it.key }.toSet() else emptySet()
         _state.value = InvoiceEditorState(
             loaded = true,
             voucherId = if (asReturn) null else v.id,
@@ -329,8 +357,18 @@ class InvoiceEditorModel(
             wasExport -> s.party?.let { p -> p.shipToStateCode() ?: p.stateCode } ?: firm.stateCode
             else -> s.placeOfSupply
         }
-        s.copy(fields = f, placeOfSupply = pos, errors = s.errors - FIELD_ERRORS)
+        val stillZero = s.lines.filter { it.key in zeroRatedCustom && it.gstRate.units == 0L }
+        val notice = if (f.exportType?.withTax != false && stillZero.isNotEmpty()) {
+            zeroRatedCustom = emptySet()
+            "These custom lines were saved zero-rated for export and are still at 0% GST: " +
+                stillZero.joinToString { it.description } + ". Open each line and set its GST rate."
+        } else {
+            s.rateNotice
+        }
+        s.copy(fields = f, placeOfSupply = pos, errors = s.errors - FIELD_ERRORS, rateNotice = notice)
     }
+
+    fun dismissRateNotice() = _state.update { it.copy(rateNotice = null) }
 
     fun setCustomLabels(labels: List<String>) = CustomFieldLabels.save(container.platform.settingsStore, firm.id, labels)
     fun setDate(text: String) = mutate { it.copy(dateText = text, errors = it.errors - "date") }
@@ -340,7 +378,8 @@ class InvoiceEditorModel(
 
     fun upsertLine(line: DraftLine) = mutate { s ->
         val idx = s.lines.indexOfFirst { it.key == line.key }
-        val lines = if (idx >= 0) s.lines.toMutableList().also { it[idx] = line } else s.lines + line
+        // The line form does not carry the order link; keep it across edits.
+        val lines = if (idx >= 0) s.lines.toMutableList().also { it[idx] = line.copy(sourceLineId = s.lines[idx].sourceLineId) } else s.lines + line
         s.copy(lines = lines, errors = s.errors - "lines")
     }
 

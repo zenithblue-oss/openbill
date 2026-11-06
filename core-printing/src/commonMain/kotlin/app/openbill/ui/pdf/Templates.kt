@@ -86,7 +86,7 @@ class GstDetailedLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseL
         val half = cw / 2f
         val name = ts(9.5f, FontRole.BOLD, Ink.BLACK)
         val body = ts(7.8f)
-        val bill = Block.stack(listOf(label("BILL TO", labelSt), partyBlock(doc.buyer, half - 2 * pad, name, body)))
+        val bill = Block.stack(listOf(label(doc.partyLabel ?: "BILL TO", labelSt), partyBlock(doc.buyer, half - 2 * pad, name, body)))
         val shipContent = doc.shipTo?.let { partyBlock(it, half - 2 * pad, name, body) }
             ?: noteBlock("", if (doc.buyer == null) "-" else "Same as billing address", half - 2 * pad, ts(1f), body)
         val ship = Block.stack(listOf(label("SHIP TO", labelSt), shipContent))
@@ -184,7 +184,7 @@ class LedgerLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val colW = (cw - 2 * 14f * k) / 3f
         val name = ts(9f, FontRole.BOLD, Ink.BLACK)
         val body = ts(7.6f)
-        val bill = Block.stack(listOf(label("BILLED TO", labelSt), partyBlock(doc.buyer, colW, name, body)))
+        val bill = Block.stack(listOf(label(doc.partyLabel ?: "BILLED TO", labelSt), partyBlock(doc.buyer, colW, name, body)))
         val ship = Block.stack(
             listOf(
                 label("SHIPPED TO", labelSt),
@@ -308,7 +308,7 @@ class SimpleLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
 
         val colGap = 16f * k
         val colW = (cw - 2 * colGap) / 3f
-        val bill = Block.stack(listOf(label("BILLED TO", labelSt, 4f * k), partyBlock(doc.buyer, colW, ts(9f, FontRole.BOLD, Ink.BLACK), ts(7.6f, color = Ink.BODY))))
+        val bill = Block.stack(listOf(label(doc.partyLabel ?: "BILLED TO", labelSt, 4f * k), partyBlock(doc.buyer, colW, ts(9f, FontRole.BOLD, Ink.BLACK), ts(7.6f, color = Ink.BODY))))
         val date = Block.stack(
             listOf(
                 label("DATE", labelSt, 4f * k),
@@ -436,7 +436,7 @@ class ModernLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val billW = cw * 0.55f
         val detW = cw - billW - cardGap
         val pad = 10f * k
-        val bill = Block.stack(listOf(label("BILLED TO", labelSt, 3f * k), partyBlock(doc.buyer, billW - 2 * pad, ts(10f, FontRole.BOLD, Ink.BLACK), ts(7.6f))))
+        val bill = Block.stack(listOf(label(doc.partyLabel ?: "BILLED TO", labelSt, 3f * k), partyBlock(doc.buyer, billW - 2 * pad, ts(10f, FontRole.BOLD, Ink.BLACK), ts(7.6f))))
         val detRows = metaRows(false) + listOfNotNull(doc.shipTo?.let { "Ship to" to it.shipLine() })
         val det = Block.stack(listOf(label("DETAILS", labelSt, 3f * k), kvBlock(detRows, detW - 2 * pad, ts(7.6f, color = Ink.MUTED), ts(7.6f, FontRole.BOLD, Ink.BLACK))))
         val cards = boxedPair(bill, billW, det, detW, pad, null, cardGap, soft, 8f * k)
@@ -554,7 +554,7 @@ class ElegantLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
         y += 14f * k
 
         val colW = (cw - 30f * k) / 2f
-        val bill = Block.stack(listOf(label("BILLED TO", labelSt, 4f * k), partyBlock(doc.buyer, colW, ts(10f, FontRole.BOLD, Ink.BLACK), ts(7.8f))))
+        val bill = Block.stack(listOf(label(doc.partyLabel ?: "BILLED TO", labelSt, 4f * k), partyBlock(doc.buyer, colW, ts(10f, FontRole.BOLD, Ink.BLACK), ts(7.8f))))
         val details = Block.stack(
             listOf(
                 label("INVOICE", labelSt, 4f * k),

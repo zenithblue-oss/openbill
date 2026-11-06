@@ -44,6 +44,8 @@ data class VoucherLine(
     val freeQuantity: Quantity = Quantity.of(0),
     /** Purchase side: false when the GST on this line cannot be claimed as input credit. */
     val itcEligible: Boolean = true,
+    /** The sales/purchase order line this invoice or bill line fulfils. */
+    val sourceLineId: String? = null,
 ) {
     /** Quantity that moves stock: billed plus free. */
     val stockQuantity: Quantity get() = Quantity.ofScaledUnits(quantity.scaledUnits + freeQuantity.scaledUnits)
@@ -252,6 +254,8 @@ data class Voucher(
     val ewayBillNumber: String? = null,
     /** Firm-defined extra header fields with their values. */
     val customFields: List<DocumentField> = emptyList(),
+    /** Orders only: how much has been invoiced or billed, kept in step by the repository. */
+    val fulfilment: OrderFulfilment = OrderFulfilment.NONE,
 ) {
     /** Supplies to SEZ and exports are inter-state whatever the place of supply. */
     fun isIntraState(firmStateCode: String): Boolean = export == null && firmStateCode == placeOfSupplyStateCode

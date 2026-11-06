@@ -189,7 +189,8 @@ fun InvoiceListScreen(
                 EmptyState(
                     Icons.Outlined.Create,
                     "No ${title.lowercase()} yet",
-                    if (docType != null) "Issue one to the party; convert it to an invoice when they confirm."
+                    if (docType == VoucherType.PURCHASE_ORDER) "Send one to the supplier; convert it to a purchase bill when the goods arrive."
+                    else if (docType != null) "Issue one to the party; convert it to an invoice when they confirm."
                     else "Record a supplier's bill to add its items to stock and claim input GST.",
                     Modifier.align(Alignment.Center),
                 )
@@ -224,7 +225,8 @@ fun InvoiceListScreen(
                     ) {
                         StatusFilter.entries.forEach { f ->
                             val count = if (f.status == null) total else counts[f.status]?.count ?: 0
-                            SelectableChip("${f.label} ($count)", filter == f, { filterName = f.name; limit.intValue = PAGE_SIZE })
+                            val label = if (f == StatusFilter.POSTED && docType?.isIssueOnly() == true) "Issued" else f.label
+                            SelectableChip("$label ($count)", filter == f, { filterName = f.name; limit.intValue = PAGE_SIZE })
                         }
                         if (container.platform.supportsBulkPdf && shown.isNotEmpty()) {
                             val matches = when {
@@ -261,7 +263,7 @@ fun InvoiceListScreen(
                         trailingContent = {
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                                 Text(Fmt.inr(v.total), style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
-                                StatusChip(v.status, issued = v.type.isIssueOnly())
+                                StatusChip(v.status, issued = v.type.isIssueOnly(), postedLabel = app.openbill.core.domain.model.Orders.status(v).label.takeIf { v.type == VoucherType.SALES_ORDER || v.type == VoucherType.PURCHASE_ORDER })
                             }
                         },
                         modifier = Modifier

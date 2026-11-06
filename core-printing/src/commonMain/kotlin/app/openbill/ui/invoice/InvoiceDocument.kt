@@ -60,6 +60,8 @@ data class InvoiceDocument(
     val reverseCharge: Boolean = false,
     /** Transport, export, PO, e-way bill and custom header fields, label to value. */
     val details: List<Pair<String, String>> = emptyList(),
+    /** Heading over the party block when it is not the buyer, e.g. "SUPPLIER" on a purchase order. */
+    val partyLabel: String? = null,
 ) {
     /** Plain-text summary sent along with a shared PDF; WhatsApp and SMS pick it up from the share sheet. */
     fun shareSummary(): String = buildString {
@@ -336,6 +338,7 @@ data class InvoiceDocument(
                 lineTotals = lineTotals,
                 reverseCharge = voucher.reverseCharge,
                 details = voucher.detailRows { Fmt.date(it) },
+                partyLabel = "SUPPLIER".takeIf { voucher.type == VoucherType.PURCHASE_ORDER },
             )
         }
     }
@@ -350,5 +353,7 @@ fun pdfTitle(type: VoucherType, gstin: String?): String = when (type) {
     VoucherType.QUOTATION -> "Quotation"
     VoucherType.PROFORMA -> "Proforma Invoice"
     VoucherType.DELIVERY_CHALLAN -> "Delivery Challan"
+    VoucherType.SALES_ORDER -> "Sales Order"
+    VoucherType.PURCHASE_ORDER -> "Purchase Order"
     else -> type.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
 }

@@ -194,7 +194,27 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+    /**
+     * Sales/purchase orders and recurring invoices: order fulfilment on vouchers, the order line
+     * an invoice line fulfils, and the schedules table. Existing rows: no fulfilment, no source line.
+     */
+    private val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `fulfilment` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `voucher_lines` ADD COLUMN `sourceLineId` TEXT DEFAULT NULL")
+            connection.execSQL(
+                "CREATE TABLE IF NOT EXISTS `recurring_schedules` (`id` TEXT NOT NULL, `firmId` TEXT NOT NULL, " +
+                    "`templateVoucherId` TEXT NOT NULL, `name` TEXT NOT NULL, `frequency` TEXT NOT NULL, `repeatEvery` INTEGER NOT NULL, " +
+                    "`startDate` TEXT NOT NULL, `endDate` TEXT, `maxCount` INTEGER, `nextIndex` INTEGER NOT NULL, " +
+                    "`generatedCount` INTEGER NOT NULL, `autoPost` INTEGER NOT NULL, `paused` INTEGER NOT NULL, `lastError` TEXT, " +
+                    "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), " +
+                    "FOREIGN KEY(`firmId`) REFERENCES `firms`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            connection.execSQL("CREATE INDEX IF NOT EXISTS `index_recurring_schedules_firmId` ON `recurring_schedules` (`firmId`)")
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
 
     fun migrationsFor(
         startVersion: Int,

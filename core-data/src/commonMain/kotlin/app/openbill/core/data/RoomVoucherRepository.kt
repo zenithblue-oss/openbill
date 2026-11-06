@@ -20,6 +20,9 @@ import app.openbill.core.domain.model.JournalEntry
 import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherNumbering
+import app.openbill.core.domain.model.OrderFulfilment
+import app.openbill.core.domain.model.Orders
+import app.openbill.core.domain.model.isOrder
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.model.booksLockedThrough
@@ -222,7 +225,20 @@ class RoomVoucherRepository(
             ledgerDao().insertEntries(journalEntries.map { it.toEntity() })
         }
         audits.insert(auditEvent(updated, POSTED_ACTION, at))
+        refreshOrder(updated.referenceVoucherId)
         posted
+    }
+
+    override fun observeConversions(sourceId: String): Flow<List<Voucher>> =
+        vouchers.observeByReference(sourceId).map { values -> withDetails(values) }
+
+    /** Keeps an order's fulfilment in step after one of its conversions is posted, cancelled or restored (inside the write). */
+    private suspend fun refreshOrder(orderId: String?) {
+        val order = orderId?.let { vouchers.findById(it) } ?: return
+        if (!decodeEnum<VoucherType>(order.type, "voucher type").isOrder()) return
+        val fulfilment = Orders.fulfilment(order.toDomain(vouchers.linesFor(order.id), emptyList()), withDetails(vouchers.byReference(order.id)))
+        val code = fulfilment.takeIf { it != OrderFulfilment.NONE }?.name?.lowercase()
+        if (code != order.fulfilment) vouchers.setFulfilment(order.id, code)
     }
 
     override suspend fun cancel(
@@ -267,6 +283,7 @@ class RoomVoucherRepository(
         }
         vouchers.update(updated)
         audits.insert(auditEvent(updated, CANCELLED_ACTION, at))
+        refreshOrder(updated.referenceVoucherId)
         updated.toDomain(lines, charges)
     }
 
@@ -332,6 +349,7 @@ class RoomVoucherRepository(
                 ),
             ),
         )
+        refreshOrder(updated.referenceVoucherId)
         updated.toDomain(lines, charges)
     }
 
@@ -610,6 +628,8 @@ class RoomVoucherRepository(
         VoucherType.STOCK_TRANSFER -> "TRF"
         VoucherType.DELIVERY_CHALLAN -> "DC"
         VoucherType.CONTRA -> "CTR"
+        VoucherType.SALES_ORDER -> "SO"
+        VoucherType.PURCHASE_ORDER -> "PO"
     }
 
     /** Books lock: posting, cancelling and restoring are refused inside the locked period. */

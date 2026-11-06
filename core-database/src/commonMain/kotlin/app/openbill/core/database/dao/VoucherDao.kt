@@ -88,6 +88,15 @@ interface VoucherDao {
         toDate: String,
     ): Flow<List<VoucherEntity>>
 
+    @Query("SELECT * FROM vouchers WHERE referenceVoucherId = :sourceId AND deletedAt IS NULL ORDER BY createdAt, id")
+    fun observeByReference(sourceId: String): Flow<List<VoucherEntity>>
+
+    @Query("SELECT * FROM vouchers WHERE referenceVoucherId = :sourceId AND deletedAt IS NULL")
+    suspend fun byReference(sourceId: String): List<VoucherEntity>
+
+    @Query("UPDATE vouchers SET fulfilment = :fulfilment WHERE id = :id")
+    suspend fun setFulfilment(id: String, fulfilment: String?): Int
+
     @Query(
         "SELECT * FROM vouchers WHERE firmId = :firmId AND partyId = :partyId " +
             "AND type = :type AND status = 'posted' AND deletedAt IS NULL " +

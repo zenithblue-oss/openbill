@@ -81,7 +81,7 @@ object DocFieldRules {
     val MODES = listOf("Road", "Rail", "Air", "Ship")
 
     fun supportsReverseCharge(type: VoucherType) = type in setOf(VoucherType.SALE, VoucherType.PURCHASE, VoucherType.CREDIT_NOTE, VoucherType.DEBIT_NOTE)
-    fun supportsExport(type: VoucherType) = type in setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE, VoucherType.QUOTATION, VoucherType.PROFORMA)
+    fun supportsExport(type: VoucherType) = type in setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE, VoucherType.QUOTATION, VoucherType.PROFORMA, VoucherType.SALES_ORDER)
     fun supportsEcommerce(type: VoucherType) = type == VoucherType.SALE || type == VoucherType.CREDIT_NOTE
 
     /** Single line, trimmed, capped: these fields print in one PDF row. */
@@ -242,7 +242,7 @@ fun DocumentFieldsSection(
         if (form.exportType != null) {
             pair(
                 { m -> FormField("Shipping bill no.", form.shippingBillNumber, { onChange(form.copy(shippingBillNumber = it)) }, m, capitalization = KeyboardCapitalization.Characters) },
-                { m -> DateField("Shipping bill date", form.shippingBillDate, { onChange(form.copy(shippingBillDate = it)) }, m) },
+                { m -> DateField("Shipping bill date", form.shippingBillDate, { onChange(form.copy(shippingBillDate = it)) }, m, onClear = { onChange(form.copy(shippingBillDate = null)) }) },
             )
             pair(
                 { m -> FormField("Port code", form.portCode, { onChange(form.copy(portCode = it.take(6))) }, m, error = errors["port"], capitalization = KeyboardCapitalization.Characters, placeholder = "INBOM1") },
@@ -268,14 +268,14 @@ fun DocumentFieldsSection(
         )
         pair(
             { m -> FormField("LR / doc no.", form.lrNumber, { onChange(form.copy(lrNumber = it)) }, m) },
-            { m -> DateField("LR / doc date", form.lrDate, { onChange(form.copy(lrDate = it)) }, m) },
+            { m -> DateField("LR / doc date", form.lrDate, { onChange(form.copy(lrDate = it)) }, m, onClear = { onChange(form.copy(lrDate = null)) }) },
         )
     }
     toggle("Other details", "PO, e-way bill, e-commerce operator, your own fields", otherOpen || hasOther) { otherOpen = it }
     if (otherOpen || hasOther) {
         pair(
             { m -> FormField("PO no.", form.poNumber, { onChange(form.copy(poNumber = it)) }, m) },
-            { m -> DateField("PO date", form.poDate, { onChange(form.copy(poDate = it)) }, m) },
+            { m -> DateField("PO date", form.poDate, { onChange(form.copy(poDate = it)) }, m, onClear = { onChange(form.copy(poDate = null)) }) },
         )
         FormField("E-way bill no.", form.ewayBillNumber, { onChange(form.copy(ewayBillNumber = it.filter { c -> c.isDigit() || c == ' ' }.take(14))) }, error = errors["eway"], keyboardType = KeyboardType.Number, supporting = "Generated on the e-way bill portal; printed as text")
         if (DocFieldRules.supportsEcommerce(type)) {

@@ -36,6 +36,7 @@ import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.ItemCategory
 import app.openbill.core.domain.model.JournalEntry
 import app.openbill.core.domain.model.OpeningBalanceType
+import app.openbill.core.domain.model.OrderFulfilment
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyAddress
 import app.openbill.core.domain.model.PartyType
@@ -435,6 +436,7 @@ internal fun VoucherEntity.toDomain(
     poDate = poDate?.let(LocalDate::parse),
     ewayBillNumber = ewayBillNumber,
     customFields = DocumentField.decode(customFields),
+    fulfilment = fulfilment?.let { decodeEnum<OrderFulfilment>(it, "order fulfilment") } ?: OrderFulfilment.NONE,
 )
 
 internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = VoucherEntity(
@@ -457,6 +459,7 @@ internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = Voucher
     poDate = poDate?.toString(),
     ewayBillNumber = ewayBillNumber,
     customFields = DocumentField.encode(customFields),
+    fulfilment = fulfilment.takeIf { it != OrderFulfilment.NONE }?.name?.lowercase(),
     id = id,
     firmId = firmId,
     financialYearId = financialYearId,
@@ -511,6 +514,7 @@ internal fun VoucherLineEntity.toDomain(): VoucherLine = VoucherLine(
     toGodownId = toGodownId,
     freeQuantity = Quantity.ofScaledUnits(freeQuantity),
     itcEligible = itcEligible,
+    sourceLineId = sourceLineId,
 )
 
 internal fun VoucherLine.toEntity(
@@ -543,6 +547,7 @@ internal fun VoucherLine.toEntity(
     toGodownId = toGodownId,
     freeQuantity = freeQuantity.scaledUnits,
     itcEligible = itcEligible,
+    sourceLineId = sourceLineId,
     sync = syncFor(
         createdAt = voucher.createdAt,
         updatedAt = voucher.updatedAt,

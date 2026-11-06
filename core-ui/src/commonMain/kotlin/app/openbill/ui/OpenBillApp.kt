@@ -149,6 +149,8 @@ import app.openbill.ui.theme.motionTween
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.rememberUpdatedState
 
 /** Platform back handling hook (Android system back; no-op on desktop). */
 typealias BackHandlerSlot = @Composable (enabled: Boolean, onBack: () -> Unit) -> Unit
@@ -233,6 +235,17 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
     nav.onRemoved = { removed -> if (removed != nav.current) stateHolder.removeState(removed.key) }
     val scope = rememberCoroutineScope()
     val messages = remember { AppMessages(SnackbarHostState(), scope) }
+    // Recurring invoices: on opening the business, then hourly while it stays open. Each period
+    // is claimed once, so the catch-up never duplicates.
+    // ponytail: no OS background job; schedules due while the app is closed are made on next open.
+    val session by rememberUpdatedState(s)
+    LaunchedEffect(firm.id) {
+        while (true) {
+            val made = runCatching { app.openbill.ui.recurring.generateRecurring(container, session) }.getOrDefault(0)
+            if (made > 0) messages.show(if (made == 1) "1 recurring invoice made" else "$made recurring invoices made")
+            delay(60 * 60 * 1000L)
+        }
+    }
     val route = nav.current
     // A message may outlive the navigation that raised it (e.g. "posted"), but not the next one.
     var carried by remember { mutableStateOf<SnackbarData?>(null) }
@@ -498,6 +511,7 @@ private fun RouteContent(
                 onAccount = { id -> nav.push(Route.AccountLedger(id)) },
                 onOutstanding = { r -> nav.push(Route.Outstanding(r)) },
                 onDocuments = { t -> nav.push(Route.Documents(t)) },
+                onRecurring = { nav.push(Route.Recurring) },
                 onReports = { nav.push(Route.Reports) },
             )
             Tab.PARTIES -> PartyListScreen(container, s) { id -> nav.push(Route.PartyEdit(id)) }
@@ -602,7 +616,8 @@ private fun RouteContent(
             onEditDraft = { id -> nav.replace(Route.InvoiceEditor(id)) },
             onViewPdf = { id -> nav.push(Route.InvoicePdf(id)) },
             onReturn = { id -> nav.push(Route.InvoiceEditor(null, VoucherType.DEBIT_NOTE, returnOf = id)) },
-            onConvert = { id -> nav.push(Route.InvoiceEditor(null, VoucherType.SALE, returnOf = id)) },
+            onConvert = { id, target -> nav.push(Route.InvoiceEditor(null, target, returnOf = id)) },
+            onOpen = { id -> nav.push(Route.InvoiceDetail(id)) },
             onRecordPayment = { v ->
                 val t = if (v.type == VoucherType.PURCHASE) VoucherType.PAYMENT_OUT else VoucherType.PAYMENT_IN
                 nav.push(Route.MoneyEditor(t, v.partyId, v.id))
@@ -620,6 +635,7 @@ private fun RouteContent(
             if (kind == null || period == null) nav.pop() else ReportScreen(container, s, kind, period, route.partyId, onBack = nav::pop)
         }
         Route.AuditLog -> AuditLogScreen(container, s, onBack = nav::pop)
+        Route.Recurring -> app.openbill.ui.recurring.RecurringListScreen(container, s, onBack = nav::pop, onOpenInvoice = { id -> nav.push(Route.InvoiceDetail(id)) })
         Route.BooksLock -> BooksLockScreen(container, s, onBack = nav::pop)
         is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler)
         Route.BusinessEdit -> BusinessEditScreen(container, s, onDone = nav::pop, backHandler = backHandler)

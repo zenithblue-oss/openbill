@@ -3,6 +3,7 @@ package app.openbill.core.domain.report
 import app.openbill.core.domain.model.AccountCode
 import app.openbill.core.domain.model.AccountType
 import app.openbill.core.domain.model.Voucher
+import app.openbill.core.domain.model.isOrder
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.service.AgeingSums
@@ -115,9 +116,9 @@ object Reports {
         fun totals(): List<String> = listOf("Total") + List((if (sales) 6 else 7) - 1) { "" } + sum.cells() + listOf(roundOff.cell(), total.cell())
     }
 
-    /** Every non-draft voucher of the period by date. */
+    /** Every non-draft voucher of the period by date; orders are commitments, not transactions, and stay out. */
     fun dayBook(data: ReportData): ReportTable {
-        val list = data.vouchers.filter { it.status != VoucherStatus.DRAFT }
+        val list = data.vouchers.filter { it.status != VoucherStatus.DRAFT && !it.type.isOrder() }
             .sortedWith(compareBy<Voucher>({ it.date }, { it.number ?: "" }, { it.id }))
         return ReportTable(
             "Day book",

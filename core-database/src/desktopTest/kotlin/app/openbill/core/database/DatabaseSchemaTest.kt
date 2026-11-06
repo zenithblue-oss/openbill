@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(12, OPENBILL_DATABASE_VERSION)
+        assertEquals(13, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/13.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/12.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
@@ -321,7 +322,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(11, migrations.size)
+        assertEquals(12, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -337,7 +338,8 @@ class DatabaseSchemaTest {
         assertEquals(10, migrations[8].endVersion)
         assertEquals(11, migrations[9].endVersion)
         assertEquals(12, migrations[10].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(12).isEmpty())
+        assertEquals(13, migrations[11].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(13).isEmpty())
     }
 
     @Test
@@ -495,6 +497,50 @@ class DatabaseSchemaTest {
                 assertEquals(0L, it.getLong(0))
                 assertEquals(1L, it.getLong(1))
             }
+        }
+    }
+
+    @Test
+    fun schemaV12MigratesToV13KeepingInvoicesAndAddingSchedules() {
+        helper.createDatabase(12).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO financial_years (id, firmId, startDate, endDate, closedAt, createdAt, updatedAt) " +
+                    "VALUES ('fy-1', 'firm-1', '2026-04-01', '2027-03-31', NULL, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO vouchers (id, firmId, financialYearId, type, number, date, dueDate, partyId, referenceVoucherId, status, " +
+                    "placeOfSupplyStateCode, subtotal, discount, taxable, tax, roundOff, total, notes, cancellationReason, postedAt, " +
+                    "cancelledAt, restoredAt, createdAt, updatedAt, revision) VALUES ('v-1', 'firm-1', 'fy-1', 'sale', 'INV-1', " +
+                    "'2026-05-01', NULL, NULL, NULL, 'posted', '27', 10000, 0, 10000, 1800, 0, 11800, NULL, NULL, 1, NULL, NULL, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO voucher_lines (id, voucherId, lineNumber, itemId, description, hsnSac, quantity, rate, discount, " +
+                    "taxRateUnits, cessRateUnits, taxMode, treatment, taxable, tax, total, godownId, batchId, stockDirection, " +
+                    "createdAt, updatedAt, revision) VALUES ('l-1', 'v-1', 1, NULL, 'Widget', NULL, 10000, 10000, 0, 180000, 0, " +
+                    "'exclusive', 'taxable', 10000, 1800, 11800, NULL, NULL, NULL, 1, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(13, DatabaseMigrations.migrationsFor(12)).use { connection ->
+            connection.prepare("SELECT fulfilment, total FROM vouchers WHERE id = 'v-1'").use {
+                assertTrue(it.step())
+                assertTrue(it.isNull(0))
+                assertEquals(11800L, it.getLong(1))
+            }
+            connection.prepare("SELECT sourceLineId, quantity FROM voucher_lines WHERE id = 'l-1'").use {
+                assertTrue(it.step())
+                assertTrue(it.isNull(0))
+                assertEquals(10000L, it.getLong(1))
+            }
+            connection.execSQL(
+                "INSERT INTO recurring_schedules (id, firmId, templateVoucherId, name, frequency, repeatEvery, startDate, endDate, " +
+                    "maxCount, nextIndex, generatedCount, autoPost, paused, lastError, createdAt, updatedAt) " +
+                    "VALUES ('r-1', 'firm-1', 'v-1', 'Rent', 'monthly', 1, '2026-05-01', NULL, 12, 0, 0, 0, 0, NULL, 1, 1)",
+            )
+            connection.prepare("SELECT COUNT(*) FROM recurring_schedules").use { assertTrue(it.step()); assertEquals(1L, it.getLong(0)) }
         }
     }
 

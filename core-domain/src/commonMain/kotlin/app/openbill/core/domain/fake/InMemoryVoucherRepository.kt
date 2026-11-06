@@ -2,6 +2,8 @@ package app.openbill.core.domain.fake
 
 import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.JournalEntry
+import app.openbill.core.domain.model.Orders
+import app.openbill.core.domain.model.isOrder
 import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherStatus
@@ -73,6 +75,16 @@ class InMemoryVoucherRepository(
     override fun observeVoucher(id: String): Flow<Voucher?> =
         vouchers.map { values -> values.firstOrNull { it.id == id } }
 
+    override fun observeConversions(sourceId: String): Flow<List<Voucher>> =
+        vouchers.map { values -> values.filter { it.referenceVoucherId == sourceId && it.deletedAt == null }.sortedBy { it.createdAt } }
+
+    /** Keeps an order's fulfilment in step after one of its conversions is posted, cancelled or restored. */
+    private fun refreshOrder(orderId: String?) {
+        val order = vouchers.value.firstOrNull { it.id == orderId }?.takeIf { it.type.isOrder() } ?: return
+        val fulfilment = Orders.fulfilment(order, vouchers.value.filter { it.referenceVoucherId == order.id })
+        if (fulfilment != order.fulfilment) vouchers.update { c -> c.map { if (it.id == order.id) it.copy(fulfilment = fulfilment) else it } }
+    }
+
     override fun observeRecycleBin(firmId: String): Flow<List<Voucher>> =
         vouchers.map { values ->
             values.filter {
@@ -121,6 +133,7 @@ class InMemoryVoucherRepository(
         ledger?.record(journalEntries)
         nextNumbers[key] = next + 1
         vouchers.update { current -> current.filterNot { it.id == voucherId } + posted }
+        refreshOrder(posted.referenceVoucherId)
         posted
     }
 
@@ -144,6 +157,7 @@ class InMemoryVoucherRepository(
         this.stock?.record(movements)
         ledger?.record(journalEntries)
         vouchers.update { current -> current.filterNot { it.id == voucherId } + cancelled }
+        refreshOrder(cancelled.referenceVoucherId)
         cancelled
     }
 
@@ -180,6 +194,7 @@ class InMemoryVoucherRepository(
         this.stock?.record(movements)
         ledger?.record(journalEntries)
         vouchers.update { current -> current.filterNot { it.id == voucherId } + restored }
+        refreshOrder(restored.referenceVoucherId)
         restored
     }
 
@@ -318,5 +333,7 @@ class InMemoryVoucherRepository(
         VoucherType.STOCK_TRANSFER -> "TRF"
         VoucherType.DELIVERY_CHALLAN -> "DC"
         VoucherType.CONTRA -> "CTR"
+        VoucherType.SALES_ORDER -> "SO"
+        VoucherType.PURCHASE_ORDER -> "PO"
     }
 }

@@ -103,6 +103,7 @@ fun MoneyScreen(
     onAccount: (String) -> Unit,
     onOutstanding: (receivable: Boolean) -> Unit,
     onDocuments: (VoucherType) -> Unit,
+    onRecurring: () -> Unit = {},
     onReports: () -> Unit = {},
 ) {
     val firmId = session.firm.id
@@ -192,11 +193,18 @@ fun MoneyScreen(
                     )
                 }
                 item(key = "docs-h") { SectionHeader("Documents", Modifier.padding(horizontal = pageGutter)) }
-                items(listOf(VoucherType.QUOTATION, VoucherType.PROFORMA, VoucherType.DELIVERY_CHALLAN), key = { "doc-" + it.name }) { t ->
+                items(DOC_LIST_TITLES.keys.toList(), key = { "doc-" + it.name }) { t ->
                     ListItem(
                         headlineContent = { Text(DOC_LIST_TITLES.getValue(t)) },
-                        supportingContent = { Text("${docCounts[t] ?: 0} documents") },
+                        supportingContent = { val n = docCounts[t] ?: 0; Text("$n document${if (n == 1) "" else "s"}") },
                         modifier = Modifier.clickable { onDocuments(t) },
+                    )
+                }
+                item(key = "recurring") {
+                    ListItem(
+                        headlineContent = { Text("Recurring invoices") },
+                        supportingContent = { Text("Invoices made on a schedule; pause, resume or delete") },
+                        modifier = Modifier.clickable(onClick = onRecurring),
                     )
                 }
                 item(key = "recent-h") { SectionHeader("Recent payments and expenses", Modifier.padding(horizontal = pageGutter)) }
@@ -223,6 +231,8 @@ val DOC_LIST_TITLES = mapOf(
     VoucherType.QUOTATION to "Quotations",
     VoucherType.PROFORMA to "Proforma invoices",
     VoucherType.DELIVERY_CHALLAN to "Delivery challans",
+    VoucherType.SALES_ORDER to "Sales orders",
+    VoucherType.PURCHASE_ORDER to "Purchase orders",
 )
 
 /** Who or what a money voucher is for: the party, expense category or transfer destination. */

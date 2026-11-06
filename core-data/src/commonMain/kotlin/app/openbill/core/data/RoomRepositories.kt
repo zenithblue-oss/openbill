@@ -19,6 +19,7 @@ fun OpenBillDatabase.roomRepositories(
         ledger = ledger,
         payments = RoomPaymentRepository(this, transactions),
         audit = RoomAuditRepository(this),
+        recurring = RoomRecurringRepository(this, transactions),
         // One outer writer transaction; repository writes nest inside it (same as the CLI import).
         transaction = { block -> useWriterConnection { it.withTransaction(Transactor.SQLiteTransactionType.IMMEDIATE) { block() } } },
     )
