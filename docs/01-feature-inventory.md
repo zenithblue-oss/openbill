@@ -173,7 +173,7 @@ Inventory invariants:
 | Payment voucher | Money in and money out | P0 | Done | Phase 5 |
 | Expense voucher | Category, amount, receipt | P0 | Done | Phase 5; receipt attachments after 1.0 |
 | POS billing | Fast counter workflow and barcode scan | P1 | Not started | Phase 7 |
-| Recurring invoice | Schedule and generate | P1 | Not started | Phase 7 |
+| Recurring invoice | Schedule and generate | P1 | Done | Daily/weekly/monthly/yearly; drafts or auto-post; missed periods made on app open, once each; no OS background job |
 | Invoice numbering | Prefix, suffix, sequence, FY reset | P0 | Done | Per document type |
 | Due date and payment terms | Optional | P0 | Done | Drives aging |
 | Item-level discount | Percentage or amount | P0 | Done | Tax computed after discount |
@@ -191,8 +191,8 @@ Inventory invariants:
 | E-way bill | Generate and share | P1 | Not started | Bring-your-own credentials |
 | Delivery challan | Non-posting movement document | P1 | Done | After 1.0 |
 | Delivery challan with e-way bill | Challan carries transport details and can drive e-way generation | P1 | Partial | Transport details and e-way bill number print on challans; generation not started |
-| Purchase order | Order to a supplier; convert to purchase bill | P1 | Not started | Non-posting; preserves source link; partial receipt |
-| Sales order | Customer order that can be converted to an invoice | P1 | Not started | Non-posting; preserves source link; partial fulfilment; mirrors purchase order |
+| Purchase order | Order to a supplier; convert to purchase bill | P1 | Done | Non-posting; preserves source link; partial receipt |
+| Sales order | Customer order that can be converted to an invoice | P1 | Done | Non-posting; preserves source link; partial fulfilment; quotation converts to it |
 | Sales return e-invoice | E-invoice for credit notes | P1 | Not started | With e-invoice support |
 | Bulk e-invoice and e-way generation | Select many invoices and generate in one run | P2 | Not started | Rate-limited queue with per-document results |
 | E-way expiry alerts | Notify before an e-way bill expires | P2 | Not started | Local notification |
@@ -211,7 +211,7 @@ Inventory invariants:
 | Party-level discount on payment | Single discount settled against all outstanding invoices of a party | P1 | Not started | Posted as an adjustment |
 | TDS and TCS on payments | Pre-defined and custom rates applied when linking payments to invoices | P2 | Not started | After 1.0; enable per firm |
 | Staff loan and salary advance | Payments to staff tracked as loan or advance and offset later | P2 | Not started | Part of payroll |
-| Unlimited recurring schedules | Vendor limits the count of active schedules by plan | P1 | Not started | Recurring invoices are unlimited in OpenBill; part of the recurring-invoice feature |
+| Unlimited recurring schedules | Vendor limits the count of active schedules by plan | P1 | Done | Recurring invoices are unlimited in OpenBill; part of the recurring-invoice feature |
 | POS held bills | Several open bills at once, switch between them | P1 | Not started | Phase 7 POS |
 | POS multi-tender | Cash, UPI, card, wallet on a single sale | P1 | Not started | Phase 7 POS |
 | POS item-first billing | Item grid or barcode first, party optional | P1 | Not started | Phase 7 POS |
