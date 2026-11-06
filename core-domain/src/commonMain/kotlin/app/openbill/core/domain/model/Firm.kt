@@ -47,6 +47,8 @@ data class FirmSettings(
     val negativeStockAllowed: Boolean = false,
     /** Books lock: vouchers dated on or before this date cannot be posted, cancelled or restored. */
     val lockDate: LocalDate? = null,
+    /** UPI and card payments (POS and payment entry) must carry a reference; off = optional. */
+    val requirePaymentReference: Boolean = false,
 ) {
     init {
         require(firmId.isNotBlank()) { "FirmSettings firmId cannot be blank" }

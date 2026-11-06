@@ -36,4 +36,8 @@ data class RecurringScheduleEntity(
     val lastError: String?,
     val createdAt: Long,
     val updatedAt: Long,
+    /** v17: copy the latest invoice this schedule made instead of the original; off by default. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val copyLatest: Boolean = false,
+    /** v17: the newest invoice this schedule made (no foreign key: it may be deleted). */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val lastVoucherId: String? = null,
 )

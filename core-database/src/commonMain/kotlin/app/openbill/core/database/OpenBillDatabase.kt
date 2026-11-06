@@ -23,7 +23,7 @@ import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 16
+const val OPENBILL_DATABASE_VERSION = 17
 
 @Database(
     entities = [

@@ -20,10 +20,10 @@ interface RecurringDao {
     @Query("DELETE FROM recurring_schedules WHERE id = :id")
     suspend fun deleteById(id: String): Int
 
-    /** Compare-and-set on [expected]: 0 rows when another run already moved past it. */
+    /** Compare-and-set on [expected]: 0 rows when another run already moved past it. [voucherId] (when made) becomes the latest. */
     @Query(
         "UPDATE recurring_schedules SET nextIndex = :expected + 1, generatedCount = generatedCount + :made, " +
-            "updatedAt = :at WHERE id = :id AND nextIndex = :expected",
+            "lastVoucherId = COALESCE(:voucherId, lastVoucherId), updatedAt = :at WHERE id = :id AND nextIndex = :expected",
     )
-    suspend fun advance(id: String, expected: Int, made: Int, at: Long): Int
+    suspend fun advance(id: String, expected: Int, made: Int, at: Long, voucherId: String?): Int
 }

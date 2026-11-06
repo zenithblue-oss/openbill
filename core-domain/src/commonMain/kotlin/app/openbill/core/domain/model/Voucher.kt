@@ -266,6 +266,9 @@ data class Voucher(
     val fulfilment: OrderFulfilment = OrderFulfilment.NONE,
     /** POS: when this draft was put on hold at the counter; held drafts are listed for resuming. */
     val heldAt: Instant? = null,
+    /** Orders only: when the pending quantity was short-closed (see [Orders.shortClose]); null while open. */
+    val shortClosedAt: Instant? = null,
+    val shortCloseNote: String? = null,
 ) {
     /** Foreign-currency invoice: rates were entered in this currency; null for rupees. */
     val currency: String? get() = export?.currency

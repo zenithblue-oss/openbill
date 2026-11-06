@@ -240,7 +240,22 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+    /**
+     * Order short-close, party default currency, recurring "copy latest", payment-reference
+     * setting. Existing rows: open orders, rupees, copy the original, references optional.
+     */
+    private val MIGRATION_16_17 = object : Migration(16, 17) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `shortClosedAt` INTEGER DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `shortCloseNote` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `parties` ADD COLUMN `defaultCurrency` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `recurring_schedules` ADD COLUMN `copyLatest` INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE `recurring_schedules` ADD COLUMN `lastVoucherId` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `firm_settings` ADD COLUMN `requirePaymentReference` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
 
     fun migrationsFor(
         startVersion: Int,

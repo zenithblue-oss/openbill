@@ -42,9 +42,12 @@ data class Party(
     val createdAt: Instant,
     val updatedAt: Instant,
     val deletedAt: Instant? = null,
+    /** ISO 4217 code (not INR) new export/SEZ invoices to this party start in; null for rupees. */
+    val defaultCurrency: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "Party id cannot be blank" }
+        defaultCurrency?.let { require(ExportDetails.isCurrencyCode(it) && it != "INR") { "Default currency must be a 3-letter code other than INR" } }
         require(firmId.isNotBlank()) { "Party firmId cannot be blank" }
         require(name.isNotBlank()) { "Party name cannot be blank" }
         require(addresses.map { it.id }.distinct().size == addresses.size) {

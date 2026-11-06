@@ -38,6 +38,10 @@ data class RecurringSchedule(
     val lastError: String? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /** Copy from: false = the original invoice ([templateVoucherId]), true = the latest one this schedule made. */
+    val copyLatest: Boolean = false,
+    /** The newest invoice this schedule made; set by [app.openbill.core.domain.repository.RecurringRepository.claimOccurrence]. */
+    val lastVoucherId: String? = null,
 ) {
     init {
         require(id.isNotBlank() && firmId.isNotBlank() && templateVoucherId.isNotBlank()) { "Schedule ids cannot be blank" }

@@ -26,6 +26,7 @@ class InMemoryRecurringRepository(private val vouchers: VoucherRepository? = nul
             val merged = if (stored == null) schedule else schedule.copy(
                 nextIndex = maxOf(schedule.nextIndex, stored.nextIndex),
                 generatedCount = maxOf(schedule.generatedCount, stored.generatedCount),
+                lastVoucherId = stored.lastVoucherId ?: schedule.lastVoucherId,
             )
             all.filterNot { it.id == schedule.id } + merged
         }
@@ -40,7 +41,7 @@ class InMemoryRecurringRepository(private val vouchers: VoucherRepository? = nul
         if (s.nextIndex != index) return false
         if (draft != null) requireNotNull(vouchers) { "No voucher repository to save the draft" }.saveDraft(draft)
         schedules.update { all ->
-            all.map { if (it.id == scheduleId) it.copy(nextIndex = index + 1, generatedCount = it.generatedCount + if (draft != null) 1 else 0) else it }
+            all.map { if (it.id == scheduleId) it.copy(nextIndex = index + 1, generatedCount = it.generatedCount + if (draft != null) 1 else 0, lastVoucherId = draft?.id ?: it.lastVoucherId) else it }
         }
         true
     }

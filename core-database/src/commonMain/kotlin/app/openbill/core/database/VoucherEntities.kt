@@ -102,6 +102,10 @@ data class VoucherEntity(
     @ColumnInfo(defaultValue = "NULL") val currency: String? = null,
     /** v15: rupees per unit of [currency], scaled like quantities (4 decimals). */
     @ColumnInfo(defaultValue = "NULL") val exchangeRate: Long? = null,
+    /** v17, orders only: epoch millis the pending quantity was short-closed; NULL while open. */
+    @ColumnInfo(defaultValue = "NULL") val shortClosedAt: Long? = null,
+    /** v17: why the order was short-closed, printed on it. */
+    @ColumnInfo(defaultValue = "NULL") val shortCloseNote: String? = null,
 )
 
 @Entity(

@@ -143,6 +143,7 @@ internal fun FirmSettingsEntity.toDomain(): FirmSettings = FirmSettings(
     roundingMode = decodeEnum<RoundingMode>(roundingMode, "rounding mode"),
     negativeStockAllowed = negativeStockAllowed,
     lockDate = lockDate?.let(LocalDate::parse),
+    requirePaymentReference = requirePaymentReference,
 )
 
 internal fun FirmSettings.toEntity(
@@ -158,6 +159,7 @@ internal fun FirmSettings.toEntity(
     roundingMode = roundingMode.name.lowercase(),
     negativeStockAllowed = negativeStockAllowed,
     lockDate = lockDate?.toString(),
+    requirePaymentReference = requirePaymentReference,
     createdAt = existing?.createdAt ?: now.toEpochMillis(),
     updatedAt = now.toEpochMillis(),
 )
@@ -203,6 +205,7 @@ internal fun PartyEntity.toDomain(addresses: List<PartyAddressEntity>): Party = 
     createdAt = sync.createdAt.toInstant(),
     updatedAt = sync.updatedAt.toInstant(),
     deletedAt = sync.deletedAt?.toInstant(),
+    defaultCurrency = defaultCurrency,
 )
 
 internal fun Party.toEntity(existing: PartyEntity?): PartyEntity = PartyEntity(
@@ -219,6 +222,7 @@ internal fun Party.toEntity(existing: PartyEntity?): PartyEntity = PartyEntity(
     creditLimit = creditLimit?.paise,
     notes = notes,
     sync = syncFor(createdAt, updatedAt, deletedAt, existing?.sync),
+    defaultCurrency = defaultCurrency,
 )
 
 internal fun PartyAddressEntity.toDomain(): PartyAddress = PartyAddress(
@@ -440,6 +444,8 @@ internal fun VoucherEntity.toDomain(
     customFields = DocumentField.decode(customFields),
     fulfilment = fulfilment?.let { decodeEnum<OrderFulfilment>(it, "order fulfilment") } ?: OrderFulfilment.NONE,
     heldAt = heldAt?.toInstant(),
+    shortClosedAt = shortClosedAt?.toInstant(),
+    shortCloseNote = shortCloseNote,
 )
 
 internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = VoucherEntity(
@@ -466,6 +472,8 @@ internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = Voucher
     customFields = DocumentField.encode(customFields),
     fulfilment = fulfilment.takeIf { it != OrderFulfilment.NONE }?.name?.lowercase(),
     heldAt = heldAt?.toEpochMillis(),
+    shortClosedAt = shortClosedAt?.toEpochMillis(),
+    shortCloseNote = shortCloseNote,
     id = id,
     firmId = firmId,
     financialYearId = financialYearId,

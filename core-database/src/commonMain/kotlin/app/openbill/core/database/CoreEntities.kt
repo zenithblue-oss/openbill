@@ -31,6 +31,8 @@ data class FirmSettingsEntity(
     val updatedAt: Long,
     /** Books lock: vouchers dated on or before this ISO date cannot be posted or cancelled. */
     @ColumnInfo(defaultValue = "NULL") val lockDate: String? = null,
+    /** v17: UPI and card payments must carry a reference (UTR, approval code); off by default. */
+    @ColumnInfo(defaultValue = "0") val requirePaymentReference: Boolean = false,
 )
 
 @Entity(
@@ -89,6 +91,8 @@ data class PartyEntity(
     val creditLimit: Long?,
     val notes: String?,
     @Embedded val sync: SyncMetadata,
+    /** v17: ISO 4217 code new export/SEZ invoices to this party start in; NULL for rupees. */
+    @ColumnInfo(defaultValue = "NULL") val defaultCurrency: String? = null,
 )
 
 @Entity(

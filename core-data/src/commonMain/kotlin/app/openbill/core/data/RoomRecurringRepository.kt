@@ -30,6 +30,8 @@ class RoomRecurringRepository(
         val merged = if (stored == null) schedule else schedule.copy(
             nextIndex = maxOf(schedule.nextIndex, stored.nextIndex),
             generatedCount = maxOf(schedule.generatedCount, stored.generatedCount),
+            // Only claimOccurrence moves the latest invoice forward.
+            lastVoucherId = stored.lastVoucherId ?: schedule.lastVoucherId,
         )
         dao.upsert(merged.toEntity())
     }
@@ -41,7 +43,7 @@ class RoomRecurringRepository(
     override suspend fun claimOccurrence(scheduleId: String, index: Int, draft: Voucher?): Boolean = transactions.write {
         app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)
         if (draft != null) require(draft.status == VoucherStatus.DRAFT && draft.number == null) { "Recurring invoices start as drafts" }
-        val claimed = dao.advance(scheduleId, index, if (draft != null) 1 else 0, draft?.createdAt?.toEpochMillis() ?: 0L) == 1
+        val claimed = dao.advance(scheduleId, index, if (draft != null) 1 else 0, draft?.createdAt?.toEpochMillis() ?: 0L, draft?.id) == 1
         if (claimed && draft != null) {
             vouchers.insert(draft.toEntity(null))
             if (draft.lines.isNotEmpty()) vouchers.insertLines(draft.lines.map { it.toEntity(draft.id, draft, null) })
@@ -59,12 +61,12 @@ private fun RecurringScheduleEntity.toDomain() = RecurringSchedule(
     frequency = decodeEnum<RecurrenceFrequency>(frequency, "recurrence frequency"), interval = repeatEvery,
     startDate = LocalDate.parse(startDate), endDate = endDate?.let(LocalDate::parse), maxCount = maxCount,
     nextIndex = nextIndex, generatedCount = generatedCount, autoPost = autoPost, paused = paused, lastError = lastError,
-    createdAt = createdAt.toInstant(), updatedAt = updatedAt.toInstant(),
+    createdAt = createdAt.toInstant(), updatedAt = updatedAt.toInstant(), copyLatest = copyLatest, lastVoucherId = lastVoucherId,
 )
 
 private fun RecurringSchedule.toEntity() = RecurringScheduleEntity(
     id = id, firmId = firmId, templateVoucherId = templateVoucherId, name = name, frequency = frequency.name.lowercase(),
     repeatEvery = interval, startDate = startDate.toString(), endDate = endDate?.toString(), maxCount = maxCount,
     nextIndex = nextIndex, generatedCount = generatedCount, autoPost = autoPost, paused = paused, lastError = lastError,
-    createdAt = createdAt.toEpochMillis(), updatedAt = updatedAt.toEpochMillis(),
+    createdAt = createdAt.toEpochMillis(), updatedAt = updatedAt.toEpochMillis(), copyLatest = copyLatest, lastVoucherId = lastVoucherId,
 )

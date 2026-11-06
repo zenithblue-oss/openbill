@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(16, OPENBILL_DATABASE_VERSION)
+        assertEquals(17, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/17.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/16.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/15.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/14.json").exists())
@@ -325,7 +326,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(15, migrations.size)
+        assertEquals(16, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -345,7 +346,8 @@ class DatabaseSchemaTest {
         assertEquals(14, migrations[12].endVersion)
         assertEquals(15, migrations[13].endVersion)
         assertEquals(16, migrations[14].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(16).isEmpty())
+        assertEquals(17, migrations[15].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(17).isEmpty())
     }
 
     @Test
@@ -628,6 +630,33 @@ class DatabaseSchemaTest {
                 assertTrue(!it.step(), "only the owner")
             }
             connection.prepare("SELECT COUNT(*) FROM audit_events").use { assertTrue(it.step()); assertEquals(1L, it.getLong(0)) }
+        }
+    }
+
+    @Test
+    fun schemaV16MigratesToV17WithOpenOrdersRupeePartiesAndOptionalReferences() {
+        helper.createDatabase(16).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO firm_settings (firmId, financialYearStartMonth, invoicePrefix, defaultGodownId, taxEnabled, roundToRupee, roundingMode, negativeStockAllowed, createdAt, updatedAt) " +
+                    "VALUES ('firm-1', 4, 'INV', NULL, 1, 1, 'half_up', 0, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO recurring_schedules (id, firmId, templateVoucherId, name, frequency, repeatEvery, startDate, endDate, maxCount, nextIndex, generatedCount, autoPost, paused, lastError, createdAt, updatedAt) " +
+                    "VALUES ('r-1', 'firm-1', 'v-1', 'Rent', 'monthly', 1, '2026-04-01', NULL, NULL, 2, 2, 0, 0, NULL, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(17, DatabaseMigrations.migrationsFor(16)).use { connection ->
+            connection.prepare("SELECT requirePaymentReference FROM firm_settings").use { assertTrue(it.step()); assertEquals(0L, it.getLong(0)) }
+            connection.prepare("SELECT copyLatest, lastVoucherId, nextIndex FROM recurring_schedules").use {
+                assertTrue(it.step())
+                assertEquals(0L, it.getLong(0), "existing schedules copy the original")
+                assertTrue(it.isNull(1))
+                assertEquals(2L, it.getLong(2))
+            }
         }
     }
 
