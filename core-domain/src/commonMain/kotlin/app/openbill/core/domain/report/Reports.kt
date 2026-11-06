@@ -275,7 +275,8 @@ object Reports {
             "Party statement: ${party.name}",
             listOf(col("date", "Date", ColumnKind.DATE), col("type", "Type"), col("number", "Number"), money("debit", "Debit"), money("credit", "Credit"), money("balance", "Balance")),
             rows,
-            listOf("Closing balance", "", "", dr.cell(), cr.cell(), balance.cell()),
+            // The label sits in the Type column, like "Opening balance", so the Date column stays dates.
+            listOf("", "Closing balance", "", dr.cell(), cr.cell(), balance.cell()),
             notes = listOf("Opening ${opening.cell()}; positive balance = ${party.name} owes ${data.firm.name}."),
         )
     }

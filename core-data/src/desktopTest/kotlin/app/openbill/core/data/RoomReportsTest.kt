@@ -132,6 +132,11 @@ class RoomReportsTest {
         val statement = Reports.run(ReportKind.PARTY_STATEMENT, repos.loadReportData("firm-1", period, ReportKind.PARTY_STATEMENT), "party-1")
         val ledgers = byName.getValue("party-ledgers-2026-05-01-2026-06-15.csv").lines()
         statement.rows.forEach { row -> assertTrue(ReportTable.csvRow(listOf("Acme Traders") + row) in ledgers, row.toString()) }
+        // The closing row keeps its label under Type (Date stays blank), aligned with the header.
+        val closing = statement.totals!!
+        assertEquals(listOf("", "Closing balance", ""), closing.take(3))
+        assertTrue(ReportTable.csvRow(listOf("Acme Traders") + closing) in ledgers, closing.toString())
+        assertEquals(ledgers.first().split(',').size, ReportTable.csvRow(listOf("Acme Traders") + closing).split(',').size)
 
         // The ZIP opens with standard tools and holds the same bytes.
         val zip = java.util.zip.ZipInputStream(files.zipBytes().inputStream())
