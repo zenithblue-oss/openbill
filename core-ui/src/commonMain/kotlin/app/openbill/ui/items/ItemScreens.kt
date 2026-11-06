@@ -160,6 +160,10 @@ fun ItemListScreen(
             .flatMapLatest { (q, k, n) -> container.repositories.catalog.observeItemPage(firmId, if (k == 0) null else k == 2, q, n) }
     }.collectAsState(initial = null)
     val anyItem by remember(firmId) { container.repositories.catalog.observeItemPage(firmId, null, "", 1) }.collectAsState(initial = null)
+    val slabsToday = remember { gstSlabsOn(container.today()) }
+    // ponytail: whole-catalogue scan for the advisory; a SQL count by rate if catalogues grow past ~50k items.
+    val allItems by remember(firmId) { container.repositories.catalog.observeItems(firmId) }.collectAsState(initial = emptyList())
+    val retired = remember(allItems, slabsToday) { allItems.filter { it.taxRate !in slabsToday } }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
     val reduced = LocalReducedMotion.current
@@ -195,6 +199,25 @@ fun ItemListScreen(
             GrowLimitOnScroll(listState, filtered.size, limit)
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
                 item(key = "stock") { StockDashboardCard(container, session, onStock) }
+                if (retired.isNotEmpty()) {
+                    item(key = "rate-advisory") {
+                        // Tax-rate change advisory: items still on a rate the current slab schedule dropped.
+                        androidx.compose.material3.Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = pageGutter, vertical = Spacing.xs),
+                        ) {
+                            Text(
+                                "${retired.size} ${if (retired.size == 1) "item is" else "items are"} on a GST rate that is not a slab today " +
+                                    "(${retired.map { "${Fmt.percent(it.taxRate)}%" }.distinct().joinToString(", ")}). " +
+                                    "Open each marked item and pick its current rate. Posted invoices are not changed.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(Spacing.md),
+                            )
+                        }
+                    }
+                }
                 item(key = "search") { AppSearchBar(query, { query = it; limit.intValue = PAGE_SIZE }, "Search name, HSN/SAC or barcode") }
                 item(key = "filters") {
                     Row(
@@ -215,7 +238,7 @@ fun ItemListScreen(
                             Text(
                                 listOfNotNull(
                                     item.hsnSac?.let { (if (item.isService) "SAC " else "HSN ") + it },
-                                    "GST ${Fmt.percent(item.taxRate)}%",
+                                    "GST ${Fmt.percent(item.taxRate)}%" + if (item.taxRate !in slabsToday) " (not a current slab)" else "",
                                 ).joinToString(" · "),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,

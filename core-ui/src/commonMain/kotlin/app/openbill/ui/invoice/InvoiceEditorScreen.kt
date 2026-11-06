@@ -75,6 +75,7 @@ import app.openbill.core.domain.model.Party
 import app.openbill.core.model.Money
 import app.openbill.core.model.Rate
 import app.openbill.core.tax.TaxMode
+import app.openbill.core.tax.TaxTreatment
 import app.openbill.ui.AppContainer
 import app.openbill.ui.BackHandlerSlot
 import app.openbill.ui.Session
@@ -141,13 +142,19 @@ fun InvoiceEditorScreen(
     var lineForm by remember { mutableStateOf<LineForm?>(null) }
     var chargeForm by remember { mutableStateOf<ChargeForm?>(null) }
     var confirmDiscard by remember { mutableStateOf(false) }
+    var filingWarning by remember { mutableStateOf<String?>(null) }
+    /** Item and the line rate that differs from its master price, offered as an update. */
+    var priceChange by remember { mutableStateOf<Pair<app.openbill.core.domain.model.Item, Money>?>(null) }
     var totalsOpen by rememberSaveable { mutableStateOf(false) }
     val requestClose = { if (state.dirty && !state.saving) confirmDiscard = true else onClose() }
     backHandler(state.dirty && !state.saving) { confirmDiscard = true }
     val scroll = rememberScrollState()
     LaunchedEffect(state.rejectedSaves) {
-        // Party, date and item errors are all near the top of the form.
-        if (state.rejectedSaves > 0) scroll.animateScrollTo(0)
+        // Party, date and item errors are near the top; document-detail errors sit above the notes.
+        if (state.rejectedSaves > 0) {
+            val top = state.errors.keys.any { it == "party" || it == "date" || it == "lines" }
+            scroll.animateScrollTo(if (top) 0 else scroll.maxValue)
+        }
     }
     LaunchedEffect(state.failure) {
         // Save/post failures render below the notes, off-screen on most windows.
@@ -170,7 +177,11 @@ fun InvoiceEditorScreen(
                         onToggle = { totalsOpen = !totalsOpen },
                         canSave = !state.saving && model.canSave(state),
                         onSaveDraft = { model.save(post = false, onDone = finished) },
-                        onPost = { model.save(post = true, onDone = finished) },
+                        onPost = {
+                            val warn = model.parsedDate()?.let { FilingPeriod.warning(state.type, it, container.today()) }
+                            if (warn != null && model.validateForSave(post = true).isEmpty()) filingWarning = warn
+                            else model.save(post = true, onDone = finished)
+                        },
                     )
                 }
             },
@@ -200,7 +211,11 @@ fun InvoiceEditorScreen(
                     }
 
                     val date = Parse.date(state.dateText)
-                    val supplyNote = if (state.placeOfSupply == session.firm.stateCode) "Intra-state: CGST + SGST" else "Inter-state: IGST"
+                    val supplyNote = when {
+                        state.fields.exportType != null && DocFieldRules.supportsExport(state.type) -> "Export/SEZ: IGST" + if (state.fields.exportType?.withTax == false) " (zero-rated)" else ""
+                        state.placeOfSupply == session.firm.stateCode -> "Intra-state: CGST + SGST"
+                        else -> "Inter-state: IGST"
+                    }
                     if (wide) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             DateField("${doc.title} date", date, { model.setDate(it.toString()) }, Modifier.weight(1f), error = state.errors["date"])
@@ -223,7 +238,8 @@ fun InvoiceEditorScreen(
                         }
                         state.lines.forEachIndexed { index, line ->
                             val result = state.summary?.lineResults?.getOrNull(index)
-                            DraftLineCard(line, result?.totalAmount) { lineForm = items.firstOrNull { it.id == line.itemId }.let { item -> LineRules.fromDraft(line, item, item?.alternateUnitId?.let { unitSymbol[it] }) } }
+                            val zeroRated = result?.treatment == TaxTreatment.ZERO_RATED
+                            DraftLineCard(line, result?.totalAmount, !zeroRated && date?.let { d -> line.gstRate !in gstSlabsOn(d) } == true, zeroRated) { lineForm = items.firstOrNull { it.id == line.itemId }.let { item -> LineRules.fromDraft(line, item, item?.alternateUnitId?.let { unitSymbol[it] }) } }
                         }
                     }
                     state.errors["lines"]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -265,6 +281,8 @@ fun InvoiceEditorScreen(
 
                     ChargesSection(state, onAdd = { chargeForm = ChargeForm() }, onEdit = { chargeForm = ChargeRules.fromDraft(it) })
 
+                    DocumentFieldsSection(state.type, state.fields, state.errors, model::setFields, model::setCustomLabels)
+
                     SectionHeader("Notes")
                     FormField("Notes / terms (printed on ${doc.noun})", state.notes, model::setNotes, singleLine = false)
                     state.failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -292,16 +310,27 @@ fun InvoiceEditorScreen(
                 Inventory.fefo(repos.stock.observeBatches(batchItemId).first(), repos.stock.observeItemMovements(session.firm.id, batchItemId).first(), state.godownId)
             }.getOrDefault(emptyList())
         }
+        val docDate = Parse.date(state.dateText) ?: container.today()
         LineEditor(
             form = lineForm,
             batches = batches,
-            slabs = remember { gstSlabsOn(container.today()) },
+            slabs = remember(docDate) { gstSlabsOn(docDate) },
+            slabDate = docDate,
+            purchase = purchaseSide,
             preview = { line -> runCatching { model.previewTotal(line) }.getOrNull() },
             onSave = { form2 ->
                 val (line, errors) = LineRules.validate(form2, model::newKey)
                 if (line != null) {
                     model.upsertLine(line)
                     lineForm = null
+                    // Offer to update the item master when the billed rate differs (not on returns).
+                    val item = items.firstOrNull { it.id == line.itemId }
+                    val master = if (purchaseSide) item?.purchasePrice else item?.salePrice
+                    if (item != null && master != null && line.rate != master && line.rate > Money.ZERO &&
+                        state.type != VoucherType.CREDIT_NOTE && state.type != VoucherType.DEBIT_NOTE
+                    ) {
+                        priceChange = item to line.rate
+                    }
                 }
                 errors
             },
@@ -353,6 +382,52 @@ fun InvoiceEditorScreen(
             onKeepEditing = { confirmDiscard = false },
             onSave = { confirmDiscard = false; model.save(post = false, onDone = finished) },
             saveLabel = "Save draft",
+        )
+    }
+    filingWarning?.let { text ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { filingWarning = null },
+            title = { Text("Past GST filing period") },
+            text = { Text(text) },
+            confirmButton = {
+                TextButton(onClick = {
+                    filingWarning = null
+                    model.acknowledgeFilingPeriod(state.voucherId, "post")
+                    model.save(post = true, onDone = finished)
+                }) { Text(if (state.type.isIssueOnly()) "Issue anyway" else "Post anyway") }
+            },
+            dismissButton = { TextButton(onClick = { filingWarning = null }) { Text("Go back") } },
+        )
+    }
+    priceChange?.let { (item, rate) ->
+        val which = if (purchaseSide) "purchase" else "sale"
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { priceChange = null },
+            title = { Text("Update item price?") },
+            text = {
+                Text("${item.name} has a $which price of ${Fmt.inr(if (purchaseSide) item.purchasePrice else item.salePrice)}. This line uses ${Fmt.inr(rate)}. Save ${Fmt.inr(rate)} as the item's $which price for future bills?")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    priceChange = null
+                    scope.launch {
+                        runCatching {
+                            val fresh = container.repositories.catalog.findItem(item.id) ?: error("Item not found")
+                            val now = container.now()
+                            val old = if (purchaseSide) fresh.purchasePrice else fresh.salePrice
+                            container.repositories.catalog.saveItem(if (purchaseSide) fresh.copy(purchasePrice = rate, updatedAt = now) else fresh.copy(salePrice = rate, updatedAt = now))
+                            container.repositories.audit.record(
+                                app.openbill.core.domain.model.AuditEvent(
+                                    id = container.newId(), firmId = session.firm.id, entityType = "item", entityId = fresh.id,
+                                    action = "${which}_price_changed", detailsJson = "{\"from\":\"${old.format()}\",\"to\":\"${rate.format()}\"}", createdAt = now,
+                                ),
+                            )
+                        }.onSuccess { messages?.show("${item.name}: $which price updated") }
+                            .onFailure { messages?.show("Could not update the item: ${it.message}") }
+                    }
+                }) { Text("Update item") }
+            },
+            dismissButton = { TextButton(onClick = { priceChange = null }) { Text("Not now") } },
         )
     }
     if (pickParty) {
@@ -448,7 +523,7 @@ private fun PartyCard(party: Party?, error: String?, label: String, hint: String
 }
 
 @Composable
-private fun DraftLineCard(line: DraftLine, total: Money?, onClick: () -> Unit) {
+private fun DraftLineCard(line: DraftLine, total: Money?, retiredRate: Boolean, zeroRated: Boolean, onClick: () -> Unit) {
     OutlinedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.md)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.Top) {
@@ -456,7 +531,8 @@ private fun DraftLineCard(line: DraftLine, total: Money?, onClick: () -> Unit) {
                 AnimatedMoney(total, MaterialTheme.typography.titleSmall)
             }
             Text(
-                "${Fmt.qtyUnit(line.quantity, line.unit)} × ${Fmt.inr(line.rate)}",
+                "${Fmt.qtyUnit(line.quantity, line.unit)} × ${Fmt.inr(line.rate)}" +
+                    if (line.freeQuantity.scaledUnits > 0) " · ${Fmt.qtyUnit(line.freeQuantity, line.unit)} free" else "",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -465,12 +541,20 @@ private fun DraftLineCard(line: DraftLine, total: Money?, onClick: () -> Unit) {
                     if (line.discount.paise != 0L) {
                         add("Discount " + (line.discountPercent?.let { "${Fmt.percent(it)}% " } ?: "") + Fmt.inrDeduction(line.discount))
                     }
-                    add("GST ${Fmt.percent(line.gstRate)}%" + if (line.taxMode == TaxMode.INCLUSIVE) " incl." else "")
+                    add(if (zeroRated) "GST 0% (zero-rated)" else "GST ${Fmt.percent(line.gstRate)}%" + if (line.taxMode == TaxMode.INCLUSIVE) " incl." else "")
                     line.hsnSac?.let { add("HSN $it") }
+                    if (!line.itcEligible) add("No input credit")
                 }.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (retiredRate) {
+                Text(
+                    "${Fmt.percent(line.gstRate)}% is not a GST slab on this date; check the rate",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -508,7 +592,7 @@ private fun TotalsBar(
                     Text("Total", style = MaterialTheme.typography.titleMedium)
                     if (s != null) {
                         Text(
-                            "incl. GST ${Fmt.inr(s.totalTax)}",
+                            if (s.reverseCharge) "GST ${Fmt.inr(s.totalTax)} on reverse charge" else "incl. GST ${Fmt.inr(s.totalTax)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -536,6 +620,7 @@ private fun TotalsBar(
                         AmountRow("IGST", s.igst)
                     }
                     if (s.cess.paise != 0L) AmountRow("Cess", s.cess)
+                    if (s.reverseCharge && s.totalTax.paise != 0L) AmountRow("Less: GST on reverse charge", s.totalTax, negative = true)
                     if (s.roundOff.paise != 0L) AmountRow("Round off", Fmt.inrSigned(s.roundOff))
                     HorizontalDivider(Modifier.padding(top = Spacing.xs))
                 }
@@ -562,6 +647,8 @@ private fun LineEditor(
     form: LineForm?,
     batches: List<Pair<Batch, Quantity>>,
     slabs: List<Rate>,
+    slabDate: kotlinx.datetime.LocalDate,
+    purchase: Boolean,
     preview: (LineForm) -> Money?,
     onSave: (LineForm) -> Map<String, String>,
     onDelete: (String) -> Unit,
@@ -627,7 +714,31 @@ private fun LineEditor(
                 imeAction = ImeAction.Done,
                 onImeAction = { errors = onSave(edit) },
             )
-            PickerField("GST rate", "${Fmt.percent(current.gstRate)}%", { pickRate = true })
+            FormField(
+                "Free quantity",
+                current.freeQuantity,
+                { edit = edit.copy(freeQuantity = it) },
+                error = errors["free"],
+                keyboardType = KeyboardType.Decimal,
+                suffix = current.unit,
+                supporting = "Bonus units: not charged, but they move stock",
+            )
+            PickerField(
+                "GST rate",
+                "${Fmt.percent(current.gstRate)}%",
+                { pickRate = true },
+                // Tax-rate advisory: the versioned slab schedule says this rate is not in force.
+                error = if (current.gstRate !in slabs) "${Fmt.percent(current.gstRate)}% is not a GST slab on ${Fmt.date(slabDate)}. Check the rate for this item." else null,
+            )
+            if (purchase) {
+                ListItem(
+                    headlineContent = { Text("Input tax credit") },
+                    supportingContent = { Text(if (current.itcEligible) "GST on this line is claimed as ITC" else "Not claimable: the GST is added to cost") },
+                    trailingContent = { Switch(checked = current.itcEligible, onCheckedChange = null) },
+                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    modifier = Modifier.toggleable(value = current.itcEligible, role = Role.Switch) { edit = edit.copy(itcEligible = it) },
+                )
+            }
             LaunchedEffect(batches) {
                 val first = batches.firstOrNull()?.first
                 if (first != null && edit.batchNumber.isBlank()) edit = edit.copy(batchNumber = first.batchNumber, expiryDate = first.expiryDate)

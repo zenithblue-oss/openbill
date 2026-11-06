@@ -42,6 +42,9 @@ data class LineForm(
     /** The item's alternate unit and primary units per one of it, for entering a quantity in it. */
     val altUnit: String? = null,
     val altFactor: Quantity? = null,
+    /** Bonus units given or received free, on top of [quantity]. */
+    val freeQuantity: String = "",
+    val itcEligible: Boolean = true,
 )
 
 object LineRules {
@@ -77,6 +80,8 @@ object LineRules {
         batchNumber = line.batchNumber.orEmpty(),
         expiryDate = line.expiryDate,
         serials = line.serialNumbers.joinToString("\n"),
+        freeQuantity = if (line.freeQuantity.scaledUnits == 0L) "" else line.freeQuantity.format(),
+        itcEligible = line.itcEligible,
         key = line.key,
         itemId = line.itemId,
         description = line.description,
@@ -114,10 +119,11 @@ object LineRules {
         firmStateCode: String,
         placeOfSupplyStateCode: String,
         rounding: app.openbill.core.model.RoundingMode,
+        export: app.openbill.core.domain.model.ExportType? = null,
     ): Money? {
         val line = validate(form) { "preview" }.first ?: return null
         return runCatching {
-            InvoiceMath.summarize(listOf(line), firmStateCode, placeOfSupplyStateCode, false, rounding).grandTotal
+            InvoiceMath.summarize(listOf(line), firmStateCode, placeOfSupplyStateCode, false, rounding, export = export).grandTotal
         }.getOrNull()
     }
 
@@ -130,11 +136,14 @@ object LineRules {
         if (rate == null || rate.paise < 0) errors["rate"] = "Enter a valid rate"
         Validation.hsnError(form.hsnSac.orEmpty())?.let { errors["hsn"] = it }
         if (form.trackBatch && form.batchNumber.isBlank()) errors["batch"] = "Enter the batch number"
+        val free = if (form.freeQuantity.isBlank()) Quantity.of(0) else Parse.quantity(form.freeQuantity)
+        if (free == null || free < Quantity.of(0)) errors["free"] = "Enter a quantity, or leave it empty"
         val serials = serialList(form.serials)
-        if (form.trackSerial && qty != null) {
+        if (form.trackSerial && qty != null && free != null) {
+            val units = Quantity.ofScaledUnits(qty.scaledUnits + free.scaledUnits)
             when {
-                qty.scaledUnits % 10_000L != 0L -> errors["quantity"] = "Serial-tracked items need a whole quantity"
-                serials.size.toLong() != qty.scaledUnits / 10_000L -> errors["serials"] = "Enter ${qty.format()} serial numbers (${serials.size} entered)"
+                units.scaledUnits % 10_000L != 0L -> errors[if (free.scaledUnits % 10_000L != 0L) "free" else "quantity"] = "Serial-tracked items need a whole quantity"
+                serials.size.toLong() != units.scaledUnits / 10_000L -> errors["serials"] = "Enter ${units.format()} serial numbers (${serials.size} entered)"
                 serials.distinct().size != serials.size -> errors["serials"] = "A serial number is repeated"
             }
         }
@@ -162,6 +171,8 @@ object LineRules {
             batchNumber = form.batchNumber.trim().takeIf { form.trackBatch && it.isNotEmpty() },
             expiryDate = form.expiryDate.takeIf { form.trackBatch },
             serialNumbers = if (form.trackSerial) serials else emptyList(),
+            freeQuantity = free!!,
+            itcEligible = form.itcEligible,
         ) to emptyMap()
     }
 
@@ -181,6 +192,8 @@ data class InvoiceEditorState(
     val placeOfSupply: String,
     val dateText: String,
     val notes: String = "",
+    /** Reverse charge, export/SEZ, transport and the other optional header fields. */
+    val fields: DocFieldsForm = DocFieldsForm(),
     val lines: List<DraftLine> = emptyList(),
     val charges: List<DraftCharge> = emptyList(),
     val summary: TaxSummary? = null,
@@ -204,6 +217,7 @@ class InvoiceEditorModel(
     private val returnOf: String? = null,
 ) {
     private val firm = session.firm
+    private val labels get() = CustomFieldLabels.load(container.platform.settingsStore, firm.id)
     private val _state = MutableStateFlow(
         InvoiceEditorState(
             loaded = voucherId == null && returnOf == null,
@@ -211,6 +225,7 @@ class InvoiceEditorModel(
             godownId = session.settings.defaultGodownId,
             placeOfSupply = firm.stateCode,
             dateText = container.today().toString(),
+            fields = DocFieldsForm(custom = labels.map { it to "" }),
         ).recalculated(),
     )
     val state: StateFlow<InvoiceEditorState> = _state
@@ -256,9 +271,13 @@ class InvoiceEditorModel(
         if (!asReturn) existing = v
         val party = v.partyId?.let { repos.parties.findParty(it) }
         val units = repos.catalog.observeUnits(firm.id).first().associateBy { it.id }
+        // Zero-rated exports store 0% lines; reload the item's own rate so switching back to a
+        // regular supply taxes them again. ponytail: custom lines keep 0%, the user re-enters it.
+        val zeroRated = v.export?.type?.withTax == false
         val lines = v.lines.map { line ->
-            val unit = line.itemId?.let { repos.catalog.findItem(it) }?.let { units[it.unitId]?.symbol }
-            InvoiceMath.fromVoucherLine(line, unit)
+            val item = line.itemId?.let { repos.catalog.findItem(it) }
+            val draft = InvoiceMath.fromVoucherLine(line, item?.let { units[it.unitId]?.symbol })
+            if (zeroRated && item != null) draft.copy(gstRate = item.taxRate) else draft
         }
         _state.value = InvoiceEditorState(
             loaded = true,
@@ -271,13 +290,19 @@ class InvoiceEditorModel(
             placeOfSupply = v.placeOfSupplyStateCode,
             dateText = v.date.toString(),
             notes = v.notes.orEmpty(),
+            // A return keeps the tax flags of what it reverses, not its transport or PO.
+            fields = DocFieldRules.from(v, labels, keepShipping = !asReturn || found?.type?.isIssueOnly() == true),
             lines = lines,
             charges = v.charges.sortedBy { it.sortOrder }.map(InvoiceMath::fromVoucherCharge),
         ).recalculated()
     }
 
     private fun InvoiceEditorState.recalculated(): InvoiceEditorState = runCatching {
-        InvoiceMath.summarize(lines, firm.stateCode, placeOfSupply, session.settings.roundToRupee, session.settings.roundingMode, charges)
+        InvoiceMath.summarize(
+            lines, firm.stateCode, placeOfSupply, session.settings.roundToRupee, session.settings.roundingMode, charges,
+            reverseCharge = fields.reverseCharge && DocFieldRules.supportsReverseCharge(type),
+            export = fields.exportType.takeIf { DocFieldRules.supportsExport(type) },
+        )
     }.fold(
         onSuccess = { copy(summary = it, calcError = null) },
         onFailure = { copy(summary = null, calcError = it.message ?: "Cannot compute totals") },
@@ -288,11 +313,26 @@ class InvoiceEditorModel(
     }
 
     fun setParty(party: Party) = mutate {
-        val pos = party.shipToStateCode() ?: party.stateCode ?: Validation.stateFromGstin(party.gstin.orEmpty()) ?: firm.stateCode
-        it.copy(party = party, placeOfSupply = pos, errors = it.errors - "party")
+        val pos = if (it.fields.exportType?.sez == false) EXPORT_POS
+        else party.shipToStateCode() ?: party.stateCode ?: Validation.stateFromGstin(party.gstin.orEmpty()) ?: firm.stateCode
+        it.copy(party = party, placeOfSupply = pos, errors = it.errors - "party" - "reverseCharge" - "export")
     }
 
     fun setPlaceOfSupply(code: String) = mutate { it.copy(placeOfSupply = code) }
+
+    /** Exports take place of supply 96 (other countries); leaving export goes back to the party's state. */
+    fun setFields(f: DocFieldsForm) = mutate { s ->
+        val wasExport = s.fields.exportType?.sez == false
+        val isExport = f.exportType?.sez == false
+        val pos = when {
+            isExport -> EXPORT_POS
+            wasExport -> s.party?.let { p -> p.shipToStateCode() ?: p.stateCode } ?: firm.stateCode
+            else -> s.placeOfSupply
+        }
+        s.copy(fields = f, placeOfSupply = pos, errors = s.errors - FIELD_ERRORS)
+    }
+
+    fun setCustomLabels(labels: List<String>) = CustomFieldLabels.save(container.platform.settingsStore, firm.id, labels)
     fun setDate(text: String) = mutate { it.copy(dateText = text, errors = it.errors - "date") }
     fun setNotes(text: String) = mutate { it.copy(notes = text) }
     fun setReferenceNumber(text: String) = mutate { it.copy(referenceNumber = text) }
@@ -315,12 +355,13 @@ class InvoiceEditorModel(
 
     fun newKey(): String = container.newId()
 
-    fun previewTotal(form: LineForm): Money? =
-        LineRules.previewTotal(form, firm.stateCode, _state.value.placeOfSupply, session.settings.roundingMode)
+    fun previewTotal(form: LineForm): Money? = _state.value.let { s ->
+        LineRules.previewTotal(form, firm.stateCode, s.placeOfSupply, session.settings.roundingMode, s.fields.exportType.takeIf { DocFieldRules.supportsExport(s.type) })
+    }
 
     fun validateForSave(post: Boolean): Map<String, String> {
         val s = _state.value
-        return buildMap {
+        return DocFieldRules.validate(s.fields, s.type, s.party, post) + buildMap {
             val date = Parse.date(s.dateText)
             if (date == null) put("date", "Use YYYY-MM-DD, e.g. ${container.today()}")
             else if (session.financialYearFor(date) == null) put("date", "No financial year covers this date")
@@ -350,7 +391,17 @@ class InvoiceEditorModel(
             val fy = session.financialYearFor(date)!!
             val summary = s.summary!!
             val id = existing?.id ?: container.newId()
+            val f = s.fields
+            val export = DocFieldRules.export(f).takeIf { DocFieldRules.supportsExport(s.type) }
             val voucher = Voucher(
+                reverseCharge = f.reverseCharge && DocFieldRules.supportsReverseCharge(s.type),
+                transport = DocFieldRules.transport(f),
+                export = export,
+                ecommerceGstin = DocFieldRules.ecommerceGstin(f).takeIf { DocFieldRules.supportsEcommerce(s.type) },
+                poNumber = DocFieldRules.clean(f.poNumber).ifEmpty { null },
+                poDate = f.poDate,
+                ewayBillNumber = f.ewayBillNumber.filterNot { it == ' ' }.ifEmpty { null },
+                customFields = DocFieldRules.custom(f),
                 id = id,
                 firmId = firm.id,
                 financialYearId = fy.id,
@@ -361,7 +412,7 @@ class InvoiceEditorModel(
                 partyId = s.party?.id,
                 status = VoucherStatus.DRAFT,
                 placeOfSupplyStateCode = s.placeOfSupply,
-                lines = InvoiceMath.toVoucherLines(s.lines, summary, s.godownId) { it.key },
+                lines = InvoiceMath.toVoucherLines(s.lines, summary, s.godownId, export?.type) { it.key },
                 charges = InvoiceMath.toVoucherCharges(s.charges, summary) { it.key },
                 subtotal = summary.gross,
                 discount = summary.discount,
@@ -394,4 +445,25 @@ class InvoiceEditorModel(
     }
 
     fun parsedDate(): LocalDate? = Parse.date(_state.value.dateText)
+
+    /** Records that the user went ahead despite the filing-period warning. */
+    fun acknowledgeFilingPeriod(voucherId: String?, action: String) {
+        scope.launch {
+            runCatching {
+                container.repositories.audit.record(
+                    app.openbill.core.domain.model.AuditEvent(
+                        id = container.newId(), firmId = firm.id, entityType = "voucher", entityId = voucherId ?: "new",
+                        voucherId = voucherId, action = "filing_period_warning_acknowledged",
+                        detailsJson = "{\"action\":\"$action\",\"date\":\"${_state.value.dateText}\"}", createdAt = container.now(),
+                    ),
+                )
+            }
+        }
+    }
+
+    private companion object {
+        /** GSTR-1 place of supply for exports: other countries. */
+        const val EXPORT_POS = "96"
+        val FIELD_ERRORS = setOf("eco", "transporterId", "vehicle", "distance", "eway", "port", "reverseCharge", "export")
+    }
 }

@@ -170,7 +170,7 @@ fun InvoiceDetailScreen(
         }
         val summary = remember(v) {
             runCatching {
-                InvoiceMath.summarizeStored(v.lines, session.firm.stateCode, v.placeOfSupplyStateCode, v.roundOff, v.total, session.settings.roundingMode, v.charges)
+                InvoiceMath.summarizeStored(v.lines, session.firm.stateCode, v.placeOfSupplyStateCode, v.roundOff, v.total, session.settings.roundingMode, v.charges, v.reverseCharge, v.export != null)
             }.getOrNull()
         }
         CenteredContent(Modifier.padding(padding)) {
@@ -197,6 +197,8 @@ fun InvoiceDetailScreen(
                         MetaRow("Date", Fmt.dateLong(v.date))
                         MetaRow("Place of supply", Fmt.stateName(v.placeOfSupplyStateCode))
                         MetaRow("Tax", if (summary?.isIntraState != false) "CGST + SGST (intra-state)" else "IGST (inter-state)")
+                        if (v.reverseCharge) MetaRow("Reverse charge", "Yes: tax payable by the recipient")
+                        v.detailRows { Fmt.date(it) }.forEach { (k, value) -> MetaRow(k, value) }
                     }
                 }
                 if (v.status == VoucherStatus.CANCELLED) {
@@ -231,6 +233,7 @@ fun InvoiceDetailScreen(
                                 AmountRow("IGST", summary.igst)
                             }
                             if (summary.cess.paise != 0L) AmountRow("Cess", summary.cess)
+                            if (v.reverseCharge && summary.totalTax.paise != 0L) AmountRow("Less: GST on reverse charge", summary.totalTax, negative = true)
                         } else {
                             AmountRow("Taxable value", v.taxable)
                             AmountRow("GST", v.tax)
@@ -325,6 +328,7 @@ fun InvoiceDetailScreen(
         var reason by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
         var cancelling by remember { mutableStateOf(false) }
+        val filing = voucher?.let { FilingPeriod.warning(it.type, it.date, container.today()) }
         AlertDialog(
             onDismissRequest = { if (!cancelling) cancelOpen = false },
             icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
@@ -332,6 +336,7 @@ fun InvoiceDetailScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     Text("The invoice keeps its number and stays in your records, marked as cancelled. Its ledger entries are reversed.")
+                    filing?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                     FormField("Reason *", reason, { reason = it; error = null }, error = error)
                 }
             },
@@ -343,7 +348,17 @@ fun InvoiceDetailScreen(
                     }
                     cancelling = true
                     scope.launch {
-                        runCatching { container.cancelVoucher(voucherId, reason.trim(), container.now()) }
+                        runCatching {
+                            container.cancelVoucher(voucherId, reason.trim(), container.now())
+                            if (filing != null) {
+                                container.repositories.audit.record(
+                                    app.openbill.core.domain.model.AuditEvent(
+                                        id = container.newId(), firmId = session.firm.id, entityType = "voucher", entityId = voucherId, voucherId = voucherId,
+                                        action = "filing_period_warning_acknowledged", detailsJson = "{\"action\":\"cancel\"}", createdAt = container.now(),
+                                    ),
+                                )
+                            }
+                        }
                             .onSuccess {
                                 cancelOpen = false
                                 messages?.show("Invoice cancelled")
@@ -410,6 +425,8 @@ private fun LineCard(line: VoucherLine, unit: String?) {
             Spacer(Modifier.height(Spacing.xs))
             val gross = InvoiceMath.gross(line.quantity, line.rate)
             AmountRow("${Fmt.qtyUnit(line.quantity, unit)} × ${Fmt.inr(line.rate)}", Fmt.inr(gross))
+            if (line.freeQuantity.scaledUnits > 0) AmountRow("Free: ${Fmt.qtyUnit(line.freeQuantity, unit)}", Fmt.inr(Money.ZERO))
+            if (!line.itcEligible) AmountRow("Input tax credit", "Not claimed")
             if (line.discount.paise != 0L) AmountRow("Discount", Fmt.inrDeduction(line.discount))
             AmountRow("Taxable value", Fmt.inr(line.taxable))
             AmountRow("GST ${Fmt.percent(line.taxRate)}%" + if (line.taxMode.name == "INCLUSIVE") " (incl.)" else "", Fmt.inr(line.tax))
