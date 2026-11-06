@@ -248,12 +248,14 @@ fun MoneyVoucherRow(v: Voucher, names: Map<String, String>, onClick: () -> Unit)
     ListItem(
         headlineContent = { Text(moneyCounterparty(v, names), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            Text(listOfNotNull(moneyTitle(v.type), v.number, Fmt.dateLong(v.date)).joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val discount = v.discount.takeIf { it > Money.ZERO }?.let { "discount ${Fmt.inr(it)}" }
+            Text(listOfNotNull(moneyTitle(v.type), v.number, Fmt.dateLong(v.date), discount).joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                // Money that moved; a settlement discount is shown beside the date.
                 Text(
-                    (if (inflow) "+" else if (v.type == VoucherType.CONTRA) "" else "−") + Fmt.inr(v.total),
+                    (if (inflow) "+" else if (v.type == VoucherType.CONTRA) "" else "−") + Fmt.inr(v.total - v.discount),
                     style = MaterialTheme.typography.titleSmall,
                     color = if (inflow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )

@@ -40,10 +40,13 @@ class LedgerJournalDerivation(
             VoucherType.CREDIT_NOTE -> saleEntries(voucher, accounts, at, creditControl = false)
             VoucherType.PURCHASE -> purchaseEntries(voucher, accounts, at, debitControl = true)
             VoucherType.DEBIT_NOTE -> purchaseEntries(voucher, accounts, at, debitControl = false)
+            // A settlement discount ([Voucher.discount]) settles part of the total without money
+            // moving: it posts to the discount account in [Voucher.ledgerAccountId].
             VoucherType.PAYMENT_IN -> {
                 val accountId = requirePaymentAccount(voucher, paymentAccountId)
                 listOfNotNull(
-                    entry(voucher, accountId, debit = voucher.total, at = at),
+                    entry(voucher, accountId, debit = voucher.total - voucher.discount, at = at),
+                    discountAccount(voucher)?.let { entry(voucher, it, debit = voucher.discount, at = at) },
                     entry(voucher, accounts.accountsReceivable.id, credit = voucher.total, at = at),
                 )
             }
@@ -52,7 +55,8 @@ class LedgerJournalDerivation(
                 val accountId = requirePaymentAccount(voucher, paymentAccountId)
                 listOfNotNull(
                     entry(voucher, accounts.accountsPayable.id, debit = voucher.total, at = at),
-                    entry(voucher, accountId, credit = voucher.total, at = at),
+                    entry(voucher, accountId, credit = voucher.total - voucher.discount, at = at),
+                    discountAccount(voucher)?.let { entry(voucher, it, credit = voucher.discount, at = at) },
                 )
             }
 
@@ -254,6 +258,12 @@ class LedgerJournalDerivation(
             "Payment vouchers cannot have round-off"
         }
         return paymentAccountId
+    }
+
+    private fun discountAccount(voucher: Voucher): String? {
+        if (voucher.discount == Money.ZERO) return null
+        require(voucher.discount > Money.ZERO && voucher.discount <= voucher.total) { "Discount must be above zero and within the settled amount" }
+        return requireNotNull(voucher.ledgerAccountId) { "Settlement discount needs a discount account" }
     }
 
     private fun requireMoneyAccount(voucher: Voucher, paymentAccountId: String?): String =

@@ -1,5 +1,7 @@
 package app.openbill.core.domain.usecase
 
+import app.openbill.core.domain.model.Account
+import app.openbill.core.domain.model.AccountType
 import app.openbill.core.domain.model.AllocationRequest
 import app.openbill.core.domain.model.OutstandingInvoice
 import app.openbill.core.domain.model.PaymentDetails
@@ -13,6 +15,7 @@ import app.openbill.core.domain.repository.PaymentRepository
 import app.openbill.core.domain.repository.VoucherRepository
 import app.openbill.core.model.Money
 import kotlin.time.Instant
+import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDate
 
 /** A payment in/out, expense or contra to record and post in one step. */
@@ -39,6 +42,13 @@ data class MoneyVoucherInput(
     val notes: String? = null,
     /** Payments only; the unallocated remainder stays on account as an advance. */
     val allocations: List<AllocationRequest> = emptyList(),
+    /**
+     * Payments only: settlement discount allowed (in) or received (out) on top of [amount]; it
+     * settles invoices like money but posts to [discountAccountId] (see [MoneyVouchers.discountAccount]).
+     * With a discount, [amount] may be zero (the balance is written off).
+     */
+    val discount: Money = Money.ZERO,
+    val discountAccountId: String? = null,
 )
 
 class MoneyVouchers(
@@ -49,13 +59,19 @@ class MoneyVouchers(
 ) {
     suspend fun record(input: MoneyVoucherInput, at: Instant): Voucher {
         require(input.type.usesPaymentAccount()) { "${input.type} is not a money voucher" }
-        require(input.amount > Money.ZERO) { "Amount must be above zero" }
-        require(input.inputTax >= Money.ZERO && input.inputTax < input.amount) { "GST must be below the amount" }
+        require(input.discount >= Money.ZERO) { "Discount cannot be negative" }
+        require(input.discount == Money.ZERO || input.type.isPayment()) { "Only payments can carry a settlement discount" }
+        require(input.discount == Money.ZERO || input.discountAccountId != null) { "Settlement discount needs a discount account" }
+        require(input.amount > Money.ZERO || (input.amount == Money.ZERO && input.discount > Money.ZERO)) { "Amount must be above zero" }
+        require(input.inputTax >= Money.ZERO && (input.inputTax == Money.ZERO || input.inputTax < input.amount)) { "GST must be below the amount" }
         require(input.type == VoucherType.EXPENSE || input.inputTax == Money.ZERO) { "Only expenses carry GST" }
         if (input.type.isPayment()) require(input.partyId != null) { "Choose a party" }
         require(input.allocations.isEmpty() || input.type.isPayment()) { "Only payments can be allocated" }
+        val settled = input.amount + input.discount
         val allocated = input.allocations.fold(Money.ZERO) { t, a -> t + a.amount }
-        require(allocated <= input.amount) { "Allocations exceed the payment amount" }
+        require(allocated <= settled) { "Allocations exceed the payment amount" }
+        // A discount only settles invoices; it is never an advance.
+        require(allocated >= input.discount) { "Allocate the settlement discount to open invoices" }
         if (input.allocations.isNotEmpty()) {
             val open = payments.outstandingInvoices(input.firmId, input.partyId!!, invoiceTypeFor(input.type))
                 .associateBy { it.voucherId }
@@ -71,12 +87,13 @@ class MoneyVouchers(
             type = input.type,
             date = input.date,
             partyId = input.partyId,
-            ledgerAccountId = input.ledgerAccountId,
+            ledgerAccountId = if (input.discount > Money.ZERO) input.discountAccountId else input.ledgerAccountId,
             placeOfSupplyStateCode = input.stateCode,
             taxable = if (input.type == VoucherType.EXPENSE) input.amount - input.inputTax else Money.ZERO,
             tax = input.inputTax,
-            subtotal = input.amount,
-            total = input.amount,
+            subtotal = settled,
+            discount = input.discount,
+            total = settled,
             notes = input.notes?.trim()?.ifEmpty { null },
             createdAt = at,
             updatedAt = at,
@@ -106,6 +123,21 @@ class MoneyVouchers(
     }
 
     companion object {
+        const val DISCOUNT_ALLOWED = "Discount allowed"
+        const val DISCOUNT_RECEIVED = "Discount received"
+
+        /**
+         * The settlement-discount ledger for [paymentType]: "Discount allowed" (expense) on
+         * receipts, "Discount received" (income) on payments; created on first use.
+         */
+        suspend fun discountAccount(ledger: LedgerRepository, firmId: String, paymentType: VoucherType, newId: () -> String, at: Instant): Account {
+            val (name, type) = if (paymentType == VoucherType.PAYMENT_OUT) DISCOUNT_RECEIVED to AccountType.INCOME else DISCOUNT_ALLOWED to AccountType.EXPENSE
+            val same = ledger.observeAccounts(firmId).first().filter { it.deletedAt == null && it.name.equals(name, ignoreCase = true) }
+            same.firstOrNull { it.type == type && it.code == null }?.let { return it }
+            require(same.isEmpty()) { "An account named \"$name\" already exists with another type; rename it to record a settlement discount" }
+            return Account(newId(), firmId, name, type, createdAt = at, updatedAt = at).also { ledger.saveAccount(it) }
+        }
+
         fun invoiceTypeFor(paymentType: VoucherType): VoucherType =
             if (paymentType == VoucherType.PAYMENT_OUT) VoucherType.PURCHASE else VoucherType.SALE
 

@@ -6,6 +6,7 @@ import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.domain.model.Account
 import app.openbill.core.domain.model.AccountType
+import app.openbill.core.domain.model.AllocationRequest
 import app.openbill.core.domain.model.PaymentMethod
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.service.PartyAgeing
@@ -16,6 +17,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -94,5 +96,46 @@ class RoomMoneyTest {
         ledger.setCleared(txns.first().entry.id, null)
         assertNull(ledger.observeAccountTransactions("bank").first().first().entry.clearedOn)
         assertEquals(balances, ledger.observeAccountBalances("firm-1").first())
+    }
+
+    @Test
+    fun settlementDiscountSettlesInvoicesAndPostsToDiscountAllowed(): Unit = runBlocking {
+        val money = MoneyVouchers(vouchers, payments, ledger)
+        val cash = ledger.ensureSystemAccounts("firm-1", CREATED_AT).cash
+        listOf("s1" to 10_000L, "s2" to 5_000L).forEach { (id, amt) ->
+            val line = testLine(id = "$id-l", rate = Money.of(amt)).copy(taxable = Money.of(amt), tax = Money.ZERO, total = Money.of(amt))
+            vouchers.saveDraft(testVoucher(id = id, lines = listOf(line), charges = emptyList()).copy(subtotal = Money.of(amt), taxable = Money.of(amt), tax = Money.ZERO, total = Money.of(amt)))
+            vouchers.post(id, POSTED_AT)
+        }
+        val discount = MoneyVouchers.discountAccount(ledger, "firm-1", VoucherType.PAYMENT_IN, { "disc" }, CREATED_AT)
+        assertEquals(AccountType.EXPENSE, discount.type)
+        assertEquals(discount, MoneyVouchers.discountAccount(ledger, "firm-1", VoucherType.PAYMENT_IN, { "other" }, CREATED_AT), "reused")
+
+        // 9,000 received + 1,000 discount settles s1 in full.
+        val v = money.record(
+            input(VoucherType.PAYMENT_IN, "r1", 9_000, cash.id).copy(
+                partyId = "party-1", allocations = listOf(AllocationRequest("s1", Money.of(10_000))), discount = Money.of(1_000), discountAccountId = discount.id,
+            ),
+            POSTED_AT,
+        )
+        assertEquals(Money.of(10_000), v.total)
+        assertEquals(Money.ZERO, payments.invoiceOutstanding("s1"))
+        // Write off s2 entirely with a discount and no money.
+        money.record(
+            input(VoucherType.PAYMENT_IN, "r2", 0, cash.id).copy(
+                partyId = "party-1", allocations = listOf(AllocationRequest("s2", Money.of(5_000))), discount = Money.of(5_000), discountAccountId = discount.id,
+            ),
+            POSTED_AT,
+        )
+        assertEquals(Money.ZERO, payments.invoiceOutstanding("s2"))
+        val balances = ledger.observeAccountBalances("firm-1").first()
+        assertEquals(Money.of(9_000), balances[cash.id])
+        assertEquals(Money.of(6_000), balances["disc"])
+        assertEquals(Money.of(12_345), ledger.partyBalance("firm-1", "party-1", LocalDate(2026, 5, 31)).net, "only the opening balance is left")
+
+        // A discount must settle invoices; it is never an advance.
+        assertFailsWith<IllegalArgumentException> {
+            money.record(input(VoucherType.PAYMENT_IN, "r3", 100, cash.id).copy(partyId = "party-1", discount = Money.of(50), discountAccountId = discount.id), POSTED_AT)
+        }
     }
 }

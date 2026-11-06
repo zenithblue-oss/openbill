@@ -99,7 +99,13 @@ fun MoneyDetailScreen(container: AppContainer, session: Session, voucherId: Stri
                     Column(Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         Text(moneyCounterparty(v, names + accountNames), style = MaterialTheme.typography.titleLarge)
                         StatusChip(v.status)
-                        AmountRow("Amount", v.total, emphasize = true)
+                        if (v.discount > Money.ZERO) {
+                            AmountRow(if (v.type == VoucherType.PAYMENT_IN) "Received" else "Paid", v.total - v.discount)
+                            AmountRow("Settlement discount (${accountNames[v.ledgerAccountId] ?: "discount"})", v.discount)
+                            AmountRow("Settled", v.total, emphasize = true)
+                        } else {
+                            AmountRow("Amount", v.total, emphasize = true)
+                        }
                         if (v.type == VoucherType.EXPENSE && v.tax > Money.ZERO) {
                             AmountRow("Expense value", v.taxable)
                             AmountRow("Input GST (ITC)", v.tax)

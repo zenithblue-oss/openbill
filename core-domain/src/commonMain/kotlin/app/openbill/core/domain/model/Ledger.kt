@@ -217,6 +217,17 @@ fun requireLedgerAccount(voucher: Voucher, account: Account?, paymentAccountId: 
             require(account.type.isPaymentAccount) { "Transfer destination must be a cash or bank account" }
             require(account.id != paymentAccountId) { "Transfer accounts must differ" }
         }
+        // Settlement discount: allowed (expense) on receipts, received (income) on payments.
+        VoucherType.PAYMENT_IN, VoucherType.PAYMENT_OUT -> {
+            if (voucher.discount == Money.ZERO) {
+                require(account == null) { "A payment without a discount has no discount account" }
+                return
+            }
+            require(voucher.discount > Money.ZERO && voucher.discount <= voucher.total) { "Discount must be above zero and within the settled amount" }
+            require(account != null) { "Settlement discount needs a discount account" }
+            val want = if (voucher.type == VoucherType.PAYMENT_IN) AccountType.EXPENSE else AccountType.INCOME
+            require(account.type == want && account.code == null) { "Settlement discount must post to a user ${want.name.lowercase()} account" }
+        }
         else -> return
     }
     require(account.firmId == voucher.firmId) { "Account belongs to a different firm" }

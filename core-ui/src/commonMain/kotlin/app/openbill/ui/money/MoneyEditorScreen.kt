@@ -101,6 +101,7 @@ fun MoneyEditorScreen(
     var method by rememberSaveable { mutableStateOf(PaymentMethod.CASH) }
     var refNo by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
+    var discount by rememberSaveable { mutableStateOf("") }
     var open by remember { mutableStateOf<List<OutstandingInvoice>>(emptyList()) }
     val alloc = remember { mutableStateMapOf<String, String>() }
     // Split tender: further modes for the same payment, each saved as its own payment voucher.
@@ -137,7 +138,10 @@ fun MoneyEditorScreen(
     }
 
     fun submit() {
-        val amt = Parse.money(amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero"; return }
+        val disc = if (discount.isBlank() || !type.isPayment()) Money.ZERO else Parse.money(discount)?.takeIf { it >= Money.ZERO } ?: run { error = "Enter a valid discount"; return }
+        // With a settlement discount the amount may be left blank: the balance is written off.
+        val discountOnly = disc > Money.ZERO && extra.isEmpty() && (amount.isBlank() || Parse.money(amount) == Money.ZERO)
+        if (!discountOnly) Parse.money(amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero"; return }
         val acc = account ?: run { error = "Choose an account"; return }
         val fy = session.financialYearFor(date) ?: run { error = "No financial year covers this date"; return }
         if (type.isPayment() && party == null) { error = "Choose a party"; return }
@@ -148,18 +152,28 @@ fun MoneyEditorScreen(
         val requests = alloc.mapNotNull { (id, s) -> Parse.money(s)?.takeIf { it > Money.ZERO }?.let { AllocationRequest(id, it) } }
         if (alloc.values.any { Parse.money(it) == null }) { error = "Check the allocated amounts"; return }
         val tenders = listOf(Tender(amount, acc.id, method, refNo)) + extra
-        val amounts = tenders.map { t -> Parse.money(t.amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero for each mode"; return } }
+        val amounts = if (discountOnly) listOf(Money.ZERO) else tenders.map { t -> Parse.money(t.amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero for each mode"; return } }
         tenders.forEach { t ->
             if (t.accountId == null) { error = "Choose an account for each mode"; return }
             if (t.method != PaymentMethod.CASH && t.ref.isBlank()) { error = "Enter the ${refLabel(t.method).lowercase()}"; return }
         }
-        val split = MoneyVouchers.splitAcross(requests, amounts)
+        val split = MoneyVouchers.splitAcross(requests, amounts).toMutableList()
+        if (disc > Money.ZERO) {
+            // The discount settles what this payment leaves open, oldest first, on the first voucher.
+            val paid = requests.groupBy { it.invoiceVoucherId }.mapValues { (_, r) -> r.fold(Money.ZERO) { t, a -> t + a.amount } }
+            val left = open.map { it.copy(allocated = it.allocated + (paid[it.voucherId] ?: Money.ZERO)) }.filter { it.outstanding > Money.ZERO }
+            if (disc > left.fold(Money.ZERO) { t, i -> t + i.outstanding }) { error = "The discount is more than the balance this payment leaves open"; return }
+            split[0] = (split[0] + MoneyVouchers.fifo(left, disc)).groupBy { it.invoiceVoucherId }
+                .map { (id, r) -> AllocationRequest(id, r.fold(Money.ZERO) { t, a -> t + a.amount }) }
+        }
         busy = true
         error = null
         val ids = tenders.map { container.newId() }
         val id = ids.first()
         scope.launch {
-            runCatching { repos.transaction { tenders.forEachIndexed { i, t ->
+            runCatching { repos.transaction {
+                val discountAccountId = if (disc > Money.ZERO) MoneyVouchers.discountAccount(repos.ledger, firmId, type, container::newId, container.now()).id else null
+                tenders.take(amounts.size).forEachIndexed { i, t ->
                 MoneyVouchers(repos.vouchers, repos.payments, repos.ledger, container.postVoucher).record(
                     MoneyVoucherInput(
                         type = type,
@@ -178,6 +192,8 @@ fun MoneyEditorScreen(
                         instrumentDate = date.takeIf { t.method == PaymentMethod.CHEQUE || t.method == PaymentMethod.BANK },
                         notes = notes,
                         allocations = split[i],
+                        discount = if (i == 0) disc else Money.ZERO,
+                        discountAccountId = discountAccountId.takeIf { i == 0 },
                     ),
                     container.now(),
                 )
@@ -281,6 +297,16 @@ fun MoneyEditorScreen(
                         else "Allocated ${Fmt.inr(allocated)} · on account (advance) ${Fmt.inr(advance)}",
                         color = if (advance < Money.ZERO) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                    val discountLedger = if (type == VoucherType.PAYMENT_IN) MoneyVouchers.DISCOUNT_ALLOWED else MoneyVouchers.DISCOUNT_RECEIVED
+                    FormField(
+                        "Settlement discount",
+                        discount,
+                        { discount = it; error = null },
+                        keyboardType = KeyboardType.Decimal,
+                        prefix = "₹",
+                        supporting = "Settles what is still open after this payment, oldest first; posted to $discountLedger. " +
+                            "With a discount the amount can be left blank to write off the balance.",
                     )
                 } else if (type.isPayment() && party != null) {
                     Text(
