@@ -71,6 +71,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installs beside the release app so a dev build never touches real business data.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             // R8 is intentionally off for now: no app-level keep rules exist yet and a
             // minified build cannot be verified here. Enable after a device smoke test.
