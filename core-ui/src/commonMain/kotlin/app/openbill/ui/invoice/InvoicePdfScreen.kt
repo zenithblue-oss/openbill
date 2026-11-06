@@ -91,12 +91,14 @@ fun InvoicePdfScreen(
     voucherId: String,
     onBack: () -> Unit,
     backHandler: BackHandlerSlot = { _, _ -> },
+    receipt: Boolean = false,
 ) {
     val firmId = session.firm.id
     val voucher by remember(voucherId) { container.repositories.vouchers.observeVoucher(voucherId) }.collectAsState(initial = null)
     val defaultStyle by remember(firmId) { container.invoiceStyles.style(firmId) }.collectAsState()
     val imageVersion by container.invoiceStyles.imageVersion.collectAsState()
-    var template by remember { mutableStateOf<InvoiceTemplate?>(null) }
+    // A POS receipt keeps the firm's own roll template, or starts on the 80 mm receipt.
+    var template by remember { mutableStateOf(if (receipt && !defaultStyle.template.paper.thermal) InvoiceTemplate.RECEIPT_80_TAX else null) }
     var copies by remember { mutableStateOf<CopyMode?>(null) }
     val style = defaultStyle.copy(
         template = template ?: defaultStyle.template,

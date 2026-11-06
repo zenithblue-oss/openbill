@@ -414,8 +414,11 @@ class InvoiceEditorModel(
     /** False until an existing draft has loaded (or if it could not be), so a save never forks a new voucher. */
     fun canSave(s: InvoiceEditorState = _state.value): Boolean = s.loaded && (voucherId == null || existing != null)
 
-    /** Saves the draft, and posts it (allocating the number) when [post] is true. */
-    fun save(post: Boolean, onDone: (voucherId: String, posted: Boolean) -> Unit) {
+    /**
+     * Saves the draft, and posts it (allocating the number) when [post] is true. [hold] parks the
+     * draft as a POS held bill; otherwise a held draft stays held until it is posted.
+     */
+    fun save(post: Boolean, hold: Boolean = false, onDone: (voucherId: String, posted: Boolean) -> Unit) {
         if (!canSave()) return
         val errors = validateForSave(post)
         if (errors.isNotEmpty()) {
@@ -463,6 +466,8 @@ class InvoiceEditorModel(
                 notes = s.notes.trim().ifBlank { null },
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
+                // Kept through a failed post so the bill stays in the held list.
+                heldAt = if (hold) now else existing?.heldAt,
             )
             val saved = runCatching { container.repositories.vouchers.saveDraft(voucher) }
             if (saved.isFailure) {

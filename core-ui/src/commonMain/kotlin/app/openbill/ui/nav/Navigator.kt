@@ -42,7 +42,10 @@ sealed interface Route {
     data class InvoiceDetail(val voucherId: String) : Route
     data object BusinessEdit : Route
     data object InvoiceTemplates : Route
-    data class InvoicePdf(val voucherId: String) : Route
+    /** [receipt] opens on a thermal receipt template (POS) instead of the firm's default. */
+    data class InvoicePdf(val voucherId: String, val receipt: Boolean = false) : Route
+    /** POS counter billing; [voucherId] resumes a held bill. */
+    data class Pos(val voucherId: String? = null) : Route
 
     data object Reports : Route
     /** A report by [ReportKind] key for an ISO date range; [partyId] for a party statement. */
@@ -77,7 +80,8 @@ sealed interface Route {
             is InvoiceDetail -> "detail:$voucherId"
             BusinessEdit -> "business:"
             InvoiceTemplates -> "templates:"
-            is InvoicePdf -> "pdf:$voucherId"
+            is InvoicePdf -> "pdf:$voucherId" + if (receipt) "|r" else ""
+            is Pos -> "pos:${voucherId.orEmpty()}"
             Introduction -> "intro:"
             Reports -> "reports:"
             is Report -> "report:$report|$from|$to|${partyId.orEmpty()}"
@@ -120,7 +124,8 @@ sealed interface Route {
                 "detail" -> arg.takeIf { it.isNotEmpty() }?.let { InvoiceDetail(it) }
                 "business" -> BusinessEdit
                 "templates" -> InvoiceTemplates
-                "pdf" -> arg.takeIf { it.isNotEmpty() }?.let { InvoicePdf(it) }
+                "pdf" -> arg.substringBefore('|').takeIf { it.isNotEmpty() }?.let { InvoicePdf(it, arg.endsWith("|r")) }
+                "pos" -> Pos(arg.ifEmpty { null })
                 "intro" -> Introduction
                 "reports" -> Reports
                 "report" -> arg.split('|').takeIf { it.size >= 3 }?.let { p -> Report(p[0], p[1], p[2], p.getOrNull(3)?.ifEmpty { null }) }

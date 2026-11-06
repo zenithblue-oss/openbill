@@ -35,6 +35,7 @@ import app.openbill.core.domain.model.VoucherType
 /** Actions and screens offered by the desktop command palette (Ctrl/Cmd+K). */
 fun paletteCommands(nav: Navigator, focusSearch: () -> Unit): List<Pair<String, () -> Unit>> = buildList {
     add("New invoice" to { nav.push(Route.InvoiceEditor(null)) })
+    add("POS billing (counter)" to { nav.push(Route.Pos()) })
     add("New purchase bill" to { nav.push(Route.InvoiceEditor(null, VoucherType.PURCHASE)) })
     add("Record payment in" to { nav.push(Route.MoneyEditor(VoucherType.PAYMENT_IN)) })
     add("Record payment out" to { nav.push(Route.MoneyEditor(VoucherType.PAYMENT_OUT)) })

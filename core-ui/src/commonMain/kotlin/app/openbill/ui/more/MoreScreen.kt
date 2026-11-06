@@ -80,6 +80,7 @@ fun MoreScreen(
     onReports: () -> Unit = {},
     onBooks: () -> Unit = {},
     onAudit: () -> Unit = {},
+    onPos: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -190,6 +191,7 @@ fun MoreScreen(
 
                 SectionHeader("Purchases and stock")
                 listOf(
+                    Triple("POS billing", "Fast counter sales: scan items, split payment, hold bills", onPos),
                     Triple("Purchases", "Supplier bills and purchase returns", onPurchases),
                     Triple("Stock", "Stock summary, valuation, adjustments and transfers", onStock),
                     Triple("Godowns", "Stock locations", onGodowns),

@@ -653,7 +653,7 @@ private fun TotalsBar(
 }
 
 @Composable
-private fun LineEditor(
+internal fun LineEditor(
     form: LineForm?,
     batches: List<Pair<Batch, Quantity>>,
     slabs: List<Rate>,

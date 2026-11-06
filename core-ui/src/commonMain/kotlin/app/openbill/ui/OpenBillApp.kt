@@ -294,8 +294,9 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
                 when {
                     e.key == Key.Escape -> keyBack.dispatch()
                     mod && e.key == Key.N -> {
-                        if (route !is Route.InvoiceEditor) nav.push(Route.InvoiceEditor(null))
-                        true
+                        // POS handles its own "new bill" key (F9); Ctrl+N must not leave the counter.
+                        if (route !is Route.InvoiceEditor && route !is Route.Pos) nav.push(Route.InvoiceEditor(null))
+                        route !is Route.Pos
                     }
                     mod && e.key == Key.K -> {
                         palette = true
@@ -503,6 +504,7 @@ private fun RouteContent(
                 onAddParty = { nav.push(Route.PartyEdit(null)) },
                 onStock = { low -> nav.push(Route.StockSummary(low)) },
                 onMoney = { c -> if (c == MoneyCard.CASH_BANK) nav.selectTab(Tab.MONEY) else nav.push(moneyCardRoute(c)) },
+                onPos = { nav.push(Route.Pos()) },
             )
             Tab.MONEY -> MoneyScreen(
                 container, s,
@@ -531,6 +533,7 @@ private fun RouteContent(
                 onReports = { nav.push(Route.Reports) },
                 onBooks = { nav.push(Route.BooksLock) },
                 onAudit = { nav.push(Route.AuditLog) },
+                onPos = { nav.push(Route.Pos()) },
             )
         }
         is Route.PartyEdit -> PartyEditScreen(
@@ -637,7 +640,14 @@ private fun RouteContent(
         Route.AuditLog -> AuditLogScreen(container, s, onBack = nav::pop)
         Route.Recurring -> app.openbill.ui.recurring.RecurringListScreen(container, s, onBack = nav::pop, onOpenInvoice = { id -> nav.push(Route.InvoiceDetail(id)) })
         Route.BooksLock -> BooksLockScreen(container, s, onBack = nav::pop)
-        is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler)
+        is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler, receipt = route.receipt)
+        is Route.Pos -> app.openbill.ui.pos.PosScreen(
+            container, s, route.voucherId,
+            onClose = nav::pop,
+            onReceipt = { id -> nav.push(Route.InvoicePdf(id, receipt = true)) },
+            onOpenInvoice = { id -> nav.push(Route.InvoiceDetail(id)) },
+            backHandler = backHandler,
+        )
         Route.BusinessEdit -> BusinessEditScreen(container, s, onDone = nav::pop, backHandler = backHandler)
         Route.InvoiceTemplates -> InvoiceTemplatesScreen(container, s, onBack = nav::pop, backHandler = backHandler)
         Route.Introduction -> OnboardingScreen(

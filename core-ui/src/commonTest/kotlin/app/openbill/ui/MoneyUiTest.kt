@@ -32,6 +32,10 @@ class MoneyUiTest {
             Route.Outstanding(false),
             Route.PartyLedger("p1"),
             Route.Documents(VoucherType.QUOTATION),
+            Route.Pos(),
+            Route.Pos("held-1"),
+            Route.InvoicePdf("v1"),
+            Route.InvoicePdf("v1", receipt = true),
         ).forEach { assertEquals(it, Route.fromKey(it.key)) }
     }
 

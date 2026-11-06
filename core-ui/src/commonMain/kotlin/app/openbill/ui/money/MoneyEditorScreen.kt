@@ -365,8 +365,9 @@ fun MoneyEditorScreen(
     }
 }
 
-private fun refLabel(m: PaymentMethod): String = when (m) {
+internal fun refLabel(m: PaymentMethod): String = when (m) {
     PaymentMethod.UPI -> "UPI reference / UTR"
+    PaymentMethod.CARD -> "Card approval code"
     PaymentMethod.CHEQUE -> "Cheque number"
     PaymentMethod.BANK -> "Bank reference"
     PaymentMethod.CASH -> "Reference"
