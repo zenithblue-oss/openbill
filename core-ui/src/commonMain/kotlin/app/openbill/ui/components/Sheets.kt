@@ -12,6 +12,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,6 +54,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
@@ -183,17 +185,28 @@ fun DateField(
     onDateChange: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
     error: String? = null,
+    /** Non-null for an optional date: shows a clear button once a date is set. */
+    onClear: (() -> Unit)? = null,
 ) {
     var open by rememberSaveable { mutableStateOf(false) }
-    PickerField(
+    @Composable
+    fun field(m: Modifier) = PickerField(
         label = label,
         value = date?.let { Fmt.dateLong(it) } ?: "",
         onClick = { open = true },
-        modifier = modifier,
+        modifier = m,
         error = error,
         placeholder = "Choose a date",
         trailingIcon = Icons.Filled.DateRange,
     )
+    if (onClear != null && date != null) {
+        Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+            field(Modifier.weight(1f))
+            IconButton(onClick = onClear) { Icon(Icons.Filled.Close, contentDescription = "Clear $label") }
+        }
+    } else {
+        field(modifier)
+    }
     if (open) {
         val state = rememberDatePickerState(initialSelectedDateMillis = date?.let { PickerDates.toUtcMillis(it) })
         DatePickerDialog(

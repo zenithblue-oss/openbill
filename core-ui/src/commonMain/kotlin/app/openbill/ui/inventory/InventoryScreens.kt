@@ -514,7 +514,7 @@ fun StockEntryScreen(
                 }
                 if (item?.trackBatch == true) {
                     FormField("Batch number *", batch, { batch = it })
-                    if (inward || transfer) DateField("Expiry date", expiry, { expiry = it })
+                    if (inward || transfer) DateField("Expiry date", expiry, { expiry = it }, onClear = { expiry = null })
                 }
                 if (item?.trackSerial == true) {
                     FormField(
