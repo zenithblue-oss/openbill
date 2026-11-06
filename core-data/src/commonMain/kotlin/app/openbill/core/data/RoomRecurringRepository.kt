@@ -24,7 +24,15 @@ class RoomRecurringRepository(
 
     override suspend fun findSchedule(id: String): RecurringSchedule? = dao.findById(id)?.toDomain()
 
-    override suspend fun saveSchedule(schedule: RecurringSchedule) = transactions.write { dao.upsert(schedule.toEntity()) }
+    /** Counters never move back, so saving a stale copy (pause, error note) cannot re-bill a claimed period. */
+    override suspend fun saveSchedule(schedule: RecurringSchedule) = transactions.write {
+        val stored = dao.findById(schedule.id)
+        val merged = if (stored == null) schedule else schedule.copy(
+            nextIndex = maxOf(schedule.nextIndex, stored.nextIndex),
+            generatedCount = maxOf(schedule.generatedCount, stored.generatedCount),
+        )
+        dao.upsert(merged.toEntity())
+    }
 
     override suspend fun deleteSchedule(id: String) {
         transactions.write { dao.deleteById(id) }

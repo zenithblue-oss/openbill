@@ -129,6 +129,31 @@ class OrdersAndRecurringTest {
     }
 
     @Test
+    fun leapYearsAndMonthEndsClampWithoutDrift() {
+        val monthly = schedule(LocalDate(2028, 1, 31))
+        assertEquals(LocalDate(2028, 2, 29), monthly.occurrence(1), "leap February")
+        assertEquals(LocalDate(2028, 3, 31), monthly.occurrence(2))
+        val yearly = schedule(LocalDate(2028, 2, 29)).copy(frequency = RecurrenceFrequency.YEARLY)
+        assertEquals(listOf(LocalDate(2029, 2, 28), LocalDate(2032, 2, 29)), listOf(yearly.occurrence(1), yearly.occurrence(4)))
+    }
+
+    @Test
+    fun savingAStaleCopyNeverRewindsTheSchedule(): Unit = runBlocking {
+        val vouchers = InMemoryVoucherRepository()
+        val recurring = InMemoryRecurringRepository(vouchers)
+        vouchers.saveDraft(voucher("tpl", VoucherType.SALE, listOf(line("l1", 1))))
+        recurring.saveSchedule(schedule(LocalDate(2026, 6, 10)))
+        val stale = recurring.findSchedule("r")!!
+        val generate = GenerateRecurring(recurring, vouchers) { _, _ -> }
+        assertEquals(2, generate("f", LocalDate(2026, 7, 10), at, ::id) { "fy" })
+        // A screen still holding the old copy pauses it: the claimed periods stay claimed.
+        recurring.saveSchedule(stale.copy(paused = true))
+        recurring.saveSchedule(recurring.findSchedule("r")!!.copy(paused = false))
+        assertEquals(0, generate("f", LocalDate(2026, 7, 10), at, ::id) { "fy" })
+        assertEquals(2, recurring.findSchedule("r")!!.nextIndex)
+    }
+
+    @Test
     fun missingFinancialYearStopsWithAnError(): Unit = runBlocking {
         val vouchers = InMemoryVoucherRepository()
         val recurring = InMemoryRecurringRepository(vouchers)

@@ -88,6 +88,11 @@ class RoomOrdersRecurringTest {
         assertEquals(listOf(LocalDate(2026, 6, 5), LocalDate(2026, 7, 5), LocalDate(2026, 8, 5)), drafts.map { it.date }.sorted())
         assertEquals(3, r.recurring.findSchedule("rs")!!.nextIndex)
         assertFalse(r.recurring.claimOccurrence("rs", 1, null), "a handled period cannot be claimed again")
+        // Pausing from a stale copy (nextIndex 0) must not rewind the claimed periods.
+        r.recurring.saveSchedule(r.recurring.findSchedule("rs")!!.copy(nextIndex = 0, generatedCount = 0, paused = true))
+        assertEquals(3, r.recurring.findSchedule("rs")!!.nextIndex)
+        assertEquals(3, r.recurring.findSchedule("rs")!!.generatedCount)
+        assertTrue(r.recurring.findSchedule("rs")!!.paused)
         r.recurring.deleteSchedule("rs")
         assertTrue(r.recurring.observeSchedules("firm-1").first().isEmpty())
     }

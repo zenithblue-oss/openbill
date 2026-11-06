@@ -20,8 +20,15 @@ class InMemoryRecurringRepository(private val vouchers: VoucherRepository? = nul
 
     override suspend fun findSchedule(id: String): RecurringSchedule? = schedules.value.firstOrNull { it.id == id }
 
-    override suspend fun saveSchedule(schedule: RecurringSchedule) {
-        schedules.update { all -> all.filterNot { it.id == schedule.id } + schedule }
+    override suspend fun saveSchedule(schedule: RecurringSchedule) = mutex.withLock {
+        schedules.update { all ->
+            val stored = all.firstOrNull { it.id == schedule.id }
+            val merged = if (stored == null) schedule else schedule.copy(
+                nextIndex = maxOf(schedule.nextIndex, stored.nextIndex),
+                generatedCount = maxOf(schedule.generatedCount, stored.generatedCount),
+            )
+            all.filterNot { it.id == schedule.id } + merged
+        }
     }
 
     override suspend fun deleteSchedule(id: String) {
