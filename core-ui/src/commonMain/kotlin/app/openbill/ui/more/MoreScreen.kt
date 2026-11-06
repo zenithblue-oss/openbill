@@ -151,7 +151,7 @@ fun MoreScreen(
                             modifier = Modifier.clickable(role = Role.Button) { container.activeFirm.select(other.id) },
                         )
                     }
-                    if (can(Permission.SETTINGS)) ListItem(
+                    if (can(Permission.OWNER_CONTROLS)) ListItem(
                         headlineContent = { Text("Add another business") },
                         supportingContent = { Text("Each business has its own parties, items, invoices and numbering") },
                         leadingContent = { Icon(Icons.Outlined.Add, contentDescription = null) },
@@ -307,7 +307,7 @@ fun MoreScreen(
 
                 if (can(Permission.SETTINGS)) ReminderTemplateItem(container, firm.id, listColors)
                 if (can(Permission.EXPORT) || can(Permission.CREATE_VOUCHERS)) CsvSection(container, session, listColors)
-                if (can(Permission.SETTINGS)) app.openbill.ui.settings.AppLockItem(container, listColors)
+                if (can(Permission.OWNER_CONTROLS)) app.openbill.ui.settings.AppLockItem(container, listColors)
                 if (can(Permission.MANAGE_USERS)) ListItem(
                     headlineContent = { Text("Users and roles") },
                     supportingContent = { Text("Staff with their own PIN: manager, cashier, accountant (CA)") },
@@ -316,7 +316,7 @@ fun MoreScreen(
                     modifier = Modifier.clickable(role = Role.Button, onClick = onUsers),
                 )
                 if (can(Permission.BACKUP_RESTORE)) BackupSection(listColors)
-                if (can(Permission.SETTINGS)) DeleteFirmItem(firm.name, listColors) {
+                if (can(Permission.OWNER_CONTROLS)) DeleteFirmItem(firm.name, listColors) {
                     // Files go only after the erase transaction commits, so a rollback never loses them.
                     container.repositories.firms.eraseFirm(firm.id).forEach { runCatching { container.platform.deleteAllAttachments(it) } }
                     app.openbill.ui.pdf.ImageKind.entries.forEach { runCatching { container.platform.saveFirmImage(firm.id, it, null) } }

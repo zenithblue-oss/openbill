@@ -31,6 +31,8 @@ class RoomFirmRepository(
         Access.require(Permission.SETTINGS)
         transactions.write {
             val existing = firms.findById(firm.id)
+            // Adding a business stays with the owner even when managers may change settings.
+            if (existing == null) Access.require(Permission.OWNER_CONTROLS)
             val entity = firm.toEntity(existing)
             if (existing == null) {
                 firms.insert(entity)
@@ -42,7 +44,7 @@ class RoomFirmRepository(
     }
 
     override suspend fun archiveFirm(id: String, at: Instant) {
-        Access.require(Permission.SETTINGS)
+        Access.require(Permission.OWNER_CONTROLS)
         transactions.write {
             firms.softDelete(
                 id = id,
@@ -58,7 +60,7 @@ class RoomFirmRepository(
      * any failure rolls back both the rows and the trigger change.
      */
     override suspend fun eraseFirm(id: String): List<String> {
-        Access.require(Permission.SETTINGS)
+        Access.require(Permission.OWNER_CONTROLS)
         val inVouchers = "voucherId IN (SELECT id FROM vouchers WHERE firmId = ?)"
         val inItems = "itemId IN (SELECT id FROM items WHERE firmId = ?)"
         val deletes = listOf(

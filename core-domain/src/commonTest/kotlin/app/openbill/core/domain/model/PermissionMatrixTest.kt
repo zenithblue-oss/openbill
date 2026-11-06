@@ -27,6 +27,7 @@ class PermissionMatrixTest {
             Permission.SETTINGS to setOf(o),
             Permission.MANAGE_USERS to setOf(o),
             Permission.BACKUP_RESTORE to setOf(o),
+            Permission.OWNER_CONTROLS to setOf(o),
         )
         assertEquals(Permission.entries.toSet(), expected.keys, "every permission is in the matrix")
         val code = mapOf(Role.OWNER to o, Role.MANAGER to m, Role.CASHIER to c, Role.ACCOUNTANT to a)
@@ -34,6 +35,38 @@ class PermissionMatrixTest {
             for (role in Role.entries) {
                 assertEquals(code.getValue(role) in roles, permission in role.permissions, "$role / $permission")
             }
+        }
+    }
+
+    @Test
+    fun managersGetOnlyOperationalSettingsWhenTheOwnerAllowsIt() {
+        val at = Instant.fromEpochMilliseconds(0)
+        val manager = AppUser("u-m", "Asha", Role.MANAGER, pinHash = "x", createdAt = at)
+        val cashier = AppUser("u-c", "Ravi", Role.CASHIER, pinHash = "x", createdAt = at)
+        try {
+            Access.current = manager
+            assertEquals(false, Access.can(Permission.SETTINGS), "off by default")
+            assertFailsWith<PermissionDeniedException>("only the owner flips the switch") { Access.setManagersChangeSettings(true) }
+
+            Access.current = null
+            Access.setManagersChangeSettings(true)
+            val withSwitch = Role.entries.associateWith { r ->
+                Access.current = if (r == Role.OWNER) null else AppUser("u", "U", r, pinHash = "x", createdAt = at)
+                Permission.entries.filter { Access.can(it) }.toSet()
+            }
+            assertEquals(Role.MANAGER.permissions + Permission.SETTINGS, withSwitch[Role.MANAGER])
+            for (p in listOf(Permission.MANAGE_USERS, Permission.BACKUP_RESTORE, Permission.OWNER_CONTROLS)) assertEquals(false, p in withSwitch.getValue(Role.MANAGER), "$p")
+            assertEquals(Role.CASHIER.permissions, withSwitch[Role.CASHIER], "cashiers never get settings")
+            assertEquals(Role.ACCOUNTANT.permissions, withSwitch[Role.ACCOUNTANT])
+            assertEquals(Permission.entries.toSet(), withSwitch[Role.OWNER])
+
+            Access.current = manager
+            assertFailsWith<PermissionDeniedException>("a manager cannot turn it off either") { Access.setManagersChangeSettings(false) }
+            Access.current = cashier
+            assertEquals(false, Access.can(Permission.SETTINGS))
+        } finally {
+            Access.current = null
+            Access.setManagersChangeSettings(false)
         }
     }
 

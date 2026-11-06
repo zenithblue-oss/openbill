@@ -75,6 +75,18 @@ class AppLockController(private val store: SettingsStore) {
     private var backgroundAt: Long? = null
     private var lastActivityAt: Long? = null
 
+    init {
+        Access.loadManagersChangeSettings(runCatching { store.getString(KEY_MANAGER_SETTINGS) }.getOrNull() == "true")
+    }
+
+    /** Owner's switch: managers may change business settings (default off); persisted on this device. */
+    var managersChangeSettings: Boolean
+        get() = Access.managersChangeSettings
+        set(value) {
+            Access.setManagersChangeSettings(value)
+            store.putString(KEY_MANAGER_SETTINGS, value.toString())
+        }
+
     /** Desktop: minutes without input before it locks again; 0 = never. When set, minimising locks too. */
     var idleMinutes: Int
         get() = store.getString(KEY_IDLE_MINUTES)?.toIntOrNull() ?: 0
@@ -190,6 +202,7 @@ class AppLockController(private val store: SettingsStore) {
         const val KEY_FAILURES = "lock.failures"
         const val KEY_RETRY_AT = "lock.retryAt"
         const val KEY_IDLE_MINUTES = "lock.idleMinutes"
+        const val KEY_MANAGER_SETTINGS = "access.managersChangeSettings"
         const val FREE_TRIES = 3
         val IDLE_CHOICES = listOf(0, 1, 5, 15, 30)
 

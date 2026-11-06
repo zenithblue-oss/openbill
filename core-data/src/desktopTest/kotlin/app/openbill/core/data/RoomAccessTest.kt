@@ -121,6 +121,30 @@ class RoomAccessTest {
     }
 
     @Test
+    fun managerChangesSettingsOnlyWhenAllowedAndNeverOwnerControls(): Unit = runBlocking {
+        val manager = AppUser("u-m", "Asha", Role.MANAGER, pinHash = "1:00:00", createdAt = CREATED_AT)
+        repos.users.saveUser(manager)
+        try {
+            Access.current = manager
+            assertFailsWith<PermissionDeniedException> { repos.firms.saveSettings(testSettings(negativeStockAllowed = false)) }
+            Access.current = null
+            Access.setManagersChangeSettings(true)
+            Access.current = manager
+            repos.firms.saveSettings(testSettings(negativeStockAllowed = false))
+            repos.firms.saveFirm(repos.firms.findFirm("firm-1")!!.copy(name = "Renamed by manager"))
+            assertFailsWith<PermissionDeniedException>("adding a business") { repos.firms.saveFirm(testFirm().copy(id = "firm-2")) }
+            assertFailsWith<PermissionDeniedException>("erasing a business") { repos.firms.eraseFirm("firm-1") }
+            assertFailsWith<PermissionDeniedException>("archiving a business") { repos.firms.archiveFirm("firm-1", ARCHIVED_AT) }
+            assertFailsWith<PermissionDeniedException>("users") { repos.users.saveUser(cashier.copy(role = Role.MANAGER)) }
+            Access.current = cashier
+            assertFailsWith<PermissionDeniedException>("cashiers never") { repos.firms.saveSettings(testSettings(negativeStockAllowed = true)) }
+        } finally {
+            Access.current = null
+            Access.setManagersChangeSettings(false)
+        }
+    }
+
+    @Test
     fun draftCreationIsLoggedOnce(): Unit = runBlocking {
         Access.current = cashier
         repos.vouchers.saveDraft(service("v-1"))

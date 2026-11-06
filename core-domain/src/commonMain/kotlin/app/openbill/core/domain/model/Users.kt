@@ -23,6 +23,8 @@ enum class Permission(val verb: String) {
     SETTINGS("change settings"),
     MANAGE_USERS("manage users"),
     BACKUP_RESTORE("back up or restore"),
+    /** Owner-only even when managers may change settings: app lock, adding or erasing a business, that switch itself. */
+    OWNER_CONTROLS("change the app lock, add or erase a business, or who changes settings"),
 }
 
 val Role.permissions: Set<Permission>
@@ -77,7 +79,28 @@ object Access {
     val role: Role get() = current?.role ?: Role.OWNER
     val actorId: String get() = current?.id ?: OWNER_ID
 
-    fun can(permission: Permission): Boolean = permission in role.permissions
+    /**
+     * Owner's switch "Managers can change business settings" (off by default): managers then also
+     * hold [Permission.SETTINGS]. Loaded from the device settings at start; changed only via
+     * [setManagersChangeSettings].
+     */
+    @Volatile
+    var managersChangeSettings: Boolean = false
+        private set
+
+    /** Startup load of the persisted switch (no permission check: nobody is signed in yet). */
+    fun loadManagersChangeSettings(on: Boolean) {
+        managersChangeSettings = on
+    }
+
+    /** The owner turns the switch on or off. */
+    fun setManagersChangeSettings(on: Boolean) {
+        require(Permission.OWNER_CONTROLS)
+        managersChangeSettings = on
+    }
+
+    fun can(permission: Permission): Boolean = permission in role.permissions ||
+        (permission == Permission.SETTINGS && role == Role.MANAGER && managersChangeSettings)
 
     fun require(permission: Permission) {
         if (!can(permission)) throw PermissionDeniedException(permission, role)

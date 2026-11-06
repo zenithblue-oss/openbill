@@ -85,6 +85,28 @@ fun UsersScreen(container: AppContainer, session: Session, onBack: () -> Unit) {
                     )
                 }
                 item {
+                    var managersSettings by remember { mutableStateOf(container.appLock.managersChangeSettings) }
+                    val scope = rememberCoroutineScope()
+                    ListItem(
+                        headlineContent = { Text("Managers can change business settings") },
+                        supportingContent = {
+                            Text("Default godown, negative stock, numbering, templates and other settings. Users, backups, app lock and adding or deleting a business stay with the owner.")
+                        },
+                        trailingContent = { Switch(checked = managersSettings, onCheckedChange = null) },
+                        modifier = Modifier.toggleable(managersSettings, role = SemanticsRole.Switch) { on ->
+                            container.appLock.managersChangeSettings = on
+                            managersSettings = on
+                            scope.launch {
+                                runCatching {
+                                    container.repositories.audit.record(
+                                        AuditEvent(container.newId(), session.firm.id, "settings", "managersChangeSettings", action = "settings.managers_change_settings", detailsJson = "{\"on\":$on}", createdAt = container.now()),
+                                    )
+                                }
+                            }
+                        },
+                    )
+                }
+                item {
                     Column(Modifier.padding(horizontal = pageGutter), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         SectionHeader("What each role can do")
                         Role.entries.forEach { r -> Text("${r.label}: ${r.summary}", style = MaterialTheme.typography.bodySmall) }
