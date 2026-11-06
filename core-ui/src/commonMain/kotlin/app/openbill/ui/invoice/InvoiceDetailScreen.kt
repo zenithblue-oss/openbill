@@ -172,9 +172,10 @@ fun InvoiceDetailScreen(
         }
         val summary = remember(v) {
             runCatching {
-                InvoiceMath.summarizeStored(v.lines, session.firm.stateCode, v.placeOfSupplyStateCode, v.roundOff, v.total, session.settings.roundingMode, v.charges, v.reverseCharge, v.export != null)
+                InvoiceMath.summarizeStored(v.lines, session.firm.stateCode, v.placeOfSupplyStateCode, v.roundOff, v.total, session.settings.roundingMode, v.charges, v.reverseCharge, v.export != null, v.exchangeRate)
             }.getOrNull()
         }
+        val foreign = remember(v) { InvoiceMath.foreignSummary(v, session.firm.stateCode, session.settings.roundingMode) }
         CenteredContent(Modifier.padding(padding)) {
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = pageGutter),
@@ -222,7 +223,7 @@ fun InvoiceDetailScreen(
                 val showBilled = v.type.isOrder() && v.status != VoucherStatus.DRAFT
                 val billed = if (showBilled) Orders.converted(conversions) else emptyMap()
                 v.lines.forEach { line ->
-                    LineCard(line, line.itemId?.let { units[it] }, if (showBilled) billed[line.id] ?: Quantity.of(0) else null)
+                    LineCard(line, line.itemId?.let { units[it] }, if (showBilled) billed[line.id] ?: Quantity.of(0) else null, v.currency, v.exchangeRate)
                 }
 
                 SectionHeader("Totals")
@@ -247,13 +248,23 @@ fun InvoiceDetailScreen(
                         }
                         if (v.roundOff.paise != 0L) AmountRow("Round off", Fmt.inrSigned(v.roundOff))
                         HorizontalDivider(Modifier.padding(vertical = Spacing.sm))
-                        AmountRow("Total", v.total, emphasize = true)
+                        AmountRow(if (v.currency == null) "Total" else "Total (INR)", v.total, emphasize = true)
                         Text(
                             AmountInWords.rupees(v.total),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = Spacing.xs),
                         )
+                        if (foreign != null && v.currency != null) {
+                            HorizontalDivider(Modifier.padding(vertical = Spacing.sm))
+                            AmountRow("Total (${v.currency})", Fmt.money(foreign.grandTotal, v.currency))
+                            Text(
+                                "Rupee amounts converted at ₹${Fmt.qty(v.exchangeRate!!)} per ${v.currency}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = Spacing.xs),
+                            )
+                        }
                     }
                 }
                 v.notes?.let {
@@ -461,7 +472,7 @@ private fun MetaRow(label: String, value: String) {
 
 /** One invoice line: name and amount on top, then a label/value grid that never breaks mid-figure. */
 @Composable
-private fun LineCard(line: VoucherLine, unit: String?, billed: Quantity? = null) {
+private fun LineCard(line: VoucherLine, unit: String?, billed: Quantity? = null, currency: String? = null, exchangeRate: Quantity? = null) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.md)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
@@ -475,8 +486,14 @@ private fun LineCard(line: VoucherLine, unit: String?, billed: Quantity? = null)
                 Text(Fmt.inr(line.total), style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
             }
             Spacer(Modifier.height(Spacing.xs))
-            val gross = InvoiceMath.gross(line.quantity, line.rate)
-            AmountRow("${Fmt.qtyUnit(line.quantity, unit)} × ${Fmt.inr(line.rate)}", Fmt.inr(gross))
+            val foreignRate = line.foreignRate
+            if (currency != null && foreignRate != null) {
+                AmountRow("${Fmt.qtyUnit(line.quantity, unit)} × ${Fmt.money(foreignRate, currency)}", Fmt.money(InvoiceMath.gross(line.quantity, foreignRate), currency))
+                line.foreignDiscount?.takeIf { it.paise != 0L }?.let { AmountRow("Discount ($currency)", "−" + Fmt.money(it, currency)) }
+            }
+            val gross = InvoiceMath.storedGross(line, exchangeRate)
+            // Foreign lines: the rupee value is the converted line value, not quantity times the rounded rupee rate.
+            AmountRow(if (currency != null && foreignRate != null) "Value in rupees" else "${Fmt.qtyUnit(line.quantity, unit)} × ${Fmt.inr(line.rate)}", Fmt.inr(gross))
             if (line.freeQuantity.scaledUnits > 0) AmountRow("Free: ${Fmt.qtyUnit(line.freeQuantity, unit)}", Fmt.inr(Money.ZERO))
             if (!line.itcEligible) AmountRow("Input tax credit", "Not claimed")
             if (line.discount.paise != 0L) AmountRow("Discount", Fmt.inrDeduction(line.discount))

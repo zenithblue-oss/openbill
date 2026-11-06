@@ -36,6 +36,7 @@ import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.TransportDetails
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.model.Quantity
 import app.openbill.core.tax.Gstin
 import app.openbill.ui.components.DateField
 import app.openbill.ui.components.FormField
@@ -45,6 +46,7 @@ import app.openbill.ui.components.PickerSheet
 import app.openbill.ui.components.SectionHeader
 import app.openbill.ui.components.SelectableChip
 import app.openbill.ui.format.Fmt
+import app.openbill.ui.format.Parse
 import app.openbill.ui.nav.WidthClass
 import app.openbill.ui.settings.SettingsStore
 import app.openbill.ui.theme.Spacing
@@ -68,6 +70,9 @@ data class DocFieldsForm(
     val portCode: String = "",
     val lutReference: String = "",
     val currencyNote: String = "",
+    /** Foreign-currency invoice: ISO code (blank for rupees) and rupees per unit. */
+    val currency: String = "",
+    val exchangeRate: String = "",
     val ecommerceGstin: String = "",
     val poNumber: String = "",
     val poDate: LocalDate? = null,
@@ -105,6 +110,8 @@ object DocFieldRules {
             portCode = v.export?.portCode.orEmpty(),
             lutReference = v.export?.lutReference.orEmpty(),
             currencyNote = v.export?.currencyNote.orEmpty(),
+            currency = v.export?.currency.orEmpty(),
+            exchangeRate = v.export?.exchangeRate?.format().orEmpty(),
             ecommerceGstin = v.ecommerceGstin.orEmpty(),
             poNumber = v.poNumber.takeIf { keepShipping }.orEmpty(),
             poDate = v.poDate.takeIf { keepShipping },
@@ -126,6 +133,11 @@ object DocFieldRules {
         if (eway.isNotEmpty() && (eway.length != 12 || !eway.all(Char::isDigit))) put("eway", "E-way bill numbers are 12 digits")
         val port = f.portCode.trim()
         if (f.exportType != null && port.isNotEmpty() && (port.length != 6 || !port.all { it.isLetterOrDigit() })) put("port", "Port codes are 6 letters and digits, e.g. INBOM1")
+        if (f.exportType != null && supportsExport(type)) {
+            val code = f.currency.trim().uppercase()
+            if (code.isNotEmpty() && (!ExportDetails.isCurrencyCode(code) || code == "INR")) put("currency", "Use a 3-letter code such as USD, or leave blank for rupees")
+            if (code.isNotEmpty() && Parse.quantity(f.exchangeRate.trim())?.takeIf { it > Quantity.of(0) } == null) put("exchangeRate", "Enter the rupees one $code buys, e.g. 83.1050")
+        }
         if (post && f.reverseCharge && type == VoucherType.SALE && party?.gstin?.trim()?.uppercase()?.let(Gstin::isValid) != true) {
             put("reverseCharge", "Reverse charge needs a registered customer (with a GSTIN)")
         }
@@ -145,6 +157,7 @@ object DocFieldRules {
     ).takeUnless { it.isEmpty() }
 
     fun export(f: DocFieldsForm): ExportDetails? = f.exportType?.let {
+        val fx = exchange(f)
         ExportDetails(
             type = it,
             shippingBillNumber = clean(f.shippingBillNumber, 20).ifEmpty { null },
@@ -152,7 +165,17 @@ object DocFieldRules {
             portCode = clean(f.portCode, 6).uppercase().ifEmpty { null },
             lutReference = clean(f.lutReference).ifEmpty { null },
             currencyNote = clean(f.currencyNote, 80).ifEmpty { null },
+            currency = fx?.first,
+            exchangeRate = fx?.second,
         )
+    }
+
+    /** The foreign currency and rupees per unit of an export, or null for a rupee invoice (or while invalid). */
+    fun exchange(f: DocFieldsForm): Pair<String, Quantity>? {
+        if (f.exportType == null) return null
+        val code = f.currency.trim().uppercase().takeIf { ExportDetails.isCurrencyCode(it) && it != "INR" } ?: return null
+        val rate = Parse.quantity(f.exchangeRate.trim())?.takeIf { it > Quantity.of(0) } ?: return null
+        return code to rate
     }
 
     fun custom(f: DocFieldsForm): List<DocumentField> = f.custom.mapNotNull { (label, value) ->
@@ -248,7 +271,27 @@ fun DocumentFieldsSection(
                 { m -> FormField("Port code", form.portCode, { onChange(form.copy(portCode = it.take(6))) }, m, error = errors["port"], capitalization = KeyboardCapitalization.Characters, placeholder = "INBOM1") },
                 { m -> FormField("LUT / bond reference", form.lutReference, { onChange(form.copy(lutReference = it)) }, m, capitalization = KeyboardCapitalization.Characters) },
             )
-            FormField("Currency (printed only)", form.currencyNote, { onChange(form.copy(currencyNote = it)) }, supporting = "e.g. USD 1,200.00 at 83.10; totals stay in rupees")
+            val code = form.currency.trim().uppercase()
+            pair(
+                { m ->
+                    FormField(
+                        "Invoice currency", form.currency, { onChange(form.copy(currency = it.filter(Char::isLetter).take(3).uppercase())) }, m,
+                        error = errors["currency"], capitalization = KeyboardCapitalization.Characters, placeholder = "INR",
+                        supporting = if (code.isEmpty()) "Blank for rupees; e.g. USD to bill in dollars" else "Rates and charges on this invoice are in $code",
+                    )
+                },
+                { m ->
+                    if (code.isNotEmpty()) {
+                        FormField(
+                            "Exchange rate (₹ per 1 $code) *", form.exchangeRate, { onChange(form.copy(exchangeRate = it)) }, m,
+                            error = errors["exchangeRate"], keyboardType = KeyboardType.Decimal, prefix = "₹",
+                            supporting = "GST, ledger and returns use rupees at this rate",
+                        )
+                    }
+                },
+            )
+            // Free-text currency notes from before foreign-currency invoices stay editable.
+            if (form.currencyNote.isNotEmpty()) FormField("Currency note (printed only)", form.currencyNote, { onChange(form.copy(currencyNote = it)) })
         }
     }
     toggle("Transport details", "Transporter, vehicle, LR number and distance", transportOpen || hasTransport) { transportOpen = it }

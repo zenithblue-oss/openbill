@@ -99,11 +99,11 @@ fun ChargesSection(state: InvoiceEditorState, onAdd: () -> Unit, onEdit: (DraftC
                 Column(Modifier.padding(Spacing.md)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.Top) {
                         Text(c.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        AnimatedMoney(result?.result?.totalAmount, MaterialTheme.typography.titleSmall)
+                        AnimatedMoney(result?.result?.totalAmount, MaterialTheme.typography.titleSmall, currency = state.currency)
                     }
                     Text(
                         buildList {
-                            add(Fmt.inr(c.amount))
+                            add(Fmt.money(c.amount, state.currency))
                             add(
                                 when (c.basis) {
                                     ChargeTaxBasis.NON_TAXABLE -> "No GST"
@@ -134,6 +134,7 @@ fun ChargeEditor(
     onSave: (ChargeForm) -> Map<String, String>,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
+    currency: String? = null,
 ) {
     // While the editor animates out (form == null) it keeps showing the last edited values.
     val holder = remember { object { var last = ChargeForm() } }
@@ -163,7 +164,7 @@ fun ChargeEditor(
                 { edit = edit.copy(amount = it) },
                 error = errors["amount"],
                 keyboardType = KeyboardType.Decimal,
-                prefix = "₹",
+                prefix = if (currency == null) "₹" else "$currency ",
                 imeAction = ImeAction.Done,
                 onImeAction = { errors = onSave(edit) },
             )

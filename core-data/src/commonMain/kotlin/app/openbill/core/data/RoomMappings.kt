@@ -429,6 +429,8 @@ internal fun VoucherEntity.toDomain(
             portCode = exportPortCode,
             lutReference = lutReference,
             currencyNote = currencyNote,
+            currency = currency,
+            exchangeRate = exchangeRate?.let(Quantity::ofScaledUnits),
         )
     },
     ecommerceGstin = ecommerceGstin,
@@ -455,6 +457,8 @@ internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = Voucher
     exportPortCode = export?.portCode,
     lutReference = export?.lutReference,
     currencyNote = export?.currencyNote,
+    currency = export?.currency,
+    exchangeRate = export?.exchangeRate?.scaledUnits,
     ecommerceGstin = ecommerceGstin,
     poNumber = poNumber,
     poDate = poDate?.toString(),
@@ -517,6 +521,8 @@ internal fun VoucherLineEntity.toDomain(): VoucherLine = VoucherLine(
     freeQuantity = Quantity.ofScaledUnits(freeQuantity),
     itcEligible = itcEligible,
     sourceLineId = sourceLineId,
+    foreignRate = foreignRate?.let(Money::of),
+    foreignDiscount = foreignDiscount?.let(Money::of),
 )
 
 internal fun VoucherLine.toEntity(
@@ -550,6 +556,8 @@ internal fun VoucherLine.toEntity(
     freeQuantity = freeQuantity.scaledUnits,
     itcEligible = itcEligible,
     sourceLineId = sourceLineId,
+    foreignRate = foreignRate?.paise,
+    foreignDiscount = foreignDiscount?.paise,
     sync = syncFor(
         createdAt = voucher.createdAt,
         updatedAt = voucher.updatedAt,
@@ -599,6 +607,7 @@ internal fun VoucherChargeEntity.toDomain(
     treatment = decodeEnum<TaxTreatment>(treatment, "charge tax treatment"),
     hsnSac = hsnSac,
     portions = portions.map { it.toDomain() },
+    foreignAmount = foreignAmount?.let(Money::of),
 )
 
 internal fun VoucherCharge.toEntity(voucherId: String): VoucherChargeEntity =
@@ -616,6 +625,7 @@ internal fun VoucherCharge.toEntity(voucherId: String): VoucherChargeEntity =
         taxMode = taxMode.name.lowercase(),
         treatment = treatment.name.lowercase(),
         hsnSac = hsnSac,
+        foreignAmount = foreignAmount?.paise,
     )
 
 internal fun VoucherType.documentTypeCode(): String = name.lowercase()

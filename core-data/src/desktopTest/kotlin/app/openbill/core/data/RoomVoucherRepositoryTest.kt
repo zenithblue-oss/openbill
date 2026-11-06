@@ -73,6 +73,33 @@ class RoomVoucherRepositoryTest {
     }
 
     @Test
+    fun foreignCurrencyFieldsRoundTrip(): Unit = runBlocking {
+        seedMasterData()
+        val draft = testVoucher(
+            lines = listOf(testLine().copy(foreignRate = Money.of(150L), foreignDiscount = Money.of(10L))),
+            charges = listOf(testCharge().copy(foreignAmount = Money.of(6L))),
+        ).copy(
+            export = app.openbill.core.domain.model.ExportDetails(
+                app.openbill.core.domain.model.ExportType.EXPORT_UNDER_LUT,
+                currency = "USD",
+                exchangeRate = app.openbill.core.model.Quantity.parse("83.2512"),
+            ),
+        )
+        repository.saveDraft(draft)
+
+        val back = assertNotNull(repository.findVoucher(draft.id))
+        assertEquals("USD", back.currency)
+        assertEquals(app.openbill.core.model.Quantity.parse("83.2512"), back.exchangeRate)
+        assertEquals(draft.lines, back.lines)
+        assertEquals(draft.charges, back.charges)
+        // Rupee documents keep the columns null.
+        repository.saveDraft(testVoucher(id = "voucher-2", lines = listOf(testLine(id = "line-2")), charges = emptyList()))
+        val inr = assertNotNull(repository.findVoucher("voucher-2"))
+        assertNull(inr.currency)
+        assertNull(inr.lines.single().foreignRate)
+    }
+
+    @Test
     fun proportionalChargePortionsRoundTripAndAreReplacedOnSave(): Unit = runBlocking {
         seedMasterData()
         val portion = { rate: Int, taxable: Long, tax: Long ->

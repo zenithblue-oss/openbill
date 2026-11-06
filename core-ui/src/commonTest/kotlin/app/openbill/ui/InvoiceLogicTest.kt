@@ -80,6 +80,37 @@ class InvoiceLogicTest {
     }
 
     @Test
+    fun foreignCurrencyLinesAreTaxedInRupeesAndRoundTrip() {
+        val fx = Quantity.parse("83.25")
+        val export = app.openbill.core.domain.model.ExportType.EXPORT_WITH_TAX
+        val lines = listOf(line("3", "12.50", 18, discount = "1.50"))
+        val charges = listOf(DraftCharge(key = "c1", name = "Freight", amount = Money.parse("10"), basis = ChargeTaxBasis.EXPLICIT_RATE, gstRate = Rate.ofPercent(18), inclusive = false))
+        val usd = InvoiceMath.summarize(lines, "27", "27", false, RoundingMode.HALF_UP, charges, export = export)
+        val inr = InvoiceMath.summarize(lines, "27", "27", false, RoundingMode.HALF_UP, charges, export = export, exchangeRate = fx)
+        // Rule 34: 37.50 USD -> 3,121.88; discount 1.50 USD -> 124.88; taxable 2,997.00; IGST 18% on rupees.
+        assertEquals(Money.parse("3121.88"), inr.gross)
+        assertEquals(Money.parse("2997.00"), inr.taxable)
+        // IGST: 18% of 2,997.00 (539.46) plus 18% of freight 10 USD = 832.50 (149.85).
+        assertEquals(Money.parse("689.31"), inr.igst)
+        assertEquals(Money.parse("36.00"), usd.taxable)
+        val stored = InvoiceMath.toVoucherLines(lines, inr, export = export, exchangeRate = fx) { it.key }
+        assertEquals(Money.parse("12.50"), stored[0].foreignRate)
+        assertEquals(Money.parse("1040.63"), stored[0].rate)
+        assertEquals(Money.parse("2997.00"), stored[0].taxable)
+        val storedCharges = InvoiceMath.toVoucherCharges(charges, inr, fx) { it.key }
+        assertEquals(Money.parse("832.50"), storedCharges[0].amount)
+        assertEquals(Money.parse("10"), storedCharges[0].foreignAmount)
+        val rebuilt = InvoiceMath.summarizeStored(stored, "27", "27", Money.ZERO, inr.grandTotal, RoundingMode.HALF_UP, storedCharges, forceInterState = true, exchangeRate = fx)
+        assertEquals(inr.gross, rebuilt.gross)
+        assertEquals(inr.igst, rebuilt.igst)
+        // Reopening the draft gives back the foreign values the user typed.
+        assertEquals(Money.parse("12.50"), InvoiceMath.fromVoucherLine(stored[0], null).rate)
+        assertEquals(Money.parse("1.50"), InvoiceMath.fromVoucherLine(stored[0], null).discount)
+        assertEquals(Money.parse("10"), InvoiceMath.fromVoucherCharge(storedCharges[0]).amount)
+        assertEquals(Money.parse("1000"), InvoiceMath.fromInr(Money.parse("83250"), fx))
+    }
+
+    @Test
     fun lineDiscountAcceptsAmountOrPercent() {
         assertEquals(Money.parse("25"), LineRules.discountAmount("25", Money.parse("200")))
         assertEquals(Money.parse("20"), LineRules.discountAmount("10%", Money.parse("200")))

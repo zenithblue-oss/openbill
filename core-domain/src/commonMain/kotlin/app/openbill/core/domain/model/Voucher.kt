@@ -46,6 +46,12 @@ data class VoucherLine(
     val itcEligible: Boolean = true,
     /** The sales/purchase order line this invoice or bill line fulfils. */
     val sourceLineId: String? = null,
+    /**
+     * Foreign-currency documents ([Voucher.currency]): the unit rate and discount as entered, in
+     * that currency. [rate], [discount] and the amounts above are the rupee values.
+     */
+    val foreignRate: Money? = null,
+    val foreignDiscount: Money? = null,
 ) {
     /** Quantity that moves stock: billed plus free. */
     val stockQuantity: Quantity get() = Quantity.ofScaledUnits(quantity.scaledUnits + freeQuantity.scaledUnits)
@@ -124,6 +130,8 @@ data class VoucherCharge(
      * the highest-ranked portion's (a representative) and ledgers/summaries use the portions.
      */
     val portions: List<VoucherChargePortion> = emptyList(),
+    /** Foreign-currency documents: [amount] as entered, in [Voucher.currency]; [amount] is in rupees. */
+    val foreignAmount: Money? = null,
 ) {
     init {
         require(id.isNotBlank()) { "VoucherCharge id cannot be blank" }
@@ -259,6 +267,12 @@ data class Voucher(
     /** POS: when this draft was put on hold at the counter; held drafts are listed for resuming. */
     val heldAt: Instant? = null,
 ) {
+    /** Foreign-currency invoice: rates were entered in this currency; null for rupees. */
+    val currency: String? get() = export?.currency
+
+    /** Rupees per unit of [currency]. */
+    val exchangeRate: Quantity? get() = export?.exchangeRate
+
     /** Supplies to SEZ and exports are inter-state whatever the place of supply. */
     fun isIntraState(firmStateCode: String): Boolean = export == null && firmStateCode == placeOfSupplyStateCode
 
@@ -360,9 +374,22 @@ data class ExportDetails(
     val portCode: String? = null,
     /** LUT or bond reference for supplies without tax. */
     val lutReference: String? = null,
-    /** Currency and amount in it, e.g. "USD 1,200.00 at 83.10"; text only, totals stay in rupees. */
+    /** Legacy free-text currency note (schema 12-14), printed as is; new documents use [currency]. */
     val currencyNote: String? = null,
+    /**
+     * Foreign-currency invoice (schema 15): ISO 4217 code other than INR, and the rupees one unit
+     * buys ([exchangeRate], four decimals). Rates are entered in [currency]; every stored amount
+     * is in rupees (see docs/09-tax-assumptions.md). Both null for a rupee invoice.
+     */
+    val currency: String? = null,
+    val exchangeRate: Quantity? = null,
 ) {
+    init {
+        require((currency == null) == (exchangeRate == null)) { "Currency and exchange rate go together" }
+        currency?.let { require(isCurrencyCode(it) && it != "INR") { "Currency must be a 3-letter code other than INR" } }
+        exchangeRate?.let { require(it > Quantity.of(0)) { "Exchange rate must be above zero" } }
+    }
+
     fun rows(date: (LocalDate) -> String = { it.toString() }): List<Pair<String, String>> = listOfNotNull(
         "Supply type" to type.label,
         shippingBillNumber?.let { "Shipping bill no." to it },
@@ -370,7 +397,12 @@ data class ExportDetails(
         portCode?.let { "Port code" to it },
         lutReference?.let { "LUT/bond ref." to it },
         currencyNote?.let { "Currency" to it },
+        currency?.let { "Exchange rate" to "1 $it = ₹${exchangeRate!!.format()}" },
     )
+
+    companion object {
+        fun isCurrencyCode(code: String): Boolean = code.length == 3 && code.all { it in 'A'..'Z' }
+    }
 }
 
 /** One firm-defined header field on a document. */

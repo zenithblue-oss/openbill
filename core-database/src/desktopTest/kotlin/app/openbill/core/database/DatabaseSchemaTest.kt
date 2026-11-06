@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(14, OPENBILL_DATABASE_VERSION)
+        assertEquals(15, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/15.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/14.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/13.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/12.json").exists())
@@ -323,7 +324,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(13, migrations.size)
+        assertEquals(14, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -341,7 +342,8 @@ class DatabaseSchemaTest {
         assertEquals(12, migrations[10].endVersion)
         assertEquals(13, migrations[11].endVersion)
         assertEquals(14, migrations[12].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(14).isEmpty())
+        assertEquals(15, migrations[13].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(15).isEmpty())
     }
 
     @Test
@@ -569,6 +571,35 @@ class DatabaseSchemaTest {
                 assertTrue(it.step())
                 assertTrue(it.isNull(0))
                 assertEquals(11800L, it.getLong(1))
+            }
+        }
+    }
+
+    @Test
+    fun schemaV14MigratesToV15AsRupeeDocuments() {
+        helper.createDatabase(14).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO financial_years (id, firmId, startDate, endDate, closedAt, createdAt, updatedAt) " +
+                    "VALUES ('fy-1', 'firm-1', '2026-04-01', '2027-03-31', NULL, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO vouchers (id, firmId, financialYearId, type, number, date, dueDate, partyId, referenceVoucherId, status, " +
+                    "placeOfSupplyStateCode, subtotal, discount, taxable, tax, roundOff, total, notes, cancellationReason, postedAt, " +
+                    "cancelledAt, restoredAt, createdAt, updatedAt, revision, currencyNote) VALUES ('v-1', 'firm-1', 'fy-1', 'sale', NULL, " +
+                    "'2026-05-01', NULL, NULL, NULL, 'draft', '27', 10000, 0, 10000, 1800, 0, 11800, NULL, NULL, NULL, NULL, NULL, 1, 1, 1, 'USD 120')",
+            )
+        }
+        helper.runMigrationsAndValidate(15, DatabaseMigrations.migrationsFor(14)).use { connection ->
+            connection.prepare("SELECT currency, exchangeRate, currencyNote, total FROM vouchers WHERE id = 'v-1'").use {
+                assertTrue(it.step())
+                assertTrue(it.isNull(0))
+                assertTrue(it.isNull(1))
+                assertEquals("USD 120", it.getText(2))
+                assertEquals(11800L, it.getLong(3))
             }
         }
     }

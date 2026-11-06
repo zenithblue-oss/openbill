@@ -98,6 +98,10 @@ data class VoucherEntity(
     @ColumnInfo(defaultValue = "NULL") val fulfilment: String? = null,
     /** v14, POS: epoch millis the draft was put on hold at the counter; NULL otherwise. */
     @ColumnInfo(defaultValue = "NULL") val heldAt: Long? = null,
+    /** v15, foreign-currency invoices: ISO 4217 code; NULL for rupees. */
+    @ColumnInfo(defaultValue = "NULL") val currency: String? = null,
+    /** v15: rupees per unit of [currency], scaled like quantities (4 decimals). */
+    @ColumnInfo(defaultValue = "NULL") val exchangeRate: Long? = null,
 )
 
 @Entity(
@@ -167,6 +171,9 @@ data class VoucherLineEntity(
     @ColumnInfo(defaultValue = "1") val itcEligible: Boolean = true,
     /** v13: the order line an invoice/bill line fulfils (no foreign key: orders keep their lines). */
     @ColumnInfo(defaultValue = "NULL") val sourceLineId: String? = null,
+    /** v15, foreign-currency invoices: unit rate and discount as entered, in paise-like minor units. */
+    @ColumnInfo(defaultValue = "NULL") val foreignRate: Long? = null,
+    @ColumnInfo(defaultValue = "NULL") val foreignDiscount: Long? = null,
 )
 
 @Entity(
@@ -199,6 +206,8 @@ data class VoucherChargeEntity(
     /** Applied treatment, lowercase `TaxTreatment` name. */
     @ColumnInfo(defaultValue = "taxable") val treatment: String = "taxable",
     val hsnSac: String? = null,
+    /** v15, foreign-currency invoices: the amount as entered, in minor units of the currency. */
+    @ColumnInfo(defaultValue = "NULL") val foreignAmount: Long? = null,
 )
 
 /**

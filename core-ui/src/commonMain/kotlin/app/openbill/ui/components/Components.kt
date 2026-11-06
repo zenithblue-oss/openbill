@@ -375,6 +375,8 @@ fun AnimatedMoney(
     modifier: Modifier = Modifier,
     color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
     placeholder: String = "-",
+    /** Foreign currency code; null for rupees. */
+    currency: String? = null,
 ) {
     val reduced = LocalReducedMotion.current
     AnimatedContent(
@@ -384,7 +386,7 @@ fun AnimatedMoney(
         modifier = modifier,
         label = "money",
     ) { value ->
-        Text(value?.let { Fmt.inr(it) } ?: placeholder, style = style, color = color, maxLines = 1, softWrap = false)
+        Text(value?.let { Fmt.money(it, currency) } ?: placeholder, style = style, color = color, maxLines = 1, softWrap = false)
     }
 }
 

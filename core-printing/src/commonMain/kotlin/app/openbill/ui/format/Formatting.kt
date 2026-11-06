@@ -20,6 +20,18 @@ object Fmt {
         return (if (negative) "-" else "") + prefix + body
     }
 
+    /**
+     * [money] in [currency]: rupees as [inr]; a foreign currency as its code with Western
+     * grouping, e.g. "USD 1,234,567.89" (minor units are always two decimals here).
+     */
+    fun money(money: Money, currency: String?): String {
+        if (currency == null) return inr(money)
+        val negative = money.paise < 0
+        val abs = if (negative) -money.paise else money.paise
+        val grouped = (abs / 100).toString().reversed().chunked(3).joinToString(",").reversed()
+        return (if (negative) "-" else "") + "$currency $grouped.${(abs % 100).toString().padStart(2, '0')}"
+    }
+
     fun groupIndian(digits: String): String {
         if (digits.length <= 3) return digits
         val last3 = digits.takeLast(3)

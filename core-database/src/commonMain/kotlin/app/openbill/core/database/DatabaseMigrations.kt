@@ -221,7 +221,18 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+    /** Foreign-currency invoices: currency and rate on vouchers, foreign amounts on lines and charges. Existing rows: rupees. */
+    private val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `currency` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `exchangeRate` INTEGER DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `voucher_lines` ADD COLUMN `foreignRate` INTEGER DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `voucher_lines` ADD COLUMN `foreignDiscount` INTEGER DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `voucher_charges` ADD COLUMN `foreignAmount` INTEGER DEFAULT NULL")
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
 
     fun migrationsFor(
         startVersion: Int,

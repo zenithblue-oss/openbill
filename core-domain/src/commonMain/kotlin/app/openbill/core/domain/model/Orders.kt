@@ -79,6 +79,7 @@ object Orders {
                     batchId = null, serialNumbers = emptyList(),
                     // A part of the line takes its share of the discount; free units carry over only when the whole line is billed at once (add them by hand otherwise).
                     discount = if (whole) l.discount else Money.of(Rounding.multiplyDivide(l.discount.paise, qty.scaledUnits, l.quantity.scaledUnits, RoundingMode.HALF_UP)),
+                    foreignDiscount = l.foreignDiscount?.let { d -> if (whole) d else Money.of(Rounding.multiplyDivide(d.paise, qty.scaledUnits, l.quantity.scaledUnits, RoundingMode.HALF_UP)) },
                     freeQuantity = if (whole) l.freeQuantity else Quantity.of(0),
                 )
             }

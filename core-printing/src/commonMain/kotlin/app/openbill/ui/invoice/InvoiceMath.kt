@@ -112,7 +112,21 @@ object InvoiceMath {
 
     fun percentOf(amount: Money, rate: Rate): Money = rate.applyTo(amount, RoundingMode.HALF_UP)
 
-    /** Throws [IllegalArgumentException] for invalid lines (e.g. discount > gross). */
+    /**
+     * Rupee value of a foreign-currency [amount] at [exchangeRate] rupees per unit (four
+     * decimals), half-up to the paisa. Values are converted, not unit rates (CGST Rule 34).
+     */
+    fun toInr(amount: Money, exchangeRate: Quantity): Money = gross(exchangeRate, amount)
+
+    /** Foreign-currency equivalent of a rupee [amount] (e.g. an item's rupee price as a starting rate). */
+    fun fromInr(amount: Money, exchangeRate: Quantity): Money =
+        Money.of(Rounding.multiplyDivide(amount.paise, QTY_SCALE, exchangeRate.scaledUnits, RoundingMode.HALF_UP))
+
+    /**
+     * Throws [IllegalArgumentException] for invalid lines (e.g. discount > gross). With
+     * [exchangeRate] the lines and charges are in a foreign currency: each line value, discount
+     * and charge is converted to rupees first, and GST is computed on the rupee values.
+     */
     fun summarize(
         lines: List<DraftLine>,
         firmStateCode: String,
@@ -122,25 +136,27 @@ object InvoiceMath {
         charges: List<DraftCharge> = emptyList(),
         reverseCharge: Boolean = false,
         export: ExportType? = null,
+        exchangeRate: Quantity? = null,
     ): TaxSummary {
         val context = TaxContext(firmStateCode, placeOfSupplyStateCode, forceInterState = export != null)
         // Exports and SEZ supplies under LUT/bond are zero-rated: no IGST is charged.
         val zeroRated = export != null && !export.withTax
+        val inr = { m: Money -> if (exchangeRate == null) m else toInr(m, exchangeRate) }
         val inputs = lines.map { line ->
             TaxLineInput(
-                grossAmount = line.gross,
-                discount = line.discount,
+                grossAmount = inr(line.gross),
+                discount = inr(line.discount),
                 gstRate = if (zeroRated) Rate.ofPercent(0) else line.gstRate,
                 mode = line.taxMode,
                 treatment = if (zeroRated) TaxTreatment.ZERO_RATED else TaxTreatment.TAXABLE,
             )
         }
         val result = InvoiceTaxCalculator.calculate(
-            InvoiceTaxInput(lines = inputs, roundToRupee = roundToRupee, charges = charges.map { it.toTaxInput() }),
+            InvoiceTaxInput(lines = inputs, roundToRupee = roundToRupee, charges = charges.map { it.copy(amount = inr(it.amount)).toTaxInput() }),
             context,
             rounding,
         )
-        val summary = summaryOf(result.lines, lines.fold(Money.ZERO) { a, l -> a + l.gross }, lines.fold(Money.ZERO) { a, l -> a + l.discount }, result.roundOff, result.grandTotal, context.isIntraState, heads = result.charges.flatMap { c -> c.effectivePortions.map { it.result } }.let { rs ->
+        val summary = summaryOf(result.lines, inputs.fold(Money.ZERO) { a, l -> a + l.grossAmount }, inputs.fold(Money.ZERO) { a, l -> a + l.discount }, result.roundOff, result.grandTotal, context.isIntraState, heads = result.charges.flatMap { c -> c.effectivePortions.map { it.result } }.let { rs ->
             Heads(
                 rs.fold(Money.ZERO) { a, r -> a + r.taxableValue },
                 { k -> rs.fold(Money.ZERO) { acc, r -> r.components.filter { it.kind == k }.fold(acc) { a, c -> a + c.amount } } },
@@ -165,12 +181,13 @@ object InvoiceMath {
         charges: List<VoucherCharge> = emptyList(),
         reverseCharge: Boolean = false,
         forceInterState: Boolean = false,
+        exchangeRate: Quantity? = null,
     ): TaxSummary {
         val context = TaxContext(firmStateCode, placeOfSupplyStateCode, forceInterState)
         val results = lines.map { line ->
             GstCalculator.calculateLine(
                 TaxLineInput(
-                    grossAmount = gross(line.quantity, line.rate),
+                    grossAmount = storedGross(line, exchangeRate),
                     discount = line.discount,
                     gstRate = line.taxRate,
                     cessRate = line.cessRate,
@@ -183,13 +200,33 @@ object InvoiceMath {
         }
         return summaryOf(
             results,
-            lines.fold(Money.ZERO) { a, l -> a + gross(l.quantity, l.rate) },
+            lines.fold(Money.ZERO) { a, l -> a + storedGross(l, exchangeRate) },
             lines.fold(Money.ZERO) { a, l -> a + l.discount },
             roundOff,
             total,
             context.isIntraState,
             storedChargeHeads(charges, context.isIntraState, rounding),
         ).copy(inclusiveLines = lines.count { it.taxMode == TaxMode.INCLUSIVE }, reverseCharge = reverseCharge)
+    }
+
+    /** Rupee line value of a stored line: converted from the foreign rate on foreign-currency documents. */
+    fun storedGross(line: VoucherLine, exchangeRate: Quantity?): Money {
+        val foreign = line.foreignRate
+        return if (foreign != null && exchangeRate != null) toInr(gross(line.quantity, foreign), exchangeRate) else gross(line.quantity, line.rate)
+    }
+
+    /**
+     * Totals of a stored foreign-currency document in its own currency, as the editor showed them
+     * (no rupee rounding). Null for rupee documents. Tax in it is informational: GST is the rupee figure.
+     */
+    fun foreignSummary(v: app.openbill.core.domain.model.Voucher, firmStateCode: String, rounding: RoundingMode): TaxSummary? {
+        if (v.currency == null) return null
+        return runCatching {
+            summarize(
+                v.lines.map { fromVoucherLine(it, null) }, firmStateCode, v.placeOfSupplyStateCode, false, rounding,
+                v.charges.sortedBy { it.sortOrder }.map(::fromVoucherCharge), v.reverseCharge, v.export?.type,
+            )
+        }.getOrNull()
     }
 
     private fun summaryOf(
@@ -258,12 +295,13 @@ object InvoiceMath {
     }
 
     /** Converts editor charges into persisted voucher charges carrying computed amounts. */
-    fun toVoucherCharges(charges: List<DraftCharge>, summary: TaxSummary, idFor: (DraftCharge) -> String): List<VoucherCharge> =
+    fun toVoucherCharges(charges: List<DraftCharge>, summary: TaxSummary, exchangeRate: Quantity? = null, idFor: (DraftCharge) -> String): List<VoucherCharge> =
         charges.mapIndexed { index, c ->
             VoucherCharge(
                 id = idFor(c),
                 name = c.name,
-                amount = c.amount,
+                amount = if (exchangeRate == null) c.amount else toInr(c.amount, exchangeRate),
+                foreignAmount = c.amount.takeIf { exchangeRate != null },
                 taxRate = if (c.basis == ChargeTaxBasis.EXPLICIT_RATE) c.gstRate else Rate.ofPercent(0),
                 sortOrder = index,
                 taxBasis = c.basis,
@@ -275,7 +313,7 @@ object InvoiceMath {
     fun fromVoucherCharge(c: VoucherCharge): DraftCharge = DraftCharge(
         key = c.id,
         name = c.name,
-        amount = c.amount,
+        amount = c.foreignAmount ?: c.amount,
         basis = c.taxBasis,
         gstRate = c.taxRate,
         inclusive = c.taxMode == TaxMode.INCLUSIVE,
@@ -287,12 +325,15 @@ object InvoiceMath {
         summary: TaxSummary,
         godownId: String? = null,
         export: ExportType? = null,
+        /** Foreign-currency documents: [lines] are in that currency; rupee amounts come from [summary]. */
+        exchangeRate: Quantity? = null,
         idFor: (DraftLine) -> String,
     ): List<VoucherLine> =
         lines.mapIndexed { index, line ->
             val r = summary.lineResults[index]
             // ponytail: a zero-rated line stores 0%; switching back to a taxed supply needs the rate re-entered.
             val zeroRated = export != null && !export.withTax
+            val inr = { m: Money -> if (exchangeRate == null) m else toInr(m, exchangeRate) }
             VoucherLine(
                 id = idFor(line),
                 lineNumber = index + 1,
@@ -300,8 +341,11 @@ object InvoiceMath {
                 description = line.description,
                 hsnSac = line.hsnSac?.takeIf { it.isNotBlank() },
                 quantity = line.quantity,
-                rate = line.rate,
-                discount = line.discount,
+                // Rupee unit rate for reference; the line value is converted, see [storedGross].
+                rate = inr(line.rate),
+                discount = inr(line.discount),
+                foreignRate = line.rate.takeIf { exchangeRate != null },
+                foreignDiscount = line.discount.takeIf { exchangeRate != null },
                 taxRate = if (zeroRated) Rate.ofPercent(0) else line.gstRate,
                 treatment = if (zeroRated) TaxTreatment.ZERO_RATED else TaxTreatment.TAXABLE,
                 freeQuantity = line.freeQuantity,
@@ -325,8 +369,8 @@ object InvoiceMath {
         hsnSac = line.hsnSac,
         unit = unit,
         quantity = line.quantity,
-        rate = line.rate,
-        discount = line.discount,
+        rate = line.foreignRate ?: line.rate,
+        discount = line.foreignDiscount ?: line.discount,
         gstRate = line.taxRate,
         taxMode = line.taxMode,
         batchNumber = line.batchNumber,

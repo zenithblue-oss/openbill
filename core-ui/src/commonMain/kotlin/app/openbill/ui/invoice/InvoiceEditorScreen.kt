@@ -135,6 +135,14 @@ fun InvoiceEditorScreen(
     val units by remember { container.repositories.catalog.observeUnits(session.firm.id) }.collectAsState(initial = emptyList())
     val unitSymbol = units.associate { it.id to it.symbol }
     val messages = LocalAppMessages.current
+    // Foreign-currency invoice: rates are typed in [currency]; an item's rupee price starts converted.
+    val currency = state.currency
+    val fxRate = state.fields.takeIf { currency != null }?.let { DocFieldRules.exchange(it)?.second }
+    fun itemForm(item: app.openbill.core.domain.model.Item): LineForm {
+        val form = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] })
+        val inr = Parse.money(form.rate)
+        return if (fxRate == null || inr == null) form else form.copy(rate = InvoiceMath.fromInr(inr, fxRate).format())
+    }
 
     var pickParty by remember { mutableStateOf(false) }
     var pickItem by remember { mutableStateOf(false) }
@@ -240,7 +248,7 @@ fun InvoiceEditorScreen(
                         state.lines.forEachIndexed { index, line ->
                             val result = state.summary?.lineResults?.getOrNull(index)
                             val zeroRated = result?.treatment == TaxTreatment.ZERO_RATED
-                            DraftLineCard(line, result?.totalAmount, !zeroRated && date?.let { d -> line.gstRate !in gstSlabsOn(d) } == true, zeroRated) { lineForm = items.firstOrNull { it.id == line.itemId }.let { item -> LineRules.fromDraft(line, item, item?.alternateUnitId?.let { unitSymbol[it] }) } }
+                            DraftLineCard(line, result?.totalAmount, !zeroRated && date?.let { d -> line.gstRate !in gstSlabsOn(d) } == true, zeroRated, currency) { lineForm = items.firstOrNull { it.id == line.itemId }.let { item -> LineRules.fromDraft(line, item, item?.alternateUnitId?.let { unitSymbol[it] }) } }
                         }
                     }
                     state.errors["lines"]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -263,7 +271,7 @@ fun InvoiceEditorScreen(
                             } else {
                                 scanError = null
                                 scanText = ""
-                                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] })
+                                lineForm = itemForm(item)
                             }
                         }
                     }
@@ -328,7 +336,8 @@ fun InvoiceEditorScreen(
                     // Offer to update the item master when the billed rate differs (not on returns).
                     val item = items.firstOrNull { it.id == line.itemId }
                     val master = if (purchaseSide) item?.purchasePrice else item?.salePrice
-                    if (item != null && master != null && line.rate != master && line.rate > Money.ZERO &&
+                    // Not on foreign-currency invoices: their rates are not rupee prices.
+                    if (item != null && master != null && currency == null && line.rate != master && line.rate > Money.ZERO &&
                         state.type != VoucherType.CREDIT_NOTE && state.type != VoucherType.DEBIT_NOTE
                     ) {
                         priceChange = item to line.rate
@@ -341,6 +350,7 @@ fun InvoiceEditorScreen(
                 lineForm = null
             },
             onDismiss = { lineForm = null },
+            currency = currency,
         )
         ChargeEditor(
             form = chargeForm,
@@ -358,6 +368,7 @@ fun InvoiceEditorScreen(
                 chargeForm = null
             },
             onDismiss = { chargeForm = null },
+            currency = currency,
         )
         QuickAddPartyEditor(
             container = container,
@@ -477,7 +488,7 @@ fun InvoiceEditorScreen(
             emptyText = "No items yet. Add them from the Items tab, or use a custom line.",
             onSelect = { item ->
                 pickItem = false
-                lineForm = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] })
+                lineForm = itemForm(item)
             },
             onDismiss = { pickItem = false },
         )
@@ -533,15 +544,15 @@ private fun PartyCard(party: Party?, error: String?, label: String, hint: String
 }
 
 @Composable
-private fun DraftLineCard(line: DraftLine, total: Money?, retiredRate: Boolean, zeroRated: Boolean, onClick: () -> Unit) {
+private fun DraftLineCard(line: DraftLine, total: Money?, retiredRate: Boolean, zeroRated: Boolean, currency: String?, onClick: () -> Unit) {
     OutlinedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.md)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.Top) {
                 Text(line.description, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                AnimatedMoney(total, MaterialTheme.typography.titleSmall)
+                AnimatedMoney(total, MaterialTheme.typography.titleSmall, currency = currency)
             }
             Text(
-                "${Fmt.qtyUnit(line.quantity, line.unit)} × ${Fmt.inr(line.rate)}" +
+                "${Fmt.qtyUnit(line.quantity, line.unit)} × ${Fmt.money(line.rate, currency)}" +
                     if (line.freeQuantity.scaledUnits > 0) " · ${Fmt.qtyUnit(line.freeQuantity, line.unit)} free" else "",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -549,7 +560,7 @@ private fun DraftLineCard(line: DraftLine, total: Money?, retiredRate: Boolean, 
             Text(
                 buildList {
                     if (line.discount.paise != 0L) {
-                        add("Discount " + (line.discountPercent?.let { "${Fmt.percent(it)}% " } ?: "") + Fmt.inrDeduction(line.discount))
+                        add("Discount " + (line.discountPercent?.let { "${Fmt.percent(it)}% " } ?: "") + if (currency == null) Fmt.inrDeduction(line.discount) else "−" + Fmt.money(line.discount, currency))
                     }
                     add(if (zeroRated) "GST 0% (zero-rated)" else "GST ${Fmt.percent(line.gstRate)}%" + if (line.taxMode == TaxMode.INCLUSIVE) " incl." else "")
                     line.hsnSac?.let { add("HSN $it") }
@@ -580,6 +591,8 @@ private fun TotalsBar(
     onPost: () -> Unit,
 ) {
     val s = state.summary
+    val cur = state.currency
+    val m = { x: Money -> Fmt.money(x, cur) }
     val reduced = LocalReducedMotion.current
     val rotation by animateFloatAsState(if (open) 180f else 0f, motionTween(reduced, Motion.SHORT4), label = "chevron")
     Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
@@ -602,13 +615,14 @@ private fun TotalsBar(
                     Text("Total", style = MaterialTheme.typography.titleMedium)
                     if (s != null) {
                         Text(
-                            if (s.reverseCharge) "GST ${Fmt.inr(s.totalTax)} on reverse charge" else "incl. GST ${Fmt.inr(s.totalTax)}",
+                            (if (s.reverseCharge) "GST ${m(s.totalTax)} on reverse charge" else "incl. GST ${m(s.totalTax)}") +
+                                (state.inrSummary?.let { " · ${Fmt.inr(it.grandTotal)}" } ?: ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                AnimatedMoney(s?.grandTotal, MaterialTheme.typography.headlineSmall)
+                AnimatedMoney(s?.grandTotal, MaterialTheme.typography.headlineSmall, currency = cur)
                 Icon(
                     Icons.Filled.KeyboardArrowUp,
                     contentDescription = if (open) "Hide tax breakdown" else "Show tax breakdown",
@@ -617,21 +631,30 @@ private fun TotalsBar(
             }
             if (open && s != null) {
                 Column(Modifier.padding(bottom = Spacing.xs)) {
-                    AmountRow(s.grossLabel, s.gross)
-                    if (s.discount.paise != 0L) AmountRow("Discount", s.discount, negative = true)
-                    AmountRow(if (s.chargeResults.isEmpty()) "Taxable value" else "Items taxable value", s.taxable)
+                    AmountRow(s.grossLabel, m(s.gross))
+                    if (s.discount.paise != 0L) AmountRow("Discount", "−" + m(s.discount))
+                    AmountRow(if (s.chargeResults.isEmpty()) "Taxable value" else "Items taxable value", m(s.taxable))
                     state.charges.forEachIndexed { i, c ->
-                        s.chargeResults.getOrNull(i)?.let { AmountRow(c.name, it.result.totalAmount - it.result.totalTax) }
+                        s.chargeResults.getOrNull(i)?.let { AmountRow(c.name, m(it.result.totalAmount - it.result.totalTax)) }
                     }
                     if (s.isIntraState) {
-                        AmountRow("CGST", s.cgst)
-                        AmountRow("SGST", s.sgst)
+                        AmountRow("CGST", m(s.cgst))
+                        AmountRow("SGST", m(s.sgst))
                     } else {
-                        AmountRow("IGST", s.igst)
+                        AmountRow("IGST", m(s.igst))
                     }
-                    if (s.cess.paise != 0L) AmountRow("Cess", s.cess)
-                    if (s.reverseCharge && s.totalTax.paise != 0L) AmountRow("Less: GST on reverse charge", s.totalTax, negative = true)
+                    if (s.cess.paise != 0L) AmountRow("Cess", m(s.cess))
+                    if (s.reverseCharge && s.totalTax.paise != 0L) AmountRow("Less: GST on reverse charge", "−" + m(s.totalTax))
                     if (s.roundOff.paise != 0L) AmountRow("Round off", Fmt.inrSigned(s.roundOff))
+                    // GST is charged and filed on the rupee value (CGST Rule 34).
+                    state.inrSummary?.let { inr ->
+                        HorizontalDivider(Modifier.padding(vertical = Spacing.xs))
+                        Text("In rupees at ₹${state.fields.exchangeRate.trim()} per $cur (GST, ledger and returns)", style = MaterialTheme.typography.labelMedium)
+                        AmountRow("Taxable value", inr.taxable + inr.chargesTaxable)
+                        if (inr.totalTax.paise != 0L) AmountRow("IGST", inr.igst + inr.cgst + inr.sgst)
+                        if (inr.cess.paise != 0L) AmountRow("Cess", inr.cess)
+                        AmountRow("Total", inr.grandTotal, emphasize = true)
+                    }
                     HorizontalDivider(Modifier.padding(top = Spacing.xs))
                 }
             }
@@ -663,6 +686,8 @@ internal fun LineEditor(
     onSave: (LineForm) -> Map<String, String>,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Foreign-currency invoice: rates and discounts are typed in this currency. */
+    currency: String? = null,
 ) {
     // While the editor animates out (form == null) it keeps showing the last edited values.
     val holder = remember { object { var last = LineForm() } }
@@ -703,7 +728,7 @@ internal fun LineEditor(
                     { edit = edit.copy(rate = it) },
                     error = errors["rate"],
                     keyboardType = KeyboardType.Decimal,
-                    prefix = "₹",
+                    prefix = if (currency == null) "₹" else "$currency ",
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -720,7 +745,7 @@ internal fun LineEditor(
                 current.discount,
                 { edit = edit.copy(discount = it) },
                 error = errors["discount"],
-                supporting = "Amount, or a percentage like 10%",
+                supporting = "Amount${currency?.let { " in $it" } ?: ""}, or a percentage like 10%",
                 imeAction = ImeAction.Done,
                 onImeAction = { errors = onSave(edit) },
             )
@@ -789,7 +814,7 @@ internal fun LineEditor(
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(Spacing.lg), verticalAlignment = Alignment.CenterVertically) {
                     Text("Line total", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    AnimatedMoney(preview(current), MaterialTheme.typography.titleLarge)
+                    AnimatedMoney(preview(current), MaterialTheme.typography.titleLarge, currency = currency)
                 }
             }
             val key = current.key

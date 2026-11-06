@@ -199,7 +199,11 @@ data class InvoiceEditorState(
     val fields: DocFieldsForm = DocFieldsForm(),
     val lines: List<DraftLine> = emptyList(),
     val charges: List<DraftCharge> = emptyList(),
+    /** Totals in the document currency ([currency], or rupees). */
     val summary: TaxSummary? = null,
+    /** Foreign-currency invoices: ISO code, and the rupee totals that are saved, posted and filed. */
+    val currency: String? = null,
+    val inrSummary: TaxSummary? = null,
     val calcError: String? = null,
     val errors: Map<String, String> = emptyMap(),
     val saving: Boolean = false,
@@ -326,14 +330,19 @@ class InvoiceEditorModel(
     }
 
     private fun InvoiceEditorState.recalculated(): InvoiceEditorState = runCatching {
-        InvoiceMath.summarize(
-            lines, firm.stateCode, placeOfSupply, session.settings.roundToRupee, session.settings.roundingMode, charges,
+        val export = fields.exportType.takeIf { DocFieldRules.supportsExport(type) }
+        val fx = DocFieldRules.exchange(fields).takeIf { export != null }
+        // Foreign-currency invoices are not rounded to the rupee: the buyer pays the exact amount.
+        fun calc(rate: app.openbill.core.model.Quantity?) = InvoiceMath.summarize(
+            lines, firm.stateCode, placeOfSupply, session.settings.roundToRupee && fx == null, session.settings.roundingMode, charges,
             reverseCharge = fields.reverseCharge && DocFieldRules.supportsReverseCharge(type),
-            export = fields.exportType.takeIf { DocFieldRules.supportsExport(type) },
+            export = export,
+            exchangeRate = rate,
         )
+        Triple(calc(null), fx?.first, fx?.let { calc(it.second) })
     }.fold(
-        onSuccess = { copy(summary = it, calcError = null) },
-        onFailure = { copy(summary = null, calcError = it.message ?: "Cannot compute totals") },
+        onSuccess = { (s, code, inr) -> copy(summary = s, currency = code, inrSummary = inr, calcError = null) },
+        onFailure = { copy(summary = null, currency = null, inrSummary = null, calcError = it.message ?: "Cannot compute totals") },
     )
 
     private fun mutate(transform: (InvoiceEditorState) -> InvoiceEditorState) {
@@ -437,10 +446,12 @@ class InvoiceEditorModel(
             val now = container.now()
             val date = Parse.date(s.dateText)!!
             val fy = session.financialYearFor(date)!!
-            val summary = s.summary!!
+            // Rupee totals are what is stored; a foreign-currency invoice keeps its entered rates beside them.
+            val summary = s.inrSummary ?: s.summary!!
             val id = existing?.id ?: container.newId()
             val f = s.fields
             val export = DocFieldRules.export(f).takeIf { DocFieldRules.supportsExport(s.type) }
+            val fxRate = export?.exchangeRate
             val voucher = Voucher(
                 reverseCharge = f.reverseCharge && DocFieldRules.supportsReverseCharge(s.type),
                 transport = DocFieldRules.transport(f),
@@ -460,8 +471,8 @@ class InvoiceEditorModel(
                 partyId = s.party?.id,
                 status = VoucherStatus.DRAFT,
                 placeOfSupplyStateCode = s.placeOfSupply,
-                lines = InvoiceMath.toVoucherLines(s.lines, summary, s.godownId, export?.type) { it.key },
-                charges = InvoiceMath.toVoucherCharges(s.charges, summary) { it.key },
+                lines = InvoiceMath.toVoucherLines(s.lines, summary, s.godownId, export?.type, fxRate) { it.key },
+                charges = InvoiceMath.toVoucherCharges(s.charges, summary, fxRate) { it.key },
                 subtotal = summary.gross,
                 discount = summary.discount,
                 // Header taxable value and tax include charges, so total = taxable + tax + roundOff.
@@ -514,6 +525,6 @@ class InvoiceEditorModel(
     private companion object {
         /** GSTR-1 place of supply for exports: other countries. */
         const val EXPORT_POS = "96"
-        val FIELD_ERRORS = setOf("eco", "transporterId", "vehicle", "distance", "eway", "port", "reverseCharge", "export")
+        val FIELD_ERRORS = setOf("eco", "transporterId", "vehicle", "distance", "eway", "port", "reverseCharge", "export", "currency", "exchangeRate")
     }
 }

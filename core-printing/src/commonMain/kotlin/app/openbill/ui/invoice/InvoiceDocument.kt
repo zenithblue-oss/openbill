@@ -158,7 +158,11 @@ data class InvoiceDocument(
                 settings.roundingMode,
                 reverseCharge = voucher.reverseCharge,
                 forceInterState = voucher.export != null,
+                exchangeRate = voucher.exchangeRate,
             )
+            // Foreign-currency export: rates print in that currency; taxable values, GST and the total stay in rupees.
+            val currency = voucher.currency
+            val foreign = InvoiceMath.foreignSummary(voucher, firm.stateCode, settings.roundingMode)
             val seller = PartyBlock(
                 name = firm.legalName?.takeIf { it.isNotBlank() } ?: firm.name,
                 addressLines = listOfNotNull(
@@ -215,7 +219,7 @@ data class InvoiceDocument(
                     hsnSac = line.hsnSac ?: "",
                     quantity = Fmt.qty(line.quantity) + (unit?.let { " $it" } ?: "") +
                         (if (line.freeQuantity.scaledUnits > 0) " (+${Fmt.qty(line.freeQuantity)} free)" else ""),
-                    rate = Fmt.inr(line.rate, symbol = false),
+                    rate = line.foreignRate?.takeIf { currency != null }?.let { Fmt.money(it, currency) } ?: Fmt.inr(line.rate, symbol = false),
                     discount = if (line.discount.paise == 0L) "-" else Fmt.inr(line.discount, symbol = false),
                     taxable = Fmt.inr(line.taxable, symbol = false),
                     gstRate = Fmt.percent(line.taxRate) + "%",
@@ -294,6 +298,7 @@ data class InvoiceDocument(
                 val taxSum = total.cgst + total.sgst + total.igst + total.cess
                 if (voucher.reverseCharge && taxSum.paise != 0L) add("Less: GST on reverse charge" to Fmt.inrDeduction(taxSum))
                 if (voucher.roundOff.paise != 0L) add("Round off" to Fmt.inrSigned(voucher.roundOff))
+                if (currency != null && foreign != null) add("Invoice value ($currency)" to Fmt.money(foreign.grandTotal, currency))
             }
             val number = voucher.number ?: "DRAFT"
             val bankRows = buildList {
