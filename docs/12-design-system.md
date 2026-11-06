@@ -1,6 +1,6 @@
 # Design System
 
-Status: adopted for the billing alpha. Applies to every shared screen in `core-ui`, on Android
+Status: adopted since the billing alpha and in use in 1.0. Applies to every shared screen in `core-ui`, on Android
 phones and tablets and on the Windows and Linux desktop app.
 
 OpenBill uses **stock Material 3** components from Compose Multiplatform with a small set of

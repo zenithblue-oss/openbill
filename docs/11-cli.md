@@ -235,6 +235,9 @@ and `shared:platform-jvm`. It must not depend on `core-ui` or any `feature-*` mo
 
 ## 8. Packaging
 
+Planned. Releases up to 1.0.1 do not include CLI artifacts; see the status note in
+section 10.
+
 | Platform | Artifact | Notes |
 | --- | --- | --- |
 | Linux x64 | `tar.gz` with `jlink` runtime; `openbill` included in the desktop DEB and as a separate DEB | Installs to `/usr/bin/openbill` from the DEB |
@@ -271,6 +274,13 @@ plus generated shell completions and a man page.
 | C0 | `openbill` skeleton: `version`, `db info/check/migrate`, `backup create/verify/inspect/restore`; golden-test harness | Phase 1 |
 | C1 | `firm`, `party`, `item`, `voucher` create/post/cancel/restore/print, `search`, `--json`, exit codes | Phase 2 |
 | C2 | `stock`, `payment`, `import csv --dry-run`, `export csv` | Phases 4-5 |
-| C3 | `report`, `gst gstr1/hsn`, `tally export`, `audit`; signed Linux and Windows packages (`gst gstr3b` follows the P1 GSTR-3B working report) | Phase 6 (ships with 1.0) |
+| C3 | `report`, `gst gstr1/hsn`, `tally export`, `audit`; signed Linux and Windows packages; `gst gstr3b` (added with the P1 GSTR-3B working report) | Phase 6 (ships with 1.0) |
 | C4 | Remote mode, contexts, `server` admin commands | Server S3 |
 | C5 | Native image binaries, if the spike passes | Post-1.0 |
+
+Status at 1.0.1: C0-C3 commands work in direct mode, with these gaps. Vouchers are
+handled by `invoice` (`list`, `show`, `create`, `post`, `cancel`, `pdf`); there is no
+generic `voucher` group, so `voucher restore` is still pending. `db info`,
+`backup inspect`, and `search` are also pending. No CLI packages are published yet: run
+the CLI from source with `./gradlew :cli:run --args="..."` or
+`./gradlew :cli:installDist` (`cli/build/install/openbill/bin/openbill`).

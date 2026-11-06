@@ -1,8 +1,9 @@
 # OpenBill Roadmap
 
 This roadmap covers the Android app, the Windows/Linux desktop apps, the `openbill` CLI,
-and the optional self-hosted OpenBill Server. Dates are deliberately omitted until the
-scaffold is running; scope and exit criteria are more useful than optimistic estimates.
+and the optional self-hosted OpenBill Server. Phases 1-6 shipped as 1.0
+(current release 1.0.1). Dates are deliberately omitted; scope and exit criteria are more
+useful than optimistic estimates.
 
 ## Product principles
 
@@ -156,8 +157,8 @@ Exit criteria:
 - Desktop and Android backups are interchangeable.
 - No absolute developer paths or machine-specific files in development artifacts.
 
-Installable MSI, DEB, and AppImage packages, signing, and clean-VM smoke tests are completed
-in Phase 6 as release work.
+Installable packages, signing, and clean-VM smoke tests belong to Phase 6 as release work
+(status at 1.0.1: packages ship, signing is pending).
 
 ## Phase 4 - Inventory beta
 
@@ -233,9 +234,11 @@ Scope:
 - Desktop packaging, signing, and clean-VM smoke tests for Windows 11 and Ubuntu LTS.
 - Release engineering: signed Android artifacts, signed Windows installer, Linux packages,
   checksums, and release notes.
-- Manual, user-initiated update check from Help; no automatic update checks in 1.0.
+- Manual, user-initiated update check from Help; no automatic update checks in 1.0.0.
+  (1.0.1 added an optional once-a-day release check on desktop, on by default and turned
+  off under More > About > Check for updates; it only shows a notice.)
 - CLI C3: `report`, `gst gstr1/hsn`, `tally export`, and `audit` commands; signed CLI
-  archives for Linux and Windows. `gst gstr3b` follows the P1 GSTR-3B working report.
+  archives for Linux and Windows. `gst gstr3b` shipped with the P1 GSTR-3B working report.
 
 Exit criteria:
 
@@ -248,6 +251,11 @@ Exit criteria:
 - Backup and restore have been tested on real devices and clean VMs.
 - CLI golden-output tests pass on Ubuntu and Windows; `--json` fields and exit codes are
   frozen as a public contract.
+
+Status at 1.0.1: the signed Android APK/AAB, Windows EXE/MSI/portable ZIP, and Linux
+DEB/tar.gz ship on GitHub Releases with `SHA256SUMS`. Still pending: code signing for the
+Windows and Linux artifacts, CLI packages (the CLI runs from source), and the CLI
+commands `db info`, `backup inspect`, `search`, and `voucher restore`.
 
 ## Phase 7 - Post-1.0 growth and parity
 
@@ -363,7 +371,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | --- | --- | --- | --- | --- |
 | Core invoicing, parties, items, payments, reports, GSTR-1, backup | Free tier (limited) and paid tiers | Phases 1-6 (1.0) | A W L C | Done (split tender, voucher attachments, daily backups, HSN/SAC search, business switcher; app lock with PIN backoff and idle relock, encrypted backups, business erasure with files; shipping addresses with ship-to GSTIN, party notes and attachments; low-stock report) |
 | Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C | Done (FEFO batch picker on sale lines; alternate units with conversion; batch or serial per item, not both) |
-| Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L | Alpha builds; packaging and signing pending |
+| Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L | Stable; EXE, MSI, portable ZIP, DEB, and tar.gz packages ship; code signing pending |
 | Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Done (silent print setting, tray notification, portable mode, Ctrl+K palette; ESC/POS thermal printing on all surfaces) |
 | Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Delivery challans done; rest planned |
 | Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Editable reminder message done; scheduling planned |
@@ -473,8 +481,12 @@ records observed SDKs only; the data-brokerage row is not assessed.
 D1 is a shell and data milestone, not an installer milestone. D4 produces installable
 packages, and D5 is the 1.0 desktop release gate. The desktop shell starts after the E6 core
 screens (see docs/04); packaging, signing, and clean-VM validation are release-phase work.
-Version 1.0 ships with no automatic update checks; the Help check is manual and
-user-initiated.
+Version 1.0.0 shipped with no automatic update checks; 1.0.1 added an optional daily
+release check (notice only, on by default, can be turned off).
+
+Status at 1.0.1: D0-D4 are done. The release workflow builds the Windows EXE and MSI (plus a
+portable ZIP) and the Linux DEB (plus a portable tar.gz); AppImage is not published. Desktop
+artifacts are not code-signed yet (only `SHA256SUMS`), so the signing part of D5 is open.
 
 Desktop-specific requirements:
 
@@ -485,8 +497,9 @@ Desktop-specific requirements:
 - Portable mode for accountants who carry data on removable media.
 - High-DPI rendering and Linux fractional scaling.
 - A documented data directory per operating system.
-- No automatic update checks in 1.0. A manual, user-initiated check from Help is allowed;
-  automatic checks come later. Publish signed installers and checksums on GitHub Releases.
+- No automatic update checks in 1.0.0. A manual, user-initiated check from Help is allowed;
+  1.0.1 added an optional daily check that only shows a notice. Publish signed installers
+  and checksums on GitHub Releases (checksums ship today; signing is pending).
 
 ## CLI milestones
 
@@ -495,7 +508,7 @@ Desktop-specific requirements:
 | C0 | Skeleton, `db` and `backup` commands, golden-test harness | Phase 1 core and backup format |
 | C1 | Masters, vouchers, search, `--json`, exit codes | Phase 2 |
 | C2 | Stock, payments, CSV import/export | Phases 4-5 |
-| C3 | Reports, GST, Tally, audit; signed archives (ships with 1.0) | Phase 6 |
+| C3 | Reports, GST, Tally, audit (shipped with 1.0); signed archives (pending) | Phase 6 |
 | C4 | Remote mode and server admin commands | S3 |
 | C5 | Native-image binaries | Spike result |
 

@@ -332,9 +332,9 @@ Pass criteria: no clipped text, correct page size, scannable barcodes, legible t
 - Verify file associations and desktop entry on Linux.
 - Verify the bundled JRE is used, not a system Java.
 - Verify the app starts with no network.
-- Verify no automatic update check runs at startup or in the background.
-- Verify the manual update check from Help is user-initiated, does not block startup, and
-  fails gracefully when offline.
+- Verify the daily update check (1.0.1+) runs at most once a day, never runs when turned
+  off under More > About > Check for updates, does not block startup, sends no business
+  data, and fails gracefully when offline. Android never checks.
 - Verify checksums for all release artifacts.
 
 ## 10. Security tests

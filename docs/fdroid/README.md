@@ -4,8 +4,9 @@
 `rewritemeta` all pass). Descriptions, icon and screenshots come from
 `fastlane/metadata/android/en-US/` in this repo.
 
-Before submitting: tags `v0.2.0-alpha` and `v0.1.3-alpha` must exist on GitHub, and
-`versionCode 5` / `versionName 0.2.0-alpha` in `androidApp/build.gradle.kts` must match the tag.
+Before submitting: every tag listed under `Builds:` (currently `v0.3.0-alpha`, `v1.0.0` and
+`v1.0.1`) must exist on GitHub, and `versionCode 8` / `versionName 1.0.1` in
+`androidApp/build.gradle.kts` must match `CurrentVersion` / `CurrentVersionCode`.
 
 1. Sign in at https://gitlab.com and fork https://gitlab.com/fdroid/fdroiddata (keep the fork public).
 2. `git clone https://gitlab.com/<you>/fdroiddata.git && cd fdroiddata`
@@ -24,7 +25,7 @@ Before submitting: tags `v0.2.0-alpha` and `v0.1.3-alpha` must exist on GitHub, 
    loads; fill the abstract and tick the checklist (no anti-features: no network permission,
    no trackers, no non-free deps).
 8. Watch the MR pipeline (also under CI/CD in your fork): it runs lint, `checkupdates` and a build.
-   Fix failures, push again, answer packager questions. Later `v*-alpha` tags are picked up by
+   Fix failures, push again, answer packager questions. Later `vX.Y.Z` tags are picked up by
    `AutoUpdateMode: Version`.
 
 Notes:

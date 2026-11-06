@@ -1,17 +1,15 @@
 # Contributing to OpenBill
 
 OpenBill is an Apache-2.0, clean-room billing, invoicing, inventory, and payments
-project for Indian MSMEs. Android is the first target, with Windows and Linux
-following from the same Kotlin codebase.
-
-This guide explains how to contribute as the application scaffold and shared
-modules evolve.
+project for Indian MSMEs. Android, Windows, and Linux ship from the same Kotlin
+codebase.
 
 ## Project status
 
-The Kotlin Multiplatform scaffold, the Android app, the desktop app, and the
-shared modules exist. The test harness and feature work are still early. The
-specifications remain authoritative for scope and behavior.
+OpenBill 1.0 is released. The Android app, the Windows and Linux desktop app, the
+`openbill` CLI (direct mode), and the shared modules exist and have unit tests. The
+optional server is post-1.0. The specifications remain authoritative for scope and
+behavior.
 
 ## Build and test
 
@@ -34,10 +32,12 @@ app, use `./gradlew :desktopApp:run`.
 ## Working on the CLI and server modules
 
 The `openbill` CLI ([docs/11-cli.md](docs/11-cli.md)) and the optional OpenBill Server
-([docs/10-server.md](docs/10-server.md)) are specified but not scaffolded yet. The
-CLI direct mode ships with 1.0; the server, sync, and CLI remote mode are post-1.0.
-Planned Gradle projects follow the flat naming in `settings.gradle.kts`: `:cli`,
-`:server`, `:core-api-contract`, `:core-sync`, and `:platform-jvm`.
+([docs/10-server.md](docs/10-server.md)) are both specified. CLI direct mode exists as
+the `:cli` Gradle project; run it with `./gradlew :cli:run --args="--help"` or build a
+launcher with `./gradlew :cli:installDist` (`cli/build/install/openbill/bin/openbill`).
+The server, sync, and CLI remote mode are post-1.0. Planned Gradle projects follow the
+flat naming in `settings.gradle.kts`: `:server`, `:core-api-contract`, `:core-sync`, and
+`:platform-jvm`.
 
 - Both are JVM surfaces over the shared core. They must not depend on `core-ui`, any
   `feature-*` module, Compose, or AWT/Swing (docs/03, section 3). A new CLI command
@@ -47,7 +47,7 @@ Planned Gradle projects follow the flat naming in `settings.gradle.kts`: `:cli`,
   payloads share that schema.
 - The CLI `--json` field names and exit codes become a public contract at 1.0. Treat
   changes to them as breaking, and get maintainer review.
-- CLI changes need golden-output tests. Once `:cli` exists, run `./gradlew :cli:test`
+- CLI changes need golden-output tests. Run `./gradlew :cli:test`
   and, to regenerate goldens for review, `./gradlew :cli:test -PupdateGoldens`. Goldens
   must pass on Linux and Windows.
 - Sync and server changes need a simulation-suite or API contract test, and an updated
@@ -71,7 +71,7 @@ Planned Gradle projects follow the flat naming in `settings.gradle.kts`: `:cli`,
   result. Do not include data from a real business.
 - Give accessibility feedback. Describe the platform, assistive technology, and
   the workflow that failed. Feedback on TalkBack, keyboard navigation, contrast,
-  and large text is useful before UI code exists.
+  and large text is always useful.
 - Share original print-layout samples. A4, A5, and thermal layouts are welcome
   when you own the rights to them. Use fictitious businesses and synthetic
   amounts. Do not submit invoices or screenshots from a commercial product.
@@ -145,8 +145,8 @@ cover the case with a table-driven test.
 ## Code style
 
 - Follow the official Kotlin coding conventions and the existing project style.
-- Android lint is available now via `./gradlew :androidApp:lintDebug`. Shared
-  formatting and static-analysis checks are planned under E0.2.
+- Android lint is available now via `./gradlew :androidApp:lintDebug`. There is no
+  shared formatter or static-analysis check yet (planned under E0.2).
 - Prefer the standard library and existing dependencies.
 - Do not add a dependency without justification. Explain its purpose, license,
   size, maintenance status, and privacy or security impact in the pull request.

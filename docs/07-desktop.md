@@ -21,8 +21,15 @@ release. Desktop gets designed menus, shortcuts, tables, and window behavior, no
 phone layouts. A package smoke build starts at D1; installable MSI/DEB/AppImage artifacts
 are a D4 deliverable.
 
-Non-goals for 1.0: multiple windows, tray, background sync, automatic update checks,
-self-update, raw ESC/POS, a local server, macOS, and 32-bit builds.
+Non-goals for 1.0: multiple windows, background sync, self-update, a local server, macOS,
+and 32-bit builds. (The original list also excluded a tray, raw ESC/POS, and automatic update
+checks; 1.0 shipped tray notifications and ESC/POS thermal printing, and 1.0.1 added an
+optional daily update notice.)
+
+Status at 1.0.1: releases ship a Windows EXE installer, MSI, and portable ZIP, and a Linux DEB
+and portable tar.gz, with `SHA256SUMS`. AppImage is configured in the build but not
+published, and desktop artifacts are not yet signed (no Authenticode, no GPG signatures), so
+the signing part of D5 is still open.
 
 ### Competitive baseline
 
@@ -235,9 +242,11 @@ the Apache-2.0 license. Uninstall removes app files but not user data; data remo
 separate. No developer paths or machine-specific files may appear in artifacts.
 
 GitHub Releases hosts the packages, `SHA256SUMS`, detached signatures, release notes, and
-schema and backup versions. Versioning is semantic. Version 1.0 has no automatic update
-checks: Help performs a user-initiated check against a signed manifest or opens Releases,
-with no identifiers and no background polling.
+schema and backup versions (detached signatures are pending; see the status note in
+section 1). Versioning is semantic. Version 1.0.0 has no automatic update checks. Since
+1.0.1 the desktop app asks the GitHub releases API for the latest version at most once a
+day and shows a notice when a newer one exists; it sends no identifiers, downloads nothing,
+and can be turned off under More > About > Check for updates.
 
 A pre-migration backup is created before any schema upgrade. Migrations are forward-only, so
 an older build refuses a newer schema and directs the user to that backup; downgrades never

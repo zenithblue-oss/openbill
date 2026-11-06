@@ -19,4 +19,4 @@ Features
 Privacy
 Camera is used only for barcode scanning and Bluetooth only for receipt printing. No internet permission. Your data never leaves the phone unless you share a PDF yourself.
 
-Alpha software: please confirm GST treatment with your CA before relying on it for real books.
+Please confirm GST treatment with your CA before relying on OpenBill for real books.

@@ -52,8 +52,7 @@ Constraints:
 | Packaging | Android Gradle Plugin; Compose Desktop `jpackage` | Standard toolchains |
 | CI | GitHub Actions matrix | Ubuntu and Windows builds |
 
-Exact library versions will be pinned in `gradle/libs.versions.toml` when the scaffold
-lands. Avoid mixing Compose Android and Compose Multiplatform artifacts in the same
+Exact library versions are pinned in `gradle/libs.versions.toml`. Avoid mixing Compose Android and Compose Multiplatform artifacts in the same
 module.
 
 ## 3. Module graph
@@ -282,8 +281,8 @@ Rules:
   posted, non-deleted vouchers. It is not a separate mutable balance table. The opening
   balance comes from the party master's signed opening balance; the closing balance is the
   opening balance plus posted movements.
-- Expense vouchers (E8.10) and allocation editing are not yet implemented in the data layer;
-  expense vouchers are in 1.0 scope.
+- Expense vouchers (E8.10) and payment allocation are implemented in the data layer and
+  shipped in 1.0.
 
 ## 6. Tax engine
 
@@ -470,10 +469,12 @@ Detailed strategy: [07-desktop.md](07-desktop.md).
 - Data stored under the OS-appropriate application data directory, with a portable mode.
 - PDF generation uses a JVM library; printing uses the OS print dialog.
 - File exports go through native file choosers.
-- MSI, DEB, and AppImage artifacts are built in CI. A package smoke build starts at D1;
+- EXE, MSI, and DEB artifacts (plus portable ZIP and tar.gz) are built in CI; AppImage is
+  configured but not published. A package smoke build starts at D1;
   installable artifacts are a D4 deliverable.
 - The MSI defaults to a per-user install; per-machine is an optional installer mode.
-- No automatic update checks in 1.0; a manual, user-initiated Help check is allowed.
+- No automatic update checks in 1.0.0. Since 1.0.1 the desktop app makes an optional,
+  at-most-daily release check that only shows a notice (on by default, can be turned off).
 - Desktop UI tests run on a virtual display in CI where possible; packaging smoke tests
   run on clean Windows and Linux runners.
 

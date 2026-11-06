@@ -68,9 +68,8 @@ More rendered PDFs: [Simple](docs/screenshots/pdf/simple.png), [Modern](docs/scr
 - PDF viewer with share, print, and save.
 - Material 3 with dynamic color and dark mode; keyboard shortcuts on desktop.
 - Offline by design: no account, no ads, no trackers.
-- Tax engine supports additional charges (entry screen pending).
-
-Onboarding is coming in the next release.
+- Additional charges (freight, packing, and similar) on invoices, taxed by the GST engine.
+- First-run onboarding, which can be reopened later from the app.
 
 ## Progress
 
@@ -91,7 +90,7 @@ only the engine/data layer exists without UI, and 0 otherwise. These are the mai
 | Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image | 100% (15 / 15) |
 | Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
 | Desktop apps | Windows and Linux builds run the shared UI | Stable |
-| CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 |
+| CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 (a few commands pending; see What's left) |
 | Server | Not started (post-1.0) | 0% |
 
 ## What's left
@@ -103,6 +102,9 @@ Still open for the 1.0 release (outside the P0 feature count):
 - Output: USB thermal printing on Android (Bluetooth works; desktop USB goes through the
   print service or /dev/usb/lp*).
 - Data: backup schedule and retention settings (fixed at daily, keep 7).
+- Release: code signing for Windows and Linux artifacts (only `SHA256SUMS` today).
+- CLI: release packages (it runs from source today; see [CONTRIBUTING.md](CONTRIBUTING.md))
+  and the `db info`, `backup inspect`, `search`, and `voucher restore` commands.
 - Optional server after 1.0.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
@@ -131,12 +133,12 @@ more than shipping every competitor feature in the first release.
 | Platform | Form factor | Status | Packaging |
 | --- | --- | --- | --- |
 | Android | Phone and tablet | Stable | APK, AAB |
-| Windows | Desktop and laptop | Stable | MSI |
-| Linux | Desktop and laptop | Stable | DEB, AppImage |
+| Windows | Desktop and laptop | Stable | EXE installer, MSI, portable ZIP (unsigned) |
+| Linux | Desktop and laptop | Stable | DEB, portable tar.gz (unsigned) |
 | iOS | Phone and tablet | Not planned for 1.0 | - |
 | Web | Browser | Not planned; optional later | - |
 | [Server](docs/10-server.md) | Self-hosted, optional | Planned, after 1.0 | OCI image, JAR |
-| [CLI](docs/11-cli.md) | Terminal, scripting and reports | Planned; direct mode ships with 1.0 | Archives, DEB, MSI component |
+| [CLI](docs/11-cli.md) | Terminal, scripting and reports | Direct mode works (C0-C3); run from source with Gradle | Not packaged yet; archives, DEB, MSI component planned |
 
 Windows and Linux are first-class targets, not afterthoughts. The domain, database, tax,
 search, reporting, and import/export layers are shared through Kotlin Multiplatform. The
@@ -200,8 +202,9 @@ The repository is `zenithblue-oss/openbill` (https://github.com/zenithblue-oss/o
 ### Command line
 
 - `openbill` CLI in direct mode on a local database or a backup file: `db`, `backup`,
-  masters, vouchers, search, stock, payments, CSV import/export, reports, GSTR-1, HSN, Tally
-  export, and audit commands, with stable `--json` output and exit codes (milestones C0-C3).
+  masters, invoices, stock, payments, CSV import/export, reports, GSTR-1, HSN, Tally
+  export, and audit commands, with stable `--json` output and exit codes (milestones C0-C3;
+  `search` is pending).
 - Remote mode and server administration follow the optional server, after 1.0.
 
 See [docs/11-cli.md](docs/11-cli.md).
@@ -265,15 +268,14 @@ that map to it. Features outside Phases 1-6 of the roadmap are after 1.0.
 | CI | GitHub Actions matrix for Android, Linux desktop, Windows desktop |
 
 Versions are pinned in `gradle/libs.versions.toml` (AGP 8.13.2, Kotlin 2.3.10,
-Compose Multiplatform 1.11.1). Android 8.0 (API 26) is the minimum; the project compiles
-and targets API 36 at the time of writing and will move to the latest stable target before
-release.
+Compose Multiplatform 1.11.1). Android 8.0 (API 26) is the minimum; the app compiles
+against and targets API 36.
 
-## Repository layout (target)
+## Repository layout
 
 Gradle project names are flat (`:androidApp`, `:desktopApp`, `:core-model`, ...; see
-`settings.gradle.kts`). The tree below is the planned shape; modules marked (planned) do
-not exist yet.
+`settings.gradle.kts`). Modules marked (planned) do not exist yet; feature screens currently
+live in `core-ui`.
 
 ```text
 openbill/
@@ -283,16 +285,17 @@ openbill/
   core-tax/                 GST tax and rounding engine
   core-domain/              Use cases and repository ports
   core-database/            Room KMP database, DAOs, migrations, FTS
-  core-data/                Repositories, backup, import/export
+  core-data/                Room-backed repositories
+  core-backup/              Backup archive format, encryption, automatic backups
+  core-printing/            PDF layout and thermal (ESC/POS) printing
   core-ui/                  Design system and shared screens
+  cli/                      openbill command-line tool (direct mode)
   core-search/              Query parsing, ranking, highlights (planned)
   core-reporting/           Report models and exports (planned)
-  core-printing/            Print layout contracts (planned)
   core-api-contract/        DTOs and OpenAPI source for API, CLI, sync (planned)
   core-sync/                Operation log, outbox, sync client (planned, post-1.0)
   platform/                 expect/actual boundaries (planned)
   platform-android/  platform-desktop/  platform-jvm/   (planned)
-  cli/                      openbill command-line tool (planned)
   server/                   OpenBill Server (planned, post-1.0)
   feature-*/                onboarding, dashboard, parties, items, inventory,
                             billing, payments, expenses, reports, gst, settings, search, backup (planned)
