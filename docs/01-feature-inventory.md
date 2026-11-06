@@ -144,7 +144,7 @@ First-run acceptance criteria:
 | FEFO batch suggestion | Suggest the earliest-expiring batch when selling | P1 | Done | Suggestion only; user can override |
 | Near-expiry alerts | Notify before batches expire | P1 | Not started | Local notification and dashboard card; configurable window |
 | Reorder level | Reorder threshold and suggested reorder quantity | P1 | Partial | Extends low-stock alerts |
-| Batch and expiry report | Stock by batch with expiry dates | P1 | Not started | Report; see section 7 |
+| Batch and expiry report | Stock by batch with expiry dates | P1 | Done | Report; see section 7 |
 | Godown transfer | Single and bulk transfers between locations; enabling godowns moves existing stock to a default location | P0 | Done | Reversing movements on edit; warn when editing old documents changes opening stock |
 | Multi-godown stock view | Per-item quantity by location | P0 | Done | Limit of locations in a picker is a UI choice, not a data limit |
 | Alternate unit on invoice | Show secondary unit quantity on printed document | P1 | Done | Template option |
@@ -278,21 +278,21 @@ Tax engine requirements:
 | GSTR-1 export | P0 | Done | CSV or JSON as supported |
 | GSTR-3B working | P1 | Done | Internal computation only; the CLI `gst gstr3b` command ships with it, after 1.0 |
 | Tally XML export | P0 | Done | Document mapping |
-| Day summary | P1 | Not started | Cash in, cash out, sales |
+| Day summary | P1 | Done | Cash in, cash out, sales per day; ties to the sales register and cash and bank book |
 | Sales summary by user | P1 | Done | Who posted each voucher, from the activity log; old vouchers count as Owner |
 | Day book by user | P1 | Done | Day book with a User column, sorted by user |
-| GSTR-2 working (purchases) | P1 | Not started | Internal computation only |
+| GSTR-2 working (purchases) | P1 | Done | Internal computation only: per bill and rate, B2B/unregistered, ITC eligible/ineligible, reverse charge; CSV/JSON; eligible ITC equals GSTR-3B 4(C); imports not tracked |
 | GST sales and purchase with HSN | P0 | Done | Included in GST summary and HSN summary |
 | GSTR-1 JSON for portal upload | P0 | Done | Same data as CSV export, portal-compatible layout |
 | Low-stock report | P0 | Done | Companion to the dashboard card |
-| Batch and expiry report | P1 | Not started | See section 4 |
+| Batch and expiry report | P1 | Done | Batches with stock as of the period end, days left and status; see section 4 |
 | Cash and bank (all payments) | P0 | Done | Combined view across accounts |
 | Daily balance-sheet snapshot | P2 | Not started | Computed on demand, not cached remotely |
-| Select several reports and share together | P1 | Not started | One bundle or ZIP |
-| Email a report | P1 | Partial | Through the user's mail client |
-| Bulk download of reports as ZIP | P1 | Not started | Desktop and Android; streamed (invoice export is P0, section 9) |
-| User activity tracker | P1 | Not started | Needs local users; see section 10 |
-| CA report pack | P1 | Not started | Preconfigured set of reports for an accountant |
+| Select several reports and share together | P1 | Done | Reports hub: choose reports, share the CSVs together or as one ZIP |
+| Email a report | P1 | Done | Through the user's mail client: Android mail-only share sheet with attachments; desktop opens a mail draft and the folder with the files (mailto cannot attach); no SMTP |
+| Bulk download of reports as ZIP | P1 | Done | Desktop and Android save dialog; CLI `report ca-pack`; built in memory (text reports are small) |
+| User activity tracker | P1 | Done | The activity log (filter by user, CSV) and the by-user reports; see section 10 |
+| CA report pack | P1 | Done | One ZIP: registers, day book, GSTR-1 (CSV and monthly JSON), GSTR-2 (CSV and JSON), GSTR-3B, HSN, outstanding, party ledgers, Tally XML; tested identical to the single reports |
 | Large stock-summary export | P0 | Done | Never silently capped; stream the full list |
 | Balance sheet | P2 | Not started | Requires complete accounting model |
 | Profit and loss | P2 | Done | After expense and opening balance maturity |

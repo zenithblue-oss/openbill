@@ -378,7 +378,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Recurring invoices done (unlimited; made on app open, no OS background job); editable reminder message done; automated reminders planned |
 | Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Done locally (users with PINs, schema v16; Owner/Manager/Cashier/Accountant roles enforced in shared code; deactivation; activity log and sales/day book by user); server accounts planned |
 | Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Done (export/SEZ invoices in a foreign currency with an exchange rate, schema v15; GST, ledger and returns in rupees; both currencies printed) |
-| GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | GSTR-3B summary done; rest planned |
+| GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | Done: GSTR-3B summary, GSTR-2 working, CA pack ZIP (app and `report ca-pack`) |
 | POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Done (item-first counter screen, held bills persisted in schema v14, cash/UPI/card/bank split with change, F-key shortcuts, tablet layout, thermal receipt) |
 | Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | Planned |
 | E-invoice and e-way bill, bulk generation | Paid tiers | Phase 7 (provider interface), Phase 9 (bulk, alerts) | A W L S C | Planned |

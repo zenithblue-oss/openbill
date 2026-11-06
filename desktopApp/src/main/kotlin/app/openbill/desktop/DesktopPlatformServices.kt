@@ -220,16 +220,40 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         return result.get()
     }
 
-    override suspend fun saveTextFile(fileName: String, text: String): String? {
+    override suspend fun saveTextFile(fileName: String, text: String): String? = saveFile(fileName, text.toByteArray(Charsets.UTF_8))
+
+    override suspend fun saveFile(fileName: String, bytes: ByteArray): String? {
         val target = withContext(Dispatchers.IO) { chooseSaveFile(fileName) } ?: return null
         withContext(Dispatchers.IO) {
             target.parentFile?.mkdirs()
             val tmp = File(target.parentFile, target.name + ".tmp")
-            tmp.writeText(text)
+            tmp.writeBytes(bytes)
             java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
             revealInFolder(target)
         }
         return "Saved ${target.name}"
+    }
+
+    /**
+     * No share sheet on desktop: the files go to Documents/OpenBill exports, whose folder is opened.
+     * For [email] a mail draft opens too; mailto links cannot carry attachments, so the user
+     * attaches the files from the opened folder.
+     */
+    override suspend fun shareFiles(subject: String, files: List<Pair<String, ByteArray>>, email: Boolean): String? = withContext(Dispatchers.IO) {
+        if (files.isEmpty()) return@withContext "Nothing to share"
+        val docs = File(System.getProperty("user.home"), "Documents").takeIf { it.isDirectory } ?: File(System.getProperty("user.home"))
+        val dir = File(docs, "OpenBill exports").apply { mkdirs() }
+        val written = files.map { (name, bytes) -> File(dir, name).apply { writeBytes(bytes) } }
+        revealInFolder(written.first())
+        if (!email) return@withContext "Saved ${written.size} file(s) to ${dir.absolutePath}"
+        fun enc(s: String) = java.net.URLEncoder.encode(s, Charsets.UTF_8).replace("+", "%20")
+        val body = "Please find attached:\n" + written.joinToString("\n") { it.name } + "\n"
+        val mailed = runCatching {
+            val uri = java.net.URI("mailto:?subject=${enc(subject)}&body=${enc(body)}")
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.MAIL)) Desktop.getDesktop().mail(uri)
+            else ProcessBuilder("xdg-open", uri.toString()).start()
+        }.isSuccess
+        if (mailed) "Mail draft opened; attach the file(s) from ${dir.absolutePath}" else "No mail app found. The file(s) are in ${dir.absolutePath}"
     }
 
     /** Desktop has no share sheet: the text goes to the clipboard for pasting into WhatsApp Web or mail. */

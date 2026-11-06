@@ -1,6 +1,8 @@
 package app.openbill.core.domain.report
 
 import app.openbill.core.domain.model.AccountCode
+import app.openbill.core.domain.model.Batch
+import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.booksLockedThrough
 import app.openbill.core.domain.model.requireBooksOpen
 import app.openbill.core.model.Money
@@ -102,6 +104,65 @@ class ReportsTest {
         val t = Reports.run(ReportKind.EXPENSES, data)
         assertEquals("Category,Vouchers,Amount,GST,Total\r\nTotal,0,0.00,0.00,0.00\r\n", t.toCsv())
         assertTrue(t.toJson().contains("\"totals\": {"))
+    }
+
+    @Test
+    fun daySummaryMatchesRegister() {
+        val t = Reports.run(ReportKind.DAY_SUMMARY, data)
+        assertEquals(listOf("2026-10-02", "2026-10-05", "2026-10-07", "2026-10-10"), t.rows.map { it[0] })
+        assertEquals(listOf("2026-10-10", "0", "-118.00", "0.00", "0.00", "0.00"), t.rows.last()) // credit note
+        assertEquals(listOf("Total", "3", "143222.00", "0.00", "0.00", "0.00"), t.totals)
+        assertEquals(Reports.run(ReportKind.SALES_REGISTER, data).total("total"), t.total("sales"))
+    }
+
+    @Test
+    fun gstr2MatchesPurchaseRegisterAndGstr3b() {
+        val t = Reports.run(ReportKind.GSTR2, data)
+        assertEquals(
+            listOf("2026-10-01", "Purchase", "PUR-0001", "BS/77", f.parties.first { it.id == "P4" }.name, f.parties.first { it.id == "P4" }.gstin.orEmpty()),
+            t.rows.single().take(6),
+        )
+        assertEquals(listOf("18", "taxable", "No", "Eligible", "1000.00", "0.00", "0.00", "180.00", "0.00"), t.rows.single().drop(7))
+        val register = Reports.run(ReportKind.PURCHASE_REGISTER, data)
+        listOf("taxable", "igst", "cgst", "sgst", "cess").forEach { assertEquals(register.total(it), t.total(it), it) }
+        val itc = Reports.run(ReportKind.GSTR3B, data).rows.single { it[0].startsWith("4(C)") }
+        assertEquals("Eligible ITC (GSTR-3B 4(C)): IGST ${itc[2]}, CGST ${itc[3]}, SGST ${itc[4]}, cess ${itc[5]}.", t.notes[0])
+    }
+
+    @Test
+    fun batchExpiryListsBatchesWithStock() {
+        val batches = listOf(
+            Batch("B1", "I1", "G1", "LOT-1", LocalDate(2026, 11, 15)),
+            Batch("B2", "I1", "G1", "LOT-2", LocalDate(2026, 10, 20)),
+            Batch("B3", "I1", "G1", "LOT-3", null),
+            Batch("B4", "I1", "G1", "LOT-4", LocalDate(2027, 6, 1)), // sold out
+        )
+        fun move(id: String, batch: String, qty: Long) =
+            StockMovement(id, "F1", "I1", "G1", batchId = batch, voucherId = "V6", date = LocalDate(2026, 10, 1), quantity = Quantity.of(qty), createdAt = kotlin.time.Instant.fromEpochSeconds(0))
+        val stock = listOf(move("b1", "B1", 5), move("b2", "B2", 3), move("b3", "B3", 2), move("b4", "B4", 4), move("b5", "B4", -4))
+        val d = ReportData(
+            data.firm, data.settings, data.period, data.vouchers, data.parties, data.items, data.units, data.accounts, data.journal, stock, data.partyMovements,
+            batches = batches, godowns = listOf(app.openbill.core.domain.model.Godown("G1", data.firm.id, "Main", createdAt = kotlin.time.Instant.fromEpochSeconds(0), updatedAt = kotlin.time.Instant.fromEpochSeconds(0))),
+        )
+        val t = Reports.run(ReportKind.BATCH_EXPIRY, d)
+        assertEquals(
+            listOf(
+                listOf("Steel Bolt", "pcs", "LOT-2", "Main", "2026-10-20", "3", "-11", "Expired"),
+                listOf("Steel Bolt", "pcs", "LOT-1", "Main", "2026-11-15", "5", "15", "Expiring soon"),
+                listOf("Steel Bolt", "pcs", "LOT-3", "Main", "", "2", "", "No expiry"),
+            ),
+            t.rows,
+        )
+    }
+
+    @Test
+    fun zipCrcAndBundleKinds() {
+        assertEquals(0xCBF43926.toInt(), ZipWriter.crc32("123456789".encodeToByteArray()))
+        val zip = ZipWriter.write(listOf("a.csv" to "x,y\r\n".encodeToByteArray()))
+        assertEquals(listOf<Byte>(0x50, 0x4b, 0x03, 0x04), zip.take(4))
+        assertTrue(ReportKind.PARTY_STATEMENT !in ReportPack.BUNDLE_KINDS)
+        assertFailsWith<IllegalArgumentException> { ZipWriter.write(listOf("a" to ByteArray(0), "a" to ByteArray(0))) }
+        assertEquals(listOf("102026", "112026", "122026"), ReportPack.months(ReportPeriod(LocalDate(2026, 10, 15), LocalDate(2026, 12, 2))).map { it.returnPeriod })
     }
 
     @Test

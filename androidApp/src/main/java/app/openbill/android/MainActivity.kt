@@ -45,6 +45,7 @@ class MainActivity : FragmentActivity() {
                         "csv" -> "text/csv"
                         "json" -> "application/json"
                         "xml" -> "text/xml"
+                        "zip" -> "application/zip"
                         else -> "text/plain"
                     },
                 )

@@ -74,6 +74,16 @@ interface PlatformServices {
      */
     suspend fun saveTextFile(fileName: String, text: String): String? = shareText(fileName, text)
 
+    /** [saveTextFile] for binary files (report ZIPs). Returns a message, or null when cancelled. */
+    suspend fun saveFile(fileName: String, bytes: ByteArray): String? = "Saving files is not available here"
+
+    /**
+     * Shares report files: the share sheet on Android ([email] limits it to mail apps); on desktop,
+     * which has no share sheet, the files go to a folder that is opened, with a mail draft for [email].
+     * Nothing is sent over the network by the app. Returns a message for the user, if any.
+     */
+    suspend fun shareFiles(subject: String, files: List<Pair<String, ByteArray>>, email: Boolean = false): String? = "Sharing files is not available here"
+
     /** Lets the user choose a CSV or text file and returns its UTF-8 text; null if cancelled or unsupported. */
     suspend fun openTextFile(): String? = null
 

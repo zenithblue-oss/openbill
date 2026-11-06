@@ -78,7 +78,7 @@ against what is usable in the app today. A feature counts 1 when it works end to
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
 **1.0 scope: 100% (136 of 136 P0 features)** `████████████████████`
-**Full parity: about 64% (176 of 277 P0+P1+P2 features)** `█████████████░░░░░░░`
+**Full parity: about 66% (184 of 277 P0+P1+P2 features)** `█████████████░░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
@@ -86,7 +86,7 @@ only the engine/data layer exists without UI, and 0 otherwise. These are the mai
 | Parties and items | Masters, ledgers, statements, shipping addresses with ship-to GSTIN, party notes and attachments, alternate units, CSV import (one transaction), offline HSN/SAC search, business switcher | 100% (31 / 31 P0) |
 | Inventory | Godowns, batches (FEFO picker), serials (batch or serial per item), adjustments, transfers, valuation, labels, low-stock card and report | 100% |
 | Payments and accounting | Payments, allocation, split tender, expenses, accounts, ageing, reconciliation, reminder templates | 100% (14 / 14) |
-| Reports and GST | Registers, books, statements, stock, low stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 100% (19 / 19) |
+| Reports and GST | Registers, books, day summary, statements, stock, low stock, batch expiry, profit, GST/HSN, GSTR-1 JSON, GSTR-2/3B working, Tally XML, multi-report share/email/ZIP, CA pack | 100% (19 / 19 P0) |
 | Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image | 100% (15 / 15) |
 | Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, local staff users with roles (owner, manager, cashier, accountant) and a per-user activity log, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
 | POS | Counter billing: scan or search items, Cash sale default, held bills, split tender with change, keyboard shortcuts, tablet layout, thermal receipt | 100% (5 / 5) |

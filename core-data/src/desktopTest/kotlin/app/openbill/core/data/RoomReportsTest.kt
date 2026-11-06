@@ -10,6 +10,13 @@ import app.openbill.core.domain.report.ReportKind
 import app.openbill.core.domain.report.ReportPeriod
 import app.openbill.core.domain.report.Reports
 import app.openbill.core.domain.report.loadReportData
+import app.openbill.core.domain.report.Gstr1
+import app.openbill.core.domain.report.ReportPack
+import app.openbill.core.domain.report.ReportTable
+import app.openbill.core.domain.report.caPack
+import app.openbill.core.domain.report.writeRegisterCsv
+import app.openbill.core.domain.report.writeTallyXml
+import app.openbill.core.domain.report.zipBytes
 import app.openbill.core.domain.repository.Repositories
 import app.openbill.core.domain.usecase.BooksLock
 import app.openbill.core.domain.usecase.MoneyVoucherInput
@@ -79,6 +86,58 @@ class RoomReportsTest {
         assertEquals("-11.80", book.totals!![7])
         val gst3b = Reports.run(ReportKind.GSTR3B, data)
         assertEquals("0.90", gst3b.rows[6][3]) // ITC CGST half of 1.80
+    }
+
+    @Test
+    fun caPackFilesMatchTheSingleReports(): Unit = runBlocking {
+        val ledger = repos.ledger as RoomLedgerRepository
+        val cash = ledger.ensureSystemAccounts("firm-1", CREATED_AT).cash
+        val rent = Account("rent", "firm-1", "Rent", AccountType.EXPENSE, createdAt = CREATED_AT, updatedAt = CREATED_AT)
+        ledger.saveAccount(rent)
+        sale("s1", LocalDate(2026, 5, 10))
+        repos.vouchers.post("s1", POSTED_AT)
+        MoneyVouchers(repos.vouchers, repos.payments, repos.ledger).record(
+            MoneyVoucherInput(
+                type = VoucherType.EXPENSE, id = "e1", firmId = "firm-1", financialYearId = "fy-1", stateCode = "27",
+                date = LocalDate(2026, 5, 20), amount = Money.of(1_180), accountId = cash.id, ledgerAccountId = rent.id, inputTax = Money.of(180),
+            ),
+            POSTED_AT,
+        )
+        val period = ReportPeriod(LocalDate(2026, 5, 1), LocalDate(2026, 6, 15))
+        val files = repos.caPack("firm-1", period)
+        val byName = files.associate { it.name to it.text }
+
+        // Every table is byte-for-byte the single report's CSV.
+        ReportPack.CA_KINDS.forEach { kind ->
+            assertEquals(Reports.run(kind, repos.loadReportData("firm-1", period, kind)).toCsv(), byName.getValue("${kind.key}-${period.from}-${period.to}.csv"), kind.key)
+        }
+        // The sales register also equals the streamed export the register screen saves.
+        assertEquals(buildString { repos.writeRegisterCsv("firm-1", period, true, this) }, byName.getValue("sales-register-2026-05-01-2026-06-15.csv"))
+        assertEquals(buildString { repos.writeTallyXml("firm-1", period, this) }, byName.getValue("Tally-2026-05-01-2026-06-15.xml"))
+        val gstin = repos.firms.findFirm("firm-1")!!.gstin
+        if (gstin.isNullOrBlank()) {
+            assertTrue("no GSTIN" in byName.getValue("README.txt"))
+        } else {
+            listOf("2026-05", "2026-06").forEach { m ->
+                val month = ReportPeriod.month(m)
+                assertEquals(Gstr1.build(repos.loadReportData("firm-1", month, ReportKind.GSTR1)).toJson(), byName.getValue("GSTR1-$gstin-${month.returnPeriod}.json"))
+            }
+        }
+        // GSTR-2 JSON carries the same expense ITC as GSTR-3B 4(C).
+        val gstr2 = Reports.run(ReportKind.GSTR2, repos.loadReportData("firm-1", period, ReportKind.GSTR2))
+        assertEquals(gstr2.toJson(mapOf("from" to period.from.toString(), "to" to period.to.toString())), byName.getValue("gstr2-2026-05-01-2026-06-15.json"))
+        assertEquals("0.90", gstr2.totals!![gstr2.columns.indexOfFirst { it.key == "cgst" }])
+        assertTrue(gstr2.notes[0].contains("CGST 0.90"), gstr2.notes[0])
+        // Party ledgers: the party statement rows, prefixed with the party.
+        val statement = Reports.run(ReportKind.PARTY_STATEMENT, repos.loadReportData("firm-1", period, ReportKind.PARTY_STATEMENT), "party-1")
+        val ledgers = byName.getValue("party-ledgers-2026-05-01-2026-06-15.csv").lines()
+        statement.rows.forEach { row -> assertTrue(ReportTable.csvRow(listOf("Acme Traders") + row) in ledgers, row.toString()) }
+
+        // The ZIP opens with standard tools and holds the same bytes.
+        val zip = java.util.zip.ZipInputStream(files.zipBytes().inputStream())
+        val unzipped = generateSequence { zip.nextEntry }.associate { it.name to zip.readBytes().decodeToString() }
+        assertEquals(byName, unzipped)
+        assertTrue("README.txt" in unzipped)
     }
 
     @Test

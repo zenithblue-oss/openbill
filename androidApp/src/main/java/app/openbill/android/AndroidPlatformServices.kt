@@ -174,13 +174,55 @@ class AndroidPlatformServices(
         }
     }
 
-    override suspend fun saveTextFile(fileName: String, text: String): String? {
+    override suspend fun saveTextFile(fileName: String, text: String): String? = saveFile(fileName, text.toByteArray(Charsets.UTF_8))
+
+    override suspend fun saveFile(fileName: String, bytes: ByteArray): String? {
         val uri = requireHooks().createFile(fileName) ?: return null
         withContext(Dispatchers.IO) {
-            context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+            context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
                 ?: error("Could not open the chosen location")
         }
         return "Saved $fileName"
+    }
+
+    override suspend fun shareFiles(subject: String, files: List<Pair<String, ByteArray>>, email: Boolean): String? {
+        if (files.isEmpty()) return "Nothing to share"
+        val mailto = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+        if (email && mailto.resolveActivity(context.packageManager) == null) return "No email app is installed. Use Share or Download ZIP instead."
+        val uris = withContext(Dispatchers.IO) {
+            val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+            // Keep only the latest few exports in the cache.
+            dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(10)?.forEach { it.delete() }
+            files.map { (name, bytes) -> uriFor(File(dir, name).apply { writeBytes(bytes) }) }
+        }
+        val single = uris.size == 1
+        val send = Intent(if (single) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE).apply {
+            type = if (single) shareMime(files[0].first) else "*/*"
+            if (single) putExtra(Intent.EXTRA_STREAM, uris[0]) else putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            if (email) putExtra(Intent.EXTRA_TEXT, "$subject: ${files.joinToString { it.first }}")
+            // Grants every file to the receiving app, not only the first.
+            clipData = android.content.ClipData.newRawUri(subject, uris[0]).apply { uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) } }
+            if (email) selector = mailto
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return try {
+            context.startActivity(
+                Intent.createChooser(send, if (email) "Email $subject" else "Share $subject")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
+            )
+            null
+        } catch (_: ActivityNotFoundException) {
+            if (email) "No email app is installed. Use Share or Download ZIP instead." else "No app can receive these files"
+        }
+    }
+
+    private fun shareMime(name: String) = when (name.substringAfterLast('.').lowercase()) {
+        "csv" -> "text/csv"
+        "json" -> "application/json"
+        "xml" -> "text/xml"
+        "zip" -> "application/zip"
+        else -> "text/plain"
     }
 
     private val attachmentStore = AttachmentStore(androidDataLocation(context, OpenBillApplication.DATABASE_NAME).attachmentDirs.getValue("attachments"))

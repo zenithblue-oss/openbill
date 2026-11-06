@@ -13,6 +13,7 @@ import app.openbill.core.model.Money
 import app.openbill.core.model.Quantity
 import app.openbill.core.tax.TaxTreatment
 import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.daysUntil
 import kotlinx.datetime.minus
 
 enum class ReportGroup(val label: String) { TRANSACTIONS("Transactions"), PARTIES("Parties and money"), STOCK("Stock and profit"), GST("GST") }
@@ -24,16 +25,19 @@ enum class ReportKind(val key: String, val title: String, val group: ReportGroup
     DAY_BOOK("day-book", "Day book", ReportGroup.TRANSACTIONS),
     SALES_BY_USER("sales-by-user", "Sales summary by user", ReportGroup.TRANSACTIONS),
     DAY_BOOK_BY_USER("day-book-by-user", "Day book by user", ReportGroup.TRANSACTIONS),
+    DAY_SUMMARY("day-summary", "Day summary", ReportGroup.TRANSACTIONS),
     CASH_BANK_BOOK("cash-bank-book", "Cash and bank book", ReportGroup.PARTIES),
     EXPENSES("expenses", "Expense report", ReportGroup.PARTIES),
     OUTSTANDING("outstanding", "Party-wise outstanding", ReportGroup.PARTIES),
     PARTY_STATEMENT("party-statement", "Party statement", ReportGroup.PARTIES, needsParty = true),
     STOCK_SUMMARY("stock-summary", "Stock summary", ReportGroup.STOCK),
     LOW_STOCK("low-stock", "Low-stock report", ReportGroup.STOCK),
+    BATCH_EXPIRY("batch-expiry", "Batch and expiry report", ReportGroup.STOCK),
     ITEM_PROFIT("item-profit", "Item-wise profit", ReportGroup.STOCK),
     PROFIT_LOSS("profit-loss", "Profit and loss", ReportGroup.STOCK),
     GSTR1("gstr1", "GSTR-1 summary", ReportGroup.GST),
     GSTR3B("gstr3b", "GSTR-3B summary", ReportGroup.GST),
+    GSTR2("gstr2", "GSTR-2 working (purchases)", ReportGroup.GST),
     HSN_SUMMARY("hsn-summary", "HSN-wise summary", ReportGroup.GST),
     ;
 
@@ -55,6 +59,9 @@ object Reports {
         ReportKind.DAY_BOOK -> dayBook(data)
         ReportKind.SALES_BY_USER -> salesByUser(data)
         ReportKind.DAY_BOOK_BY_USER -> dayBookByUser(data)
+        ReportKind.DAY_SUMMARY -> daySummary(data)
+        ReportKind.BATCH_EXPIRY -> batchExpiry(data)
+        ReportKind.GSTR2 -> gstr2(data)
         ReportKind.CASH_BANK_BOOK -> cashBankBook(data)
         ReportKind.EXPENSES -> expenses(data)
         ReportKind.OUTSTANDING -> outstanding(data)
@@ -448,6 +455,121 @@ object Reports {
             notes = listOf(
                 "Working only: no imports, ITC reversal or cross-head set-off; reverse charge tax (3.1(d)) must be paid in cash. Verify before filing.",
             ),
+        )
+    }
+
+    /**
+     * Per day with activity: sales (invoices less credit notes, with tax, as in the sales register)
+     * and money into and out of cash and bank accounts (as in the cash and bank book).
+     */
+    fun daySummary(data: ReportData): ReportTable {
+        val sales = data.posted.filter { it.type == VoucherType.SALE || it.type == VoucherType.CREDIT_NOTE }.groupBy { it.date }
+        val cashBank = data.accounts.filter { it.type == AccountType.CASH || it.type == AccountType.BANK }.map { it.id }.toSet()
+        val cash = data.journal.filter { it.entry.accountId in cashBank && it.entry.date >= data.from && it.entry.date <= data.to }.groupBy { it.entry.date }
+        var invoices = 0
+        var tSales = Money.ZERO
+        var tIn = Money.ZERO
+        var tOut = Money.ZERO
+        val rows = (sales.keys + cash.keys).sorted().map { day ->
+            val list = sales[day].orEmpty()
+            val n = list.count { it.type == VoucherType.SALE }
+            val s = list.fold(Money.ZERO) { t, v -> if (v.type.isReturn()) t - v.total else t + v.total }
+            val cashIn = cash[day].orEmpty().fold(Money.ZERO) { t, x -> t + x.entry.debit }
+            val cashOut = cash[day].orEmpty().fold(Money.ZERO) { t, x -> t + x.entry.credit }
+            invoices += n
+            tSales += s
+            tIn += cashIn
+            tOut += cashOut
+            listOf(day.toString(), n.toString(), s.cell(), cashIn.cell(), cashOut.cell(), (cashIn - cashOut).cell())
+        }
+        return ReportTable(
+            "Day summary",
+            listOf(col("date", "Date", ColumnKind.DATE), col("invoices", "Invoices", ColumnKind.NUMBER), money("sales", "Sales"), money("cash_in", "Cash in"), money("cash_out", "Cash out"), money("net", "Net cash")),
+            rows,
+            listOf("Total", invoices.toString(), tSales.cell(), tIn.cell(), tOut.cell(), (tIn - tOut).cell()),
+            notes = listOf("Sales include GST, less credit notes. Cash in and out cover every cash and bank account, including transfers between them."),
+        )
+    }
+
+    /**
+     * GSTR-2 working: posted purchases, debit notes (negative) and expenses of the period, one row
+     * per voucher and rate, with input credit eligibility and reverse charge. Its eligible ITC
+     * equals GSTR-3B table 4(C).
+     */
+    fun gstr2(data: ReportData): ReportTable {
+        val inward = setOf(VoucherType.PURCHASE, VoucherType.DEBIT_NOTE, VoucherType.EXPENSE)
+        var sum = TaxAmounts()
+        var eligible = TaxAmounts()
+        var ineligible = TaxAmounts()
+        var rcm = TaxAmounts()
+        val rows = data.posted.filter { it.type in inward }.flatMap { v ->
+            val party = v.partyId?.let { data.partyById[it] }
+            val supplier = party?.name ?: v.ledgerAccountId?.let { data.accountById[it]?.name } ?: v.notes.orEmpty()
+            val gstin = party?.gstin.orEmpty()
+            v.taxRows(data.firm.stateCode, data.rounding).groupBy { Triple(it.rate, it.treatment, it.itcEligible) }.map { (key, list) ->
+                val (rate, treatment, itc) = key
+                val a = TaxAmounts.sum(list.map { it.amounts }).negateIf(v.type.isReturn())
+                sum += a
+                if (treatment == TaxTreatment.TAXABLE) {
+                    val credit = a.copy(taxable = Money.ZERO)
+                    if (itc) eligible += credit else ineligible += credit
+                    if (v.reverseCharge) rcm += credit
+                }
+                listOf(
+                    v.date.toString(), typeLabel(v.type), v.number.orEmpty(), v.referenceNumber.orEmpty(), supplier, gstin,
+                    if (gstin.isBlank()) "Unregistered" else "B2B", rate.percentText(), treatment.name.lowercase().replace('_', ' '),
+                    if (v.reverseCharge) "Yes" else "No", if (itc) "Eligible" else "Ineligible",
+                ) + a.cells()
+            }
+        }
+        fun heads(t: TaxAmounts) = "IGST ${t.igst.cell()}, CGST ${t.cgst.cell()}, SGST ${t.sgst.cell()}, cess ${t.cess.cell()}"
+        return ReportTable(
+            "GSTR-2 working (purchases)",
+            listOf(
+                col("date", "Date", ColumnKind.DATE), col("type", "Type"), col("number", "Number"), col("bill_no", "Supplier bill"), col("supplier", "Supplier"),
+                col("gstin", "GSTIN"), col("section", "Section"), col("rate", "Rate %", ColumnKind.NUMBER), col("treatment", "Treatment"),
+                col("rcm", "Reverse charge"), col("itc", "ITC"),
+            ) + TAX_COLUMNS,
+            rows,
+            listOf("Total") + List(10) { "" } + sum.cells(),
+            notes = listOf(
+                "Eligible ITC (GSTR-3B 4(C)): ${heads(eligible)}.",
+                "Ineligible ITC (not claimed): ${heads(ineligible)}.",
+                "Reverse charge tax (pay in cash, then claim): ${heads(rcm)}.",
+                "Working only: imports and ITC reversals are not tracked; match against GSTR-2B on the portal before claiming.",
+            ),
+        )
+    }
+
+    /** Batches with stock as of the period end, earliest expiry first, with days left and status. */
+    fun batchExpiry(data: ReportData): ReportTable {
+        val onHand = data.stock.filter { it.batchId != null && it.date <= data.to }.groupBy { it.batchId!! }
+            .mapValues { (_, list) -> list.sumOf { it.quantity.scaledUnits } }
+        val godowns = data.godowns.associate { it.id to it.name }
+        val rows = data.batches.mapNotNull { b -> onHand[b.id]?.takeIf { it != 0L }?.let { b to it } }
+            .sortedWith(compareBy({ it.first.expiryDate == null }, { it.first.expiryDate }, { data.itemById[it.first.itemId]?.name?.lowercase() }, { it.first.batchNumber }))
+            .map { (b, qty) ->
+                val item = data.itemById[b.itemId]
+                val days = b.expiryDate?.let { data.to.daysUntil(it) }
+                val status = when {
+                    days == null -> "No expiry"
+                    days < 0 -> "Expired"
+                    days <= 30 -> "Expiring soon"
+                    else -> "OK"
+                }
+                listOf(
+                    item?.name ?: b.itemId, item?.let { data.unitById[it.unitId]?.symbol }.orEmpty(), b.batchNumber, godowns[b.godownId].orEmpty(),
+                    b.expiryDate?.toString().orEmpty(), Quantity.ofScaledUnits(qty).format(), days?.toString().orEmpty(), status,
+                )
+            }
+        return ReportTable(
+            "Batch and expiry report",
+            listOf(
+                col("item", "Item"), col("unit", "Unit"), col("batch", "Batch"), col("godown", "Godown"), col("expiry", "Expiry", ColumnKind.DATE),
+                col("on_hand", "On hand", ColumnKind.QUANTITY), col("days_left", "Days left", ColumnKind.NUMBER), col("status", "Status"),
+            ),
+            rows,
+            notes = listOf("As of ${data.to}; batches with stock only. Days left count from ${data.to}; expiring soon = within 30 days."),
         )
     }
 }

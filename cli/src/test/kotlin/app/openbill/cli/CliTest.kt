@@ -239,6 +239,14 @@ class CliTest {
         val out = File(root, "gstr1.json")
         assertEquals(0, run("gst", "gstr1", "--period", "2026-09", "--out", out.path).code)
         assertTrue(out.readText().startsWith("{"))
+        // CA pack: its GSTR-3B CSV is the `report gstr3b` CSV.
+        val zip = File(root, "ca.zip")
+        ok("report", "ca-pack", *sep, "--out", zip.path)
+        val entries = java.util.zip.ZipFile(zip).use { z -> z.entries().toList().associate { it.name to z.getInputStream(it).readBytes().decodeToString() } }
+        // (the test harness normalises stdout line ends to LF)
+        assertEquals(run("report", "run", "gstr3b", "--format", "csv", *sep).out, entries.getValue("gstr3b-2026-09-01-2026-09-30.csv").replace("\r\n", "\n"))
+        assertTrue("Tally-2026-09-01-2026-09-30.xml" in entries && "README.txt" in entries)
+        assertEquals(2, run("report", "ca-pack", *sep).code) // needs --out
     }
 
     @Test

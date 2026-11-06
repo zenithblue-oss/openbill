@@ -59,6 +59,17 @@ import app.openbill.core.domain.report.registerTotals
 import app.openbill.core.domain.report.writeRegisterCsv
 import app.openbill.core.domain.report.writeTallyXml
 import app.openbill.core.domain.report.loadReportData
+import app.openbill.core.domain.report.ReportPack
+import app.openbill.core.domain.report.caPack
+import app.openbill.core.domain.report.reportFiles
+import app.openbill.core.domain.report.zipBytes
+import app.openbill.core.domain.model.Access
+import app.openbill.core.domain.model.Permission
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import app.openbill.ui.AppContainer
 import app.openbill.ui.Session
 import app.openbill.ui.components.AppSnackbarHost
@@ -128,6 +139,9 @@ fun ReportsScreen(
     var progress by remember { mutableStateOf<Progress?>(null) }
     var job by remember { mutableStateOf<Job?>(null) }
     val parties by remember { repos.parties.observeParties(session.firm.id) }.collectAsState(initial = emptyList())
+    val canExport = Access.can(Permission.EXPORT)
+    var bundle by remember { mutableStateOf<BundleChoice?>(null) }
+    var selected by remember { mutableStateOf(setOf(ReportKind.SALES_REGISTER, ReportKind.PURCHASE_REGISTER, ReportKind.DAY_SUMMARY)) }
 
     fun export(block: suspend (OnProgress) -> String?) {
         busy = true
@@ -185,6 +199,18 @@ fun ReportsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (canExport) {
+                        ListItem(
+                            headlineContent = { Text("CA pack") },
+                            supportingContent = { Text("Registers, day book, GSTR-1, GSTR-2, GSTR-3B, HSN, outstanding, party ledgers and Tally XML in one ZIP") },
+                            modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { bundle = BundleChoice.CA_PACK },
+                        )
+                        ListItem(
+                            headlineContent = { Text("Several reports") },
+                            supportingContent = { Text("Choose reports to download as a ZIP, share or email together") },
+                            modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { bundle = BundleChoice.SELECTED },
+                        )
+                    }
                 }
                 item(key = "admin") {
                     SectionHeader("Books", Modifier.padding(horizontal = pageGutter))
@@ -195,6 +221,56 @@ fun ReportsScreen(
         }
         if (busy) ProgressOverlay(progress, "Exporting", Modifier.padding(padding), onCancel = { job?.cancel() })
       }
+    }
+    bundle?.let { choice ->
+        val ca = choice == BundleChoice.CA_PACK
+        fun deliver(action: BundleAction) {
+            bundle = null
+            export { onProgress ->
+                val files = withContext(Dispatchers.Default) {
+                    if (ca) repos.caPack(session.firm.id, period, onProgress)
+                    else repos.reportFiles(session.firm.id, period, ReportPack.BUNDLE_KINDS.filter { it in selected }, onProgress)
+                }
+                val name = (if (ca) "CA-pack" else "Reports") + "-${period.from}-${period.to}"
+                val zip = withContext(Dispatchers.Default) { files.zipBytes() }
+                when {
+                    action == BundleAction.ZIP -> container.platform.saveFile("$name.zip", zip)
+                    // The CA pack travels as its ZIP; a few chosen reports as separate CSV files.
+                    ca -> container.platform.shareFiles(name, listOf("$name.zip" to zip), email = action == BundleAction.EMAIL)
+                    else -> container.platform.shareFiles(name, files.map { it.name to it.bytes }, email = action == BundleAction.EMAIL)
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { bundle = null },
+            title = { Text(if (ca) "CA pack" else "Choose reports") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(periodLabel(period), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (ca) {
+                        Text("Every file matches the single report of the same name. GSTR-1 JSON is made per calendar month.")
+                    } else {
+                        ReportPack.BUNDLE_KINDS.forEach { kind ->
+                            val on = kind in selected
+                            Row(
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                    .toggleable(on, role = Role.Checkbox) { selected = if (it) selected + kind else selected - kind },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = on, onCheckedChange = null)
+                                Text(kind.title, Modifier.padding(start = Spacing.sm))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Row {
+                    BundleAction.entries.forEach { a -> TextButton(enabled = ca || selected.isNotEmpty(), onClick = { deliver(a) }) { Text(a.label) } }
+                }
+            },
+            dismissButton = { TextButton(onClick = { bundle = null }) { Text("Cancel") } },
+        )
     }
     if (pickParty) {
         AlertDialog(
@@ -212,7 +288,14 @@ fun ReportsScreen(
     }
 }
 
+private enum class BundleChoice { CA_PACK, SELECTED }
+
+private enum class BundleAction(val label: String) { ZIP("Download ZIP"), SHARE("Share"), EMAIL("Email") }
+
 private val REPORT_HINTS = mapOf(
+    ReportKind.DAY_SUMMARY to "Sales, cash in and cash out per day",
+    ReportKind.BATCH_EXPIRY to "Stock by batch with expiry dates",
+    ReportKind.GSTR2 to "Purchases by supplier and rate with input credit and reverse charge",
     ReportKind.SALES_REGISTER to "Invoices and credit notes with tax heads",
     ReportKind.PURCHASE_REGISTER to "Supplier bills and debit notes",
     ReportKind.DAY_BOOK to "Every voucher by date",
@@ -291,6 +374,17 @@ fun ReportScreen(
         val t = table ?: return
         scope.launch { (runCatching { block(fullTable(t)) }.getOrElse { it.message ?: "Export failed" })?.let { messages?.show(it) } }
     }
+    // A register's CSV is streamed from the database rather than built from the whole period in memory.
+    fun csvAct(block: suspend (title: String, csv: String) -> String?) {
+        val t = table ?: return
+        scope.launch {
+            (runCatching {
+                val text = if (paged) withContext(Dispatchers.Default) { buildString { container.repositories.writeRegisterCsv(session.firm.id, period, kind == ReportKind.SALES_REGISTER, this) } }
+                else t.toCsv()
+                block(t.title, text)
+            }.getOrElse { it.message ?: "Export failed" })?.let { messages?.show(it) }
+        }
+    }
     fun pdf(action: PdfAction) = act { t ->
         container.platform.pdfAction(stem, ReportPdf.layout(t, session.firm.name, periodLabel(period), container.platform.pdfFontMetrics), action)
     }
@@ -300,15 +394,9 @@ fun ReportScreen(
             AppTopBar(table?.title ?: kind.title, onBack = onBack) {
                 IconButton(onClick = { menu = true }, enabled = table != null) { Icon(Icons.Filled.MoreVert, contentDescription = "Export") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Export CSV") }, onClick = {
-                        menu = false
-                        if (paged) {
-                            scope.launch {
-                                val csv = withContext(Dispatchers.Default) { buildString { container.repositories.writeRegisterCsv(session.firm.id, period, kind == ReportKind.SALES_REGISTER, this) } }
-                                container.platform.saveTextFile("$stem.csv", csv)
-                            }
-                        } else act { container.platform.saveTextFile("$stem.csv", it.toCsv()) }
-                    })
+                    DropdownMenuItem(text = { Text("Export CSV") }, onClick = { menu = false; csvAct { _, csv -> container.platform.saveTextFile("$stem.csv", csv) } })
+                    DropdownMenuItem(text = { Text("Share CSV") }, onClick = { menu = false; csvAct { title, csv -> container.platform.shareFiles(title, listOf("$stem.csv" to csv.encodeToByteArray())) } })
+                    DropdownMenuItem(text = { Text("Email CSV") }, onClick = { menu = false; csvAct { title, csv -> container.platform.shareFiles(title, listOf("$stem.csv" to csv.encodeToByteArray()), email = true) } })
                     DropdownMenuItem(text = { Text("Export JSON") }, onClick = {
                         menu = false
                         act { container.platform.saveTextFile("$stem.json", it.toJson(mapOf("from" to period.from.toString(), "to" to period.to.toString()))) }
@@ -368,7 +456,10 @@ fun ReportTableView(table: ReportTable, modifier: Modifier = Modifier, onEnd: ((
         val nearEnd by remember { derivedStateOf { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 } }
         LaunchedEffect(nearEnd, cells.size) { if (nearEnd >= cells.size - 20) onEnd() }
     }
-    Box(modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize()) {
+      // Notes wrap within the screen, not across the (possibly wider) scrolled table.
+      val noteWidth = minOf(maxWidth, maxOf(total, 360.dp))
+      Box(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
         LazyColumn(Modifier.width(maxOf(total, 360.dp)), listState, contentPadding = PaddingValues(bottom = Spacing.xl)) {
             item { line(table.columns.map { it.label }, bold = true, shade = true) }
             if (cells.isEmpty()) item { Text("Nothing in this period", Modifier.padding(Spacing.md), style = MaterialTheme.typography.bodyMedium) }
@@ -378,8 +469,9 @@ fun ReportTableView(table: ReportTable, modifier: Modifier = Modifier, onEnd: ((
             }
             totals?.let { t -> item { line(t, bold = true, shade = true) } }
             items(table.notes) { n ->
-                Text(n, Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.xs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(n, Modifier.width(noteWidth).padding(horizontal = Spacing.sm, vertical = Spacing.xs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+      }
     }
 }

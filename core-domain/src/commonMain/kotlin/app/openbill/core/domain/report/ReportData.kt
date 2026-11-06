@@ -5,7 +5,9 @@ import app.openbill.core.domain.service.AgeingSums
 import app.openbill.core.domain.service.StockPeriodTotals
 import app.openbill.core.domain.model.AccountType
 import app.openbill.core.domain.model.AccountTransaction
+import app.openbill.core.domain.model.Batch
 import app.openbill.core.domain.model.Firm
+import app.openbill.core.domain.model.Godown
 import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.OpeningBalanceType
@@ -55,6 +57,9 @@ class ReportData(
     val postedBy: Map<String, String> = emptyMap(),
     /** Name for vouchers with no recorded poster (before users existed, or the CLI): the owner. */
     val defaultUser: String = "Owner",
+    /** Batches of batch-tracked items and the godowns; loaded for the batch and expiry report. */
+    val batches: List<Batch> = emptyList(),
+    val godowns: List<Godown> = emptyList(),
 ) {
     fun userOf(v: Voucher): String = postedBy[v.id] ?: defaultUser
 
@@ -97,16 +102,17 @@ suspend fun Repositories.loadReportData(
     val all = kind == null
     val usesVouchers = all || kind !in setOf(
         ReportKind.CASH_BANK_BOOK, ReportKind.OUTSTANDING, ReportKind.PARTY_STATEMENT, ReportKind.STOCK_SUMMARY, ReportKind.LOW_STOCK,
-        ReportKind.PROFIT_LOSS,
+        ReportKind.PROFIT_LOSS, ReportKind.BATCH_EXPIRY,
     )
     // Stock summary, low stock and P&L read SQL/streamed aggregates instead of the full history.
     val aggregates = kind == ReportKind.STOCK_SUMMARY || kind == ReportKind.LOW_STOCK || kind == ReportKind.PROFIT_LOSS
     val journalAccounts = when (kind) {
         null -> accounts
-        ReportKind.CASH_BANK_BOOK -> accounts.filter { it.type == AccountType.CASH || it.type == AccountType.BANK }
+        ReportKind.CASH_BANK_BOOK, ReportKind.DAY_SUMMARY -> accounts.filter { it.type == AccountType.CASH || it.type == AccountType.BANK }
         else -> emptyList()
     }
-    val usesStock = all || kind == ReportKind.ITEM_PROFIT
+    val usesStock = all || kind == ReportKind.ITEM_PROFIT || kind == ReportKind.BATCH_EXPIRY
+    val usesBatches = all || kind == ReportKind.BATCH_EXPIRY
     val usesPartyMovements = all || kind == ReportKind.PARTY_STATEMENT
     val settings = firms.findSettings(firmId)
     val parties = parties.observeParties(firmId).first()
@@ -128,7 +134,11 @@ suspend fun Repositories.loadReportData(
     val byUser = all || kind == ReportKind.SALES_BY_USER || kind == ReportKind.DAY_BOOK_BY_USER
     val names = if (byUser) users.observeUsers().first().associate { it.id to it.name } else emptyMap()
     val postedBy = if (byUser) audit.postedBy(firmId).mapValues { (_, actor) -> names[actor] ?: actor } else emptyMap()
+    val batches = if (usesBatches) items.filter { it.trackBatch }.flatMap { stock.observeBatches(it.id).first() } else emptyList()
+    val godowns = if (usesBatches) catalog.observeGodowns(firmId).first() else emptyList()
     return ReportData(
+        batches = batches,
+        godowns = godowns,
         postedBy = postedBy,
         defaultUser = names[app.openbill.core.domain.model.Access.OWNER_ID] ?: "Owner",
         firm = firm,

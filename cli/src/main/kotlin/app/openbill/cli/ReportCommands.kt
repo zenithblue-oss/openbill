@@ -11,6 +11,8 @@ import app.openbill.core.domain.report.Reports
 import app.openbill.core.domain.report.loadReportData
 import app.openbill.core.domain.report.writeRegisterCsv
 import app.openbill.core.domain.report.writeTallyXml
+import app.openbill.core.domain.report.caPack
+import app.openbill.core.domain.report.zipBytes
 import app.openbill.core.model.Money
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
@@ -29,8 +31,27 @@ import kotlinx.datetime.toLocalDateTime
 
 /** `report list | run NAME | NAME`, `gst gstr1|gstr3b|hsn`, `tally export`, `audit list` (docs/11-cli.md). */
 fun reportCommands(cli: CliState) = Group("report", "Business and GST reports").subcommands(
-    listOf(ReportList(cli), ReportRun(cli)) + ReportKind.entries.map { ReportNamed(cli, it) },
+    listOf(ReportList(cli), ReportRun(cli), CaPackCmd(cli)) + ReportKind.entries.map { ReportNamed(cli, it) },
 )
+
+/** `report ca-pack --from --to --out FILE.zip`: the app's CA pack (same files as the single reports). */
+class CaPackCmd(private val cli: CliState) : CliktCommand("ca-pack") {
+    override fun help(context: Context) = "CA pack ZIP: registers, day book, GSTR-1/2/3B, HSN, outstanding, party ledgers, Tally XML"
+    private val from by option("--from", help = "YYYY-MM-DD (default: start of this financial year)")
+    private val to by option("--to", help = "YYYY-MM-DD (default: end of this financial year)")
+    private val out by option("--out", help = "ZIP file to write").file(canBeDir = false).required()
+
+    override fun run() = cli.withData(write = false) {
+        val period = reportPeriod(from, to)
+        val files = repos.caPack(firm().id, period, cli.progress)
+        cli.progressDone()
+        val target = out.absoluteFile
+        target.parentFile.mkdirs()
+        target.writeBytes(files.zipBytes())
+        cli.info("Wrote ${out.path} (${files.size} files)")
+        if (cli.quiet) cli.out.println(out.path)
+    }
+}
 
 fun gstCommands(cli: CliState) = Group("gst", "GST return working and exports").subcommands(
     Gstr1Cmd(cli), PeriodReport(cli, "gstr3b", ReportKind.GSTR3B), PeriodReport(cli, "hsn", ReportKind.HSN_SUMMARY),
