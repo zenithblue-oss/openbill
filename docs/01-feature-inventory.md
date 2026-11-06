@@ -180,7 +180,7 @@ Inventory invariants:
 | Invoice-level discount | Percentage or amount | P0 | Done | Allocation across lines |
 | Additional charges | Freight, packing, etc. | P0 | Done | Taxable or non-taxable flag |
 | Round-off | Nearest rupee | P0 | Done | Ledger rounding account |
-| Multi-currency | Exchange rate and currency | P1 | Not started | Phase 7 groundwork |
+| Multi-currency | Exchange rate and currency | P1 | Done | Export and SEZ invoices: foreign rates, GST, ledger and returns in rupees (Rule 34); no party default currency or exchange gain/loss ledger |
 | Reverse charge | GST reverse charge flag | P1 | Done | Sales and purchases; GSTR-1 rchrg and GSTR-3B 3.1(c)/3.1(d)/4(A)(3) |
 | TDS and TCS | Threshold-based | P2 | Not started | After 1.0 |
 | Attachments | Receipt or reference image | P0 | Done | Files included in backup; expense receipt attachments are post-1.0 |
@@ -208,7 +208,7 @@ Inventory invariants:
 | Item description on line | Free text under each line | P0 | Done | Printed under item name |
 | Additional document fields | Custom header fields (PO number, vehicle number) | P1 | Done | PO, e-way bill number and custom labelled fields per business |
 | Split payment on invoice | Several tenders recorded as separate payments against one invoice | P0 | Done | Creates multiple payment-in entries |
-| Party-level discount on payment | Single discount settled against all outstanding invoices of a party | P1 | Not started | Posted as an adjustment |
+| Party-level discount on payment | Single discount settled against all outstanding invoices of a party | P1 | Done | Settlement discount on a receipt or payment, posted to Discount allowed / Discount received; app only, no CLI flag |
 | TDS and TCS on payments | Pre-defined and custom rates applied when linking payments to invoices | P2 | Not started | After 1.0; enable per firm |
 | Staff loan and salary advance | Payments to staff tracked as loan or advance and offset later | P2 | Not started | Part of payroll |
 | Unlimited recurring schedules | Vendor limits the count of active schedules by plan | P1 | Done | Recurring invoices are unlimited in OpenBill; part of the recurring-invoice feature |

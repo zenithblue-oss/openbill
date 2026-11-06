@@ -277,7 +277,8 @@ Scope:
 - Every other P1 row in docs/01 not named above (for example the modules screen, unlimited
   recurring schedules, party categories, bulk item edit, CA report pack, and custom item
   fields) is scheduled in this phase; the parity tracker below gives the group-level map.
-- Multi-currency groundwork.
+- Multi-currency for export and SEZ invoices (done: currency and exchange rate per document,
+  rupee GST, ledger and returns). Party default currency and exchange gain/loss are later.
 - e-invoice and e-way bill integration using the user's own credentials, behind a
   provider interface.
 - WhatsApp/SMS deep-link sharing and bring-your-own provider integration.
@@ -376,7 +377,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Done in the apps (orders with partial conversion and status); CLI order commands planned |
 | Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Recurring invoices done (unlimited; made on app open, no OS background job); editable reminder message done; automated reminders planned |
 | Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Planned |
-| Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Planned |
+| Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Done (export/SEZ invoices in a foreign currency with an exchange rate, schema v15; GST, ledger and returns in rupees; both currencies printed) |
 | GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | GSTR-3B summary done; rest planned |
 | POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Done (item-first counter screen, held bills persisted in schema v14, cash/UPI/card/bank split with change, F-key shortcuts, tablet layout, thermal receipt) |
 | Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | Planned |

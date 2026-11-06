@@ -312,7 +312,8 @@ historical document does not change when the schedule is updated.
 Not supported: composition dealers (regular dealers only); import special rules beyond
 selecting a treatment; TDS and TCS; e-invoice and e-way
 bill generation or validation; GSTIN autofill or online verification (checksum only); ITC
-ledgers; GSTR filing; negative lines or credit-note lines; and multi-currency (INR only).
+ledgers; GSTR filing; negative lines or credit-note lines; and foreign currency outside
+export and SEZ documents (see 12.1).
 Additional charges are supported (section 7.1), including proportional apportionment of one
 charge across several rates. Credit notes are modeled as their
 own positive-amount document, not as negative lines; their report and return sign
@@ -344,9 +345,24 @@ are not recorded here.
   amounts deducted or collected is left to the accountant.
 - **Export and SEZ.** Since schema 12 a sale, credit note, quotation or proforma can be marked
   export or SEZ, with IGST paid or under LUT/bond. Lines under LUT/bond are zero-rated at 0%.
-  The shipping bill, port code, LUT reference and a currency note are recorded and printed.
-  Totals stay in rupees. Refund claims and foreign-currency accounting are not modelled. An
-  SEZ supply needs the SEZ unit's GSTIN.
+  The shipping bill, port code and LUT reference are recorded and printed. Refund claims are
+  not modelled. An SEZ supply needs the SEZ unit's GSTIN.
+- **Foreign-currency export invoices.** Since schema 15 an export or SEZ document can carry a
+  three-letter currency code (not INR) and an exchange rate in rupees per unit, up to four
+  decimals. Rates, line discounts and additional charges are entered in that currency. Under
+  Rule 34 of the CGST Rules the value of supply is converted to rupees: each line value,
+  discount and charge is multiplied by the rate and rounded half-up to the paisa, and GST is
+  computed on the rupee values. Every stored amount (taxable value, GST, total) is in rupees,
+  so the ledger, GSTR-1 (including EXP), GSTR-3B, CSV and Tally exports are rupee figures; the
+  foreign rates are kept beside them to print and to reopen drafts. The invoice prints the
+  foreign rates, the rupee taxable value, GST and total, the exchange rate, and the invoice
+  value in the foreign currency. Limits: the currency is assumed to have two decimal places;
+  foreign-currency documents are not rounded to the rupee; the foreign-currency GST shown in
+  the editor is approximate (the rupee figure is the one that counts); the user picks the rate
+  (the CBIC notified rate or the bank rate, as applicable). Payments are recorded in rupees as
+  received; no exchange gain or loss ledger is posted, so a difference between the invoice and
+  the rupees realised stays outstanding or is settled with the settlement discount on the
+  receipt. A party has no default currency.
 - **Composition scheme.** Regular dealers only. A composition dealer would need a bill of
   supply with no tax shown and different returns; neither is supported, and a composition
   dealer must not use the 1.0 tax engine as is.
