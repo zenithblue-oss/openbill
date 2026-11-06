@@ -279,8 +279,8 @@ Tax engine requirements:
 | GSTR-3B working | P1 | Done | Internal computation only; the CLI `gst gstr3b` command ships with it, after 1.0 |
 | Tally XML export | P0 | Done | Document mapping |
 | Day summary | P1 | Not started | Cash in, cash out, sales |
-| Sales summary by user | P1 | Not started | Needs local users |
-| Day book by user | P1 | Not started | Needs local users |
+| Sales summary by user | P1 | Done | Who posted each voucher, from the activity log; old vouchers count as Owner |
+| Day book by user | P1 | Done | Day book with a User column, sorted by user |
 | GSTR-2 working (purchases) | P1 | Not started | Internal computation only |
 | GST sales and purchase with HSN | P0 | Done | Included in GST summary and HSN summary |
 | GSTR-1 JSON for portal upload | P0 | Done | Same data as CSV export, portal-compatible layout |
@@ -373,10 +373,10 @@ Backup format requirements:
 
 | Feature | Observed behavior | Priority | Status | Notes |
 | --- | --- | --- | --- | --- |
-| Multiple users per firm | Invite staff | P1 | Not started | Post-1.0 local profiles |
-| Roles and permissions | Owner, accountant, operator | P1 | Not started | Post-1.0; enforced in use cases, not only UI |
-| User activity log | Who changed what | P1 | Not started | Post-1.0 with local users |
-| CA access | Share reports or ledger | P1 | Not started | Export or read-only mode |
+| Multiple users per firm | Invite staff | P1 | Done | Local users on one install (schema v16), each with a name and PIN; user picker on the lock screen; needs app lock; owner signs in with the app lock PIN |
+| Roles and permissions | Owner, accountant, operator | P1 | Done | Owner, Manager, Salesperson/cashier, Accountant; checked in the repositories and use cases, menus hidden to match; cashiers bill only at list prices with no discount |
+| User activity log | Who changed what | P1 | Done | Audit events carry the user; sign-ins, masters and settings changes logged; filter by user in the app, user column in CSV and `audit list` |
+| CA access | Share reports or ledger | P1 | Done | Accountant role: read-only reports, exports and activity log; CSV/Tally/GSTR exports unchanged |
 | Device management | Active devices | P2 | Not started | Tied to optional sync |
 | Approval workflow | Draft and approve vouchers | P2 | Not started | After 1.0 |
 | Shared ledger portal | Online view for accountants | P2 | Not started | Not in 1.0 |
@@ -384,8 +384,8 @@ Backup format requirements:
 | Payroll | Salary calculated from attendance, overtime, advances; payslip sharing | P2 | Not started | Separate module; optional |
 | Geo-tagged attendance and live location | Location with check-in | P2 | Not started | Opt-in per firm and per staff member with explicit consent; location stored only on the firm's own devices or server; check-in only, no continuous tracking |
 | Staff companion app | Separate app for staff check-in | P2 | Not started | A staff mode of the Android app, plus the thin web client on the self-hosted server; no separate vendor app |
-| CA seat | Accountant gets a read-only or limited login at no extra user count | P1 | Not started | Role in post-1.0 model |
-| Staff deactivation | Disable a user while preserving history and balances | P1 | Not started | Soft state |
+| CA seat | Accountant gets a read-only or limited login at no extra user count | P1 | Done | Accountant role; no user limit locally |
+| Staff deactivation | Disable a user while preserving history and balances | P1 | Done | Inactive users cannot sign in; their vouchers and log entries stay |
 | Suspicious-activity alerts | Notify owner of unusual edits or deletions | P2 | Not started | Rule-based on audit log |
 
 Post-1.0 local role model (design draft):

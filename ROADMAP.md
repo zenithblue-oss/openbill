@@ -376,7 +376,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Done (silent print setting, tray notification, portable mode, Ctrl+K palette; ESC/POS thermal printing on all surfaces) |
 | Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Done in the apps (orders with partial conversion and status); CLI order commands planned |
 | Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Recurring invoices done (unlimited; made on app open, no OS background job); editable reminder message done; automated reminders planned |
-| Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Planned |
+| Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Done locally (users with PINs, schema v16; Owner/Manager/Cashier/Accountant roles enforced in shared code; deactivation; activity log and sales/day book by user); server accounts planned |
 | Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Done (export/SEZ invoices in a foreign currency with an exchange rate, schema v15; GST, ledger and returns in rupees; both currencies printed) |
 | GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | GSTR-3B summary done; rest planned |
 | POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Done (item-first counter screen, held bills persisted in schema v14, cash/UPI/card/bank split with change, F-key shortcuts, tablet layout, thermal receipt) |
@@ -435,7 +435,7 @@ deferred; `No` = out of scope.
 | Windows desktop app | Exists; an online-only Electron shell around the web app | Native offline Compose app | MVP |
 | Linux desktop app | Not offered | Native Compose app | MVP |
 | Multi-firm | Yes | Yes | MVP |
-| Staff users and roles | Yes | Post-1.0 local roles | Next |
+| Staff users and roles | Yes | Local users and roles | Done |
 | Sales orders | Yes | Non-posting, convertible to invoice | Next |
 | Unlimited recurring schedules | Limited by plan | No limit | Next |
 | Recurring invoices | Yes | Yes | Next |
