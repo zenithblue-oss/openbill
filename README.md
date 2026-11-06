@@ -78,7 +78,7 @@ against what is usable in the app today. A feature counts 1 when it works end to
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
 **1.0 scope: 100% (136 of 136 P0 features)** `████████████████████`
-**Full parity: about 58% (161 of 277 P0+P1+P2 features)** `████████████░░░░░░░░`
+**Full parity: about 60% (166 of 277 P0+P1+P2 features)** `████████████░░░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
@@ -89,6 +89,7 @@ only the engine/data layer exists without UI, and 0 otherwise. These are the mai
 | Reports and GST | Registers, books, statements, stock, low stock, profit, GST/HSN, GSTR-1 JSON, Tally XML | 100% (19 / 19) |
 | Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image | 100% (15 / 15) |
 | Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
+| POS | Counter billing: scan or search items, Cash sale default, held bills, split tender with change, keyboard shortcuts, tablet layout, thermal receipt | 100% (5 / 5) |
 | Desktop apps | Windows and Linux builds run the shared UI | Stable |
 | CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 (a few commands pending; see What's left) |
 | Server | Not started (post-1.0) | 0% |

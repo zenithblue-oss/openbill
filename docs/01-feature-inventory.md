@@ -172,7 +172,7 @@ Inventory invariants:
 | Purchase return | Reverse stock | P0 | Done | Phase 4 |
 | Payment voucher | Money in and money out | P0 | Done | Phase 5 |
 | Expense voucher | Category, amount, receipt | P0 | Done | Phase 5; receipt attachments after 1.0 |
-| POS billing | Fast counter workflow and barcode scan | P1 | Not started | Phase 7 |
+| POS billing | Fast counter workflow and barcode scan | P1 | Done | Counter screen (scan or search, Cash sale default, tablet two-pane layout, 58/80 mm receipt); posts through the normal invoice engine |
 | Recurring invoice | Schedule and generate | P1 | Done | Daily/weekly/monthly/yearly; drafts or auto-post; missed periods made on app open, once each; no OS background job |
 | Invoice numbering | Prefix, suffix, sequence, FY reset | P0 | Done | Per document type |
 | Due date and payment terms | Optional | P0 | Done | Drives aging |
@@ -212,10 +212,10 @@ Inventory invariants:
 | TDS and TCS on payments | Pre-defined and custom rates applied when linking payments to invoices | P2 | Not started | After 1.0; enable per firm |
 | Staff loan and salary advance | Payments to staff tracked as loan or advance and offset later | P2 | Not started | Part of payroll |
 | Unlimited recurring schedules | Vendor limits the count of active schedules by plan | P1 | Done | Recurring invoices are unlimited in OpenBill; part of the recurring-invoice feature |
-| POS held bills | Several open bills at once, switch between them | P1 | Not started | Phase 7 POS |
-| POS multi-tender | Cash, UPI, card, wallet on a single sale | P1 | Not started | Phase 7 POS |
-| POS item-first billing | Item grid or barcode first, party optional | P1 | Not started | Phase 7 POS |
-| POS keyboard commands | Quick keys for add, discount, tender, hold | P1 | Not started | Desktop |
+| POS held bills | Several open bills at once, switch between them | P1 | Done | Held drafts survive restarts and are in backups (schema v14); discard asks first and goes to the recycle bin |
+| POS multi-tender | Cash, UPI, card, wallet on a single sale | P1 | Done | Cash, UPI, card and bank with change due; paying short needs credit to a named party; no wallet tender |
+| POS item-first billing | Item grid or barcode first, party optional | P1 | Done | Party defaults to Cash sale |
+| POS keyboard commands | Quick keys for add, discount, tender, hold | P1 | Done | F1 help, F2 search, F3 qty, F4 discount, F6 held, F8 hold, F9 new, F12 pay; desktop and tablet keyboards |
 | Cash drawer | Open drawer on sale via printer kick | P2 | Not started | Desktop and thermal printers |
 | Restaurant table orders | Table-wise open orders and kitchen slip | P2 | Not started | Optional module |
 | OCR purchase-bill capture | Photograph a supplier bill and prefill a purchase draft | P2 | Not started | Opt-in; local on-device OCR first, optional bring-your-own API key for a cloud model; user must review before posting |

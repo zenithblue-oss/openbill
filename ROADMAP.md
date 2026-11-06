@@ -378,7 +378,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Planned |
 | Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Planned |
 | GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | GSTR-3B summary done; rest planned |
-| POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Split tender on payments done; held bills planned |
+| POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Done (item-first counter screen, held bills persisted in schema v14, cash/UPI/card/bank split with change, F-key shortcuts, tablet layout, thermal receipt) |
 | Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | Planned |
 | E-invoice and e-way bill, bulk generation | Paid tiers | Phase 7 (provider interface), Phase 9 (bulk, alerts) | A W L S C | Planned |
 | POS and retail hardware (cash drawer, scale, label sheets) | Top paid tier | Phase 9 | W L A | Planned |
@@ -439,7 +439,7 @@ deferred; `No` = out of scope.
 | Unlimited recurring schedules | Limited by plan | No limit | Next |
 | Recurring invoices | Yes | Yes | Next |
 | Purchase orders and delivery challans | Yes | Yes | Next |
-| POS billing | Yes (web and desktop tier) | Counter workflow with held bills | Next |
+| POS billing | Yes (web and desktop tier) | Counter workflow with held bills | Done |
 | Silent print, bulk print, bulk PDF/ZIP export, export notification | Yes (desktop tier) | Desktop W and L; silent print is an explicit opt-in | MVP |
 | Staff attendance and payroll | Yes (separate module) | Optional module, Phase 9 | Later |
 | Loyalty and party pricing | Yes | Party pricing Phase 7; loyalty Phase 9 | Next |
