@@ -40,8 +40,16 @@ data class VoucherLine(
     val serialNumbers: List<String> = emptyList(),
     /** Destination godown of a stock-transfer line ([godownId] is the source). */
     val toGodownId: String? = null,
+    /** Bonus quantity given or received free: moves stock, carries no value or tax. */
+    val freeQuantity: Quantity = Quantity.of(0),
+    /** Purchase side: false when the GST on this line cannot be claimed as input credit. */
+    val itcEligible: Boolean = true,
 ) {
+    /** Quantity that moves stock: billed plus free. */
+    val stockQuantity: Quantity get() = Quantity.ofScaledUnits(quantity.scaledUnits + freeQuantity.scaledUnits)
+
     init {
+        require(freeQuantity >= Quantity.of(0)) { "VoucherLine free quantity cannot be negative" }
         require(id.isNotBlank()) { "VoucherLine id cannot be blank" }
         require(lineNumber > 0) { "VoucherLine lineNumber must be positive" }
         require(description.isNotBlank()) { "VoucherLine description cannot be blank" }
@@ -229,7 +237,36 @@ data class Voucher(
     val createdAt: Instant,
     val updatedAt: Instant,
     val deletedAt: Instant? = null,
+    /**
+     * GST on this supply is paid by the recipient (reverse charge). [tax] is still computed and
+     * printed, but [total] (what the party owes) excludes it.
+     */
+    val reverseCharge: Boolean = false,
+    val transport: TransportDetails? = null,
+    val export: ExportDetails? = null,
+    /** GSTIN of the e-commerce operator the supply was made through. */
+    val ecommerceGstin: String? = null,
+    val poNumber: String? = null,
+    val poDate: LocalDate? = null,
+    /** E-way bill number generated elsewhere, printed as plain text. */
+    val ewayBillNumber: String? = null,
+    /** Firm-defined extra header fields with their values. */
+    val customFields: List<DocumentField> = emptyList(),
 ) {
+    /** Supplies to SEZ and exports are inter-state whatever the place of supply. */
+    fun isIntraState(firmStateCode: String): Boolean = export == null && firmStateCode == placeOfSupplyStateCode
+
+    /** Printable document details (transport, export, PO, e-way bill, custom fields), label to value. */
+    fun detailRows(date: (LocalDate) -> String = { it.toString() }): List<Pair<String, String>> = buildList {
+        ecommerceGstin?.let { add("E-commerce operator GSTIN" to it) }
+        poNumber?.let { add("PO no." to it) }
+        poDate?.let { add("PO date" to date(it)) }
+        ewayBillNumber?.let { add("E-way bill no." to it) }
+        transport?.let { addAll(it.rows(date)) }
+        export?.let { addAll(it.rows(date)) }
+        customFields.forEach { add(it.label to it.value) }
+    }
+
     init {
         require(id.isNotBlank()) { "Voucher id cannot be blank" }
         require(firmId.isNotBlank()) { "Voucher firmId cannot be blank" }
@@ -263,5 +300,87 @@ data class Voucher(
             }
         }
         require(updatedAt >= createdAt) { "Voucher updatedAt cannot precede createdAt" }
+    }
+}
+
+/** How goods travel; optional, all fields free text except the date and distance. */
+data class TransportDetails(
+    val transporterName: String? = null,
+    /** Transporter GSTIN or the 15-character transporter ID. */
+    val transporterId: String? = null,
+    /** Road, Rail, Air or Ship. */
+    val mode: String? = null,
+    val vehicleNumber: String? = null,
+    /** LR, RR or airway bill number. */
+    val docNumber: String? = null,
+    val docDate: LocalDate? = null,
+    val distanceKm: Int? = null,
+) {
+    init {
+        require(distanceKm == null || distanceKm in 0..9_999) { "Transport distance must be 0 to 9999 km" }
+    }
+
+    fun isEmpty(): Boolean = this == TransportDetails()
+
+    fun rows(date: (LocalDate) -> String = { it.toString() }): List<Pair<String, String>> = listOfNotNull(
+        transporterName?.let { "Transporter" to it },
+        transporterId?.let { "Transporter ID" to it },
+        mode?.let { "Transport mode" to it },
+        vehicleNumber?.let { "Vehicle no." to it },
+        docNumber?.let { "LR/doc no." to it },
+        docDate?.let { "LR/doc date" to date(it) },
+        distanceKm?.let { "Distance" to "$it km" },
+    )
+}
+
+/** Export or SEZ supply; [code] is the GSTR-1 export type or SEZ invoice type. */
+enum class ExportType(val code: String, val label: String, val withTax: Boolean, val sez: Boolean) {
+    EXPORT_WITH_TAX("WPAY", "Export with IGST paid", true, false),
+    EXPORT_UNDER_LUT("WOPAY", "Export under LUT/bond (no IGST)", false, false),
+    SEZ_WITH_TAX("SEZWP", "SEZ supply with IGST paid", true, true),
+    SEZ_UNDER_LUT("SEZWOP", "SEZ supply under LUT/bond (no IGST)", false, true),
+    ;
+
+    companion object {
+        fun fromCode(code: String): ExportType? = entries.firstOrNull { it.code == code }
+    }
+}
+
+data class ExportDetails(
+    val type: ExportType,
+    val shippingBillNumber: String? = null,
+    val shippingBillDate: LocalDate? = null,
+    /** Six-character port code, e.g. INBOM1. */
+    val portCode: String? = null,
+    /** LUT or bond reference for supplies without tax. */
+    val lutReference: String? = null,
+    /** Currency and amount in it, e.g. "USD 1,200.00 at 83.10"; text only, totals stay in rupees. */
+    val currencyNote: String? = null,
+) {
+    fun rows(date: (LocalDate) -> String = { it.toString() }): List<Pair<String, String>> = listOfNotNull(
+        "Supply type" to type.label,
+        shippingBillNumber?.let { "Shipping bill no." to it },
+        shippingBillDate?.let { "Shipping bill date" to date(it) },
+        portCode?.let { "Port code" to it },
+        lutReference?.let { "LUT/bond ref." to it },
+        currencyNote?.let { "Currency" to it },
+    )
+}
+
+/** One firm-defined header field on a document. */
+data class DocumentField(val label: String, val value: String) {
+    init {
+        require(label.isNotBlank() && value.isNotBlank()) { "Document field label and value are required" }
+        require('\t' !in label && '\n' !in label && '\t' !in value && '\n' !in value) { "Document fields are single-line" }
+    }
+
+    companion object {
+        /** Stored as one "label<TAB>value" pair per line. */
+        fun encode(fields: List<DocumentField>): String? = fields.takeIf { it.isNotEmpty() }?.joinToString("\n") { "${it.label}\t${it.value}" }
+
+        fun decode(text: String?): List<DocumentField> = text.orEmpty().split('\n').mapNotNull { row ->
+            val i = row.indexOf('\t')
+            if (i <= 0 || i == row.length - 1) null else DocumentField(row.substring(0, i), row.substring(i + 1))
+        }
     }
 }

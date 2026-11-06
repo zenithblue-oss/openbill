@@ -78,7 +78,7 @@ class RoomReportsTest {
         val book = Reports.run(ReportKind.CASH_BANK_BOOK, data)
         assertEquals("-11.80", book.totals!![7])
         val gst3b = Reports.run(ReportKind.GSTR3B, data)
-        assertEquals("0.90", gst3b.rows[4][3]) // ITC CGST half of 1.80
+        assertEquals("0.90", gst3b.rows[6][3]) // ITC CGST half of 1.80
     }
 
     @Test

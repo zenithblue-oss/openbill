@@ -37,6 +37,8 @@ data class TaxRow(
     val treatment: TaxTreatment,
     val rate: Rate,
     val amounts: TaxAmounts,
+    /** Input credit can be claimed on this row (purchase lines can opt out; charges always can). */
+    val itcEligible: Boolean = true,
 )
 
 /**
@@ -47,7 +49,7 @@ data class TaxRow(
  * one row from its header. Rows always sum to the stored taxable value and tax.
  */
 fun Voucher.taxRows(firmStateCode: String, rounding: RoundingMode = RoundingMode.HALF_UP): List<TaxRow> {
-    val intra = firmStateCode == placeOfSupplyStateCode
+    val intra = isIntraState(firmStateCode)
     fun split(taxable: Money, tax: Money, cessRate: Rate): TaxAmounts {
         val cess = if (cessRate.units == 0L) Money.ZERO else minOf(cessRate.applyTo(taxable, rounding), tax)
         val gst = tax - cess
@@ -60,7 +62,7 @@ fun Voucher.taxRows(firmStateCode: String, rounding: RoundingMode = RoundingMode
     }
     val rows = ArrayList<TaxRow>()
     lines.sortedBy { it.lineNumber }.forEach { l ->
-        rows += TaxRow(l.hsnSac, l.description, l.itemId, l.quantity, l.treatment, l.taxRate, split(l.taxable, l.tax, l.cessRate))
+        rows += TaxRow(l.hsnSac, l.description, l.itemId, l.quantity, l.treatment, l.taxRate, split(l.taxable, l.tax, l.cessRate), l.itcEligible)
     }
     charges.sortedBy { it.sortOrder }.forEach { c ->
         if (c.portions.isEmpty()) {

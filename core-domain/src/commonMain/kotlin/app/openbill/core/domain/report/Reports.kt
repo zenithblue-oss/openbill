@@ -364,18 +364,27 @@ object Reports {
 
     /** GSTR-3B table 3.1 (outward) and 4 (ITC) from posted vouchers of the period. */
     fun gstr3b(data: ReportData): ReportTable {
-        fun rows(types: Set<VoucherType>, treatments: Set<TaxTreatment>) = TaxAmounts.sum(
+        fun rows(types: Set<VoucherType>, treatments: Set<TaxTreatment>, keep: (Voucher, TaxRow) -> Boolean = { _, _ -> true }) = TaxAmounts.sum(
             data.posted.filter { it.type in types }.flatMap { v ->
-                v.taxRows(data.firm.stateCode, data.rounding).filter { it.treatment in treatments }.map { it.amounts.negateIf(v.type.isReturn()) }
+                v.taxRows(data.firm.stateCode, data.rounding).filter { it.treatment in treatments && keep(v, it) }.map { it.amounts.negateIf(v.type.isReturn()) }
             },
         )
         val outward = setOf(VoucherType.SALE, VoucherType.CREDIT_NOTE)
-        val a = rows(outward, setOf(TaxTreatment.TAXABLE))
-        val b = rows(outward, setOf(TaxTreatment.ZERO_RATED))
-        val c = rows(outward, setOf(TaxTreatment.NIL_RATED, TaxTreatment.EXEMPT))
+        val inward = setOf(VoucherType.PURCHASE, VoucherType.DEBIT_NOTE, VoucherType.EXPENSE)
+        val gst = setOf(TaxTreatment.TAXABLE)
+        // Exports and SEZ supplies with IGST are zero-rated supplies (3.1(b)); outward reverse
+        // charge supplies carry no tax for the supplier and are reported with nil/exempt (3.1(c)).
+        val a = rows(outward, gst) { v, _ -> v.export == null && !v.reverseCharge }
+        val b = rows(outward, setOf(TaxTreatment.ZERO_RATED)) + rows(outward, gst) { v, _ -> v.export != null && !v.reverseCharge }
+        val c = rows(outward, setOf(TaxTreatment.NIL_RATED, TaxTreatment.EXEMPT)) +
+            rows(outward, gst) { v, _ -> v.reverseCharge }.let { TaxAmounts(taxable = it.taxable) }
+        val d = rows(inward, gst) { v, _ -> v.reverseCharge }
         val e = rows(outward, setOf(TaxTreatment.NON_GST))
-        val itc = rows(setOf(VoucherType.PURCHASE, VoucherType.DEBIT_NOTE, VoucherType.EXPENSE), setOf(TaxTreatment.TAXABLE)).copy(taxable = Money.ZERO)
-        val out = a + b
+        val itcRcm = rows(inward, gst) { v, t -> v.reverseCharge && t.itcEligible }.copy(taxable = Money.ZERO)
+        val itcOther = rows(inward, gst) { v, t -> !v.reverseCharge && t.itcEligible }.copy(taxable = Money.ZERO)
+        val blocked = rows(inward, gst) { _, t -> !t.itcEligible }.copy(taxable = Money.ZERO)
+        val itc = itcRcm + itcOther
+        val out = a + b + d
         fun r(label: String, t: TaxAmounts, withTaxable: Boolean = true) =
             listOf(label, if (withTaxable) t.taxable.cell() else "", t.igst.cell(), t.cgst.cell(), t.sgst.cell(), t.cess.cell())
         val netTax = TaxAmounts(Money.ZERO, out.igst - itc.igst, out.cgst - itc.cgst, out.sgst - itc.sgst, out.cess - itc.cess)
@@ -385,14 +394,17 @@ object Reports {
             listOf(
                 r("3.1(a) Outward taxable supplies", a),
                 r("3.1(b) Outward zero rated", b),
-                r("3.1(c) Nil rated and exempted", c),
+                r("3.1(c) Nil/exempt and RCM outward", c),
+                r("3.1(d) Inward reverse charge", d),
                 r("3.1(e) Non-GST outward", e),
-                r("4(A)(5) All other ITC", itc, withTaxable = false),
+                r("4(A)(3) ITC on inward reverse charge", itcRcm, withTaxable = false),
+                r("4(A)(5) All other ITC", itcOther, withTaxable = false),
                 r("4(C) Net ITC available", itc, withTaxable = false),
+                r("4(D)(2) Ineligible ITC (not claimed)", blocked, withTaxable = false),
             ),
             r("Tax payable after ITC", netTax, withTaxable = false),
             notes = listOf(
-                "Working only: no reverse charge, imports, ITC reversal or cross-head set-off; verify before filing.",
+                "Working only: no imports, ITC reversal or cross-head set-off; reverse charge tax (3.1(d)) must be paid in cash. Verify before filing.",
             ),
         )
     }

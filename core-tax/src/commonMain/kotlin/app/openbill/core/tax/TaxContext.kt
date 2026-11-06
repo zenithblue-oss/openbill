@@ -3,6 +3,8 @@ package app.openbill.core.tax
 data class TaxContext(
     val firmStateCode: String,
     val placeOfSupplyStateCode: String,
+    /** Exports and supplies to SEZ are inter-state (IGST) even within the firm's state. */
+    val forceInterState: Boolean = false,
 ) {
     init {
         require(isStateCode(firmStateCode)) {
@@ -14,7 +16,7 @@ data class TaxContext(
     }
 
     val isIntraState: Boolean
-        get() = firmStateCode == placeOfSupplyStateCode
+        get() = !forceInterState && firmStateCode == placeOfSupplyStateCode
 
     private fun isStateCode(code: String): Boolean =
         code.length == 2 && code[0] in '0'..'9' && code[1] in '0'..'9'

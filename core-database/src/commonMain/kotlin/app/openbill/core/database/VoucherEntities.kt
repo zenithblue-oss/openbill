@@ -72,6 +72,28 @@ data class VoucherEntity(
     @Embedded val sync: SyncMetadata,
     @ColumnInfo(defaultValue = "NULL") val referenceNumber: String? = null,
     @ColumnInfo(defaultValue = "NULL") val ledgerAccountId: String? = null,
+    // v12: invoice document fields (all optional; existing rows keep their meaning).
+    @ColumnInfo(defaultValue = "0") val reverseCharge: Boolean = false,
+    @ColumnInfo(defaultValue = "NULL") val transporterName: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val transporterId: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val transportMode: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val vehicleNumber: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val transportDocNumber: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val transportDocDate: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val transportDistanceKm: Int? = null,
+    /** GSTR-1 code: WPAY, WOPAY, SEZWP or SEZWOP. */
+    @ColumnInfo(defaultValue = "NULL") val exportType: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val shippingBillNumber: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val shippingBillDate: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val exportPortCode: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val lutReference: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val currencyNote: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val ecommerceGstin: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val poNumber: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val poDate: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val ewayBillNumber: String? = null,
+    /** One "label<TAB>value" pair per line. */
+    @ColumnInfo(defaultValue = "NULL") val customFields: String? = null,
 )
 
 @Entity(
@@ -135,6 +157,10 @@ data class VoucherLineEntity(
     /** Newline-separated serial/IMEI numbers. */
     @ColumnInfo(defaultValue = "NULL") val serialNumbers: String? = null,
     @ColumnInfo(defaultValue = "NULL") val toGodownId: String? = null,
+    /** v12: bonus quantity (scaled like [quantity]) that moves stock without value. */
+    @ColumnInfo(defaultValue = "0") val freeQuantity: Long = 0,
+    /** v12: false when the line's GST is not claimable as input credit. */
+    @ColumnInfo(defaultValue = "1") val itcEligible: Boolean = true,
 )
 
 @Entity(

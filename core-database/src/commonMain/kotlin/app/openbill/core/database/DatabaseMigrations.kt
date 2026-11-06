@@ -173,7 +173,28 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+    /**
+     * Invoice document fields: reverse charge, transport, export/SEZ, e-commerce operator, PO,
+     * e-way bill number and custom fields on vouchers; free quantity and ITC eligibility on
+     * lines. Existing rows: no reverse charge, no free quantity, ITC eligible.
+     */
+    private val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `reverseCharge` INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `transportDistanceKm` INTEGER DEFAULT NULL")
+            for (column in listOf(
+                "transporterName", "transporterId", "transportMode", "vehicleNumber", "transportDocNumber", "transportDocDate",
+                "exportType", "shippingBillNumber", "shippingBillDate", "exportPortCode", "lutReference", "currencyNote",
+                "ecommerceGstin", "poNumber", "poDate", "ewayBillNumber", "customFields",
+            )) {
+                connection.execSQL("ALTER TABLE `vouchers` ADD COLUMN `$column` TEXT DEFAULT NULL")
+            }
+            connection.execSQL("ALTER TABLE `voucher_lines` ADD COLUMN `freeQuantity` INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE `voucher_lines` ADD COLUMN `itcEligible` INTEGER NOT NULL DEFAULT 1")
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
 
     fun migrationsFor(
         startVersion: Int,

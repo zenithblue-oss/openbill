@@ -119,7 +119,8 @@ class LedgerJournalDerivation(
     ): List<JournalEntry> {
         val charges = includedCharges(voucher)
         val salesAmount = voucher.taxable + charges.amount
-        val gstAmount = voucher.tax + charges.tax
+        // Reverse charge: the recipient pays the GST, so the supplier books none.
+        val gstAmount = if (voucher.reverseCharge) Money.ZERO else voucher.tax + charges.tax
         val controlEntry = if (creditControl) {
             entry(voucher, accounts.accountsReceivable.id, debit = voucher.total, at = at)
         } else {
@@ -148,8 +149,11 @@ class LedgerJournalDerivation(
         debitControl: Boolean,
     ): List<JournalEntry> {
         val charges = includedCharges(voucher)
-        val purchaseAmount = voucher.taxable + charges.amount
         val gstAmount = voucher.tax + charges.tax
+        // GST without input credit is part of the purchase cost.
+        val blockedGst = voucher.lines.filter { !it.itcEligible }.fold(Money.ZERO) { t, l -> t + l.tax }
+        val purchaseAmount = voucher.taxable + charges.amount + blockedGst
+        val creditGst = gstAmount - blockedGst
         val controlEntry = if (debitControl) {
             entry(voucher, accounts.accountsPayable.id, credit = voucher.total, at = at)
         } else {
@@ -163,9 +167,16 @@ class LedgerJournalDerivation(
                 entry(voucher, accounts.purchases.id, credit = purchaseAmount, at = at)
             },
             if (debitControl) {
-                entry(voucher, accounts.inputGst.id, debit = gstAmount, at = at)
+                entry(voucher, accounts.inputGst.id, debit = creditGst, at = at)
             } else {
-                entry(voucher, accounts.inputGst.id, credit = gstAmount, at = at)
+                entry(voucher, accounts.inputGst.id, credit = creditGst, at = at)
+            },
+            // Reverse charge: the firm owes the GST itself instead of paying it to the supplier.
+            // ponytail: booked to output GST; a separate RCM payable ledger if CAs ask for one.
+            when {
+                !voucher.reverseCharge -> null
+                debitControl -> entry(voucher, accounts.outputGst.id, credit = gstAmount, at = at)
+                else -> entry(voucher, accounts.outputGst.id, debit = gstAmount, at = at)
             },
             roundOffEntry(voucher, accounts, at, credit = !debitControl),
         )
@@ -212,7 +223,8 @@ class LedgerJournalDerivation(
      * Any other combination is rejected.
      */
     private fun includedCharges(voucher: Voucher): IncludedCharges {
-        val headerBase = voucher.taxable + voucher.tax + voucher.roundOff
+        // Under reverse charge the total the party pays leaves the tax out.
+        val headerBase = voucher.taxable + (if (voucher.reverseCharge) Money.ZERO else voucher.tax) + voucher.roundOff
         val chargeTaxable = voucher.charges.fold(Money.ZERO) { total, charge ->
             total + charge.taxableValue
         }

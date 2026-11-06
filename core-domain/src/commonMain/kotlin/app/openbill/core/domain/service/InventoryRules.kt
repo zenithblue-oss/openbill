@@ -34,10 +34,10 @@ object InventoryRules {
                 require(!line.batchNumber.isNullOrBlank()) { "${item.name}: batch number is required" }
             }
             if (item.trackSerial) {
-                val units = line.quantity.scaledUnits
+                val units = line.stockQuantity.scaledUnits
                 require(units % UNIT == 0L) { "${item.name}: serial-tracked quantity must be whole" }
                 require(line.serialNumbers.size.toLong() == units / UNIT) {
-                    "${item.name}: enter one serial number per unit (${line.quantity.format()})"
+                    "${item.name}: enter one serial number per unit (${line.stockQuantity.format()})"
                 }
                 for (serial in line.serialNumbers) {
                     require(seen.add(item.id to serial.trim())) {

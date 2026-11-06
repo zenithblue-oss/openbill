@@ -39,7 +39,7 @@ class StockMovementDerivation(
             val item = items[itemId]
                 ?: throw IllegalArgumentException("Unknown item: $itemId")
             if (item.isService || !item.trackInventory) return@flatMap emptyList()
-            if (line.quantity == Quantity.of(0)) return@flatMap emptyList()
+            if (line.stockQuantity == Quantity.of(0)) return@flatMap emptyList()
             val direction = directionOf(voucher.type, line) ?: return@flatMap emptyList()
             val godownId = line.godownId ?: settings.defaultGodownId
                 ?: throw IllegalArgumentException(
@@ -55,7 +55,7 @@ class StockMovementDerivation(
                 voucherId = voucher.id,
                 voucherLineId = line.id,
                 date = voucher.date,
-                quantity = if (inward) line.quantity else Quantity.ofScaledUnits(-line.quantity.scaledUnits),
+                quantity = if (inward) line.stockQuantity else Quantity.ofScaledUnits(-line.stockQuantity.scaledUnits),
                 createdAt = at,
                 unitCost = cost,
             )
@@ -108,13 +108,18 @@ class StockMovementDerivation(
         }
 
         /**
-         * Cost of an inward unit: a purchase's taxable value per unit (GST is input credit, not
-         * cost); an adjustment's or opening stock's rate. Returns (credit notes) are valued at
-         * the running average.
+         * Cost of an inward unit: a purchase's taxable value per unit, free units included (GST is
+         * input credit, not cost; GST without credit is cost); an adjustment's or opening stock's
+         * rate. Returns (credit notes) are valued at the running average.
          */
         fun inwardCost(type: VoucherType, line: VoucherLine): Money? = when (type) {
             VoucherType.PURCHASE -> Money.of(
-                Rounding.multiplyDivide(line.taxable.paise, 10_000L, line.quantity.scaledUnits, RoundingMode.HALF_UP),
+                Rounding.multiplyDivide(
+                    (line.taxable + if (line.itcEligible) Money.ZERO else line.tax).paise,
+                    10_000L,
+                    line.stockQuantity.scaledUnits,
+                    RoundingMode.HALF_UP,
+                ),
             )
             VoucherType.STOCK_ADJUSTMENT -> line.rate.takeIf { it > Money.ZERO }
             else -> null

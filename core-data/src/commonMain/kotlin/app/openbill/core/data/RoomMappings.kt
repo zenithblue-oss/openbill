@@ -45,6 +45,10 @@ import app.openbill.core.domain.model.PaymentMethod
 import app.openbill.core.domain.model.StockDirection
 import app.openbill.core.domain.model.StockMovement
 import app.openbill.core.domain.model.UnitOfMeasure
+import app.openbill.core.domain.model.DocumentField
+import app.openbill.core.domain.model.ExportDetails
+import app.openbill.core.domain.model.ExportType
+import app.openbill.core.domain.model.TransportDetails
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherCharge
 import app.openbill.core.domain.model.VoucherChargePortion
@@ -406,9 +410,53 @@ internal fun VoucherEntity.toDomain(
     createdAt = sync.createdAt.toInstant(),
     updatedAt = sync.updatedAt.toInstant(),
     deletedAt = sync.deletedAt?.toInstant(),
+    reverseCharge = reverseCharge,
+    transport = TransportDetails(
+        transporterName = transporterName,
+        transporterId = transporterId,
+        mode = transportMode,
+        vehicleNumber = vehicleNumber,
+        docNumber = transportDocNumber,
+        docDate = transportDocDate?.let(LocalDate::parse),
+        distanceKm = transportDistanceKm,
+    ).takeUnless { it.isEmpty() },
+    export = exportType?.let { code ->
+        ExportDetails(
+            type = ExportType.fromCode(code) ?: throw IllegalStateException("Unknown export type '$code'"),
+            shippingBillNumber = shippingBillNumber,
+            shippingBillDate = shippingBillDate?.let(LocalDate::parse),
+            portCode = exportPortCode,
+            lutReference = lutReference,
+            currencyNote = currencyNote,
+        )
+    },
+    ecommerceGstin = ecommerceGstin,
+    poNumber = poNumber,
+    poDate = poDate?.let(LocalDate::parse),
+    ewayBillNumber = ewayBillNumber,
+    customFields = DocumentField.decode(customFields),
 )
 
 internal fun Voucher.toEntity(existing: VoucherEntity?): VoucherEntity = VoucherEntity(
+    reverseCharge = reverseCharge,
+    transporterName = transport?.transporterName,
+    transporterId = transport?.transporterId,
+    transportMode = transport?.mode,
+    vehicleNumber = transport?.vehicleNumber,
+    transportDocNumber = transport?.docNumber,
+    transportDocDate = transport?.docDate?.toString(),
+    transportDistanceKm = transport?.distanceKm,
+    exportType = export?.type?.code,
+    shippingBillNumber = export?.shippingBillNumber,
+    shippingBillDate = export?.shippingBillDate?.toString(),
+    exportPortCode = export?.portCode,
+    lutReference = export?.lutReference,
+    currencyNote = export?.currencyNote,
+    ecommerceGstin = ecommerceGstin,
+    poNumber = poNumber,
+    poDate = poDate?.toString(),
+    ewayBillNumber = ewayBillNumber,
+    customFields = DocumentField.encode(customFields),
     id = id,
     firmId = firmId,
     financialYearId = financialYearId,
@@ -461,6 +509,8 @@ internal fun VoucherLineEntity.toDomain(): VoucherLine = VoucherLine(
     expiryDate = expiryDate?.let(LocalDate::parse),
     serialNumbers = serialNumbers?.split('\n')?.filter { it.isNotEmpty() }.orEmpty(),
     toGodownId = toGodownId,
+    freeQuantity = Quantity.ofScaledUnits(freeQuantity),
+    itcEligible = itcEligible,
 )
 
 internal fun VoucherLine.toEntity(
@@ -491,6 +541,8 @@ internal fun VoucherLine.toEntity(
     expiryDate = expiryDate?.toString(),
     serialNumbers = serialNumbers.takeIf { it.isNotEmpty() }?.joinToString("\n"),
     toGodownId = toGodownId,
+    freeQuantity = freeQuantity.scaledUnits,
+    itcEligible = itcEligible,
     sync = syncFor(
         createdAt = voucher.createdAt,
         updatedAt = voucher.updatedAt,

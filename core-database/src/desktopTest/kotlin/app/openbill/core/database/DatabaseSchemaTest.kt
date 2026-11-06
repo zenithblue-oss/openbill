@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(11, OPENBILL_DATABASE_VERSION)
+        assertEquals(12, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/12.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/1.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/2.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/3.json").exists())
@@ -320,7 +321,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(10, migrations.size)
+        assertEquals(11, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -335,7 +336,8 @@ class DatabaseSchemaTest {
         assertEquals(9, migrations[7].endVersion)
         assertEquals(10, migrations[8].endVersion)
         assertEquals(11, migrations[9].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(11).isEmpty())
+        assertEquals(12, migrations[10].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(12).isEmpty())
     }
 
     @Test
@@ -452,6 +454,46 @@ class DatabaseSchemaTest {
                 assertTrue(s.step())
                 assertTrue("COVERING INDEX index_stock_movements_firmId_itemId_date_createdAt_id_godownId_quantity_unitCost" in s.getText(3), s.getText(3))
                 assertTrue(!s.step(), "no temp b-tree sort")
+            }
+        }
+    }
+
+    @Test
+    fun schemaV11MigratesToV12KeepingInvoicesWithoutReverseChargeOrFreeQuantity() {
+        helper.createDatabase(11).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO financial_years (id, firmId, startDate, endDate, closedAt, createdAt, updatedAt) " +
+                    "VALUES ('fy-1', 'firm-1', '2026-04-01', '2027-03-31', NULL, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO vouchers (id, firmId, financialYearId, type, number, date, dueDate, partyId, referenceVoucherId, status, " +
+                    "placeOfSupplyStateCode, subtotal, discount, taxable, tax, roundOff, total, notes, cancellationReason, postedAt, " +
+                    "cancelledAt, restoredAt, createdAt, updatedAt, revision) VALUES ('v-1', 'firm-1', 'fy-1', 'sale', 'INV-1', " +
+                    "'2026-05-01', NULL, NULL, NULL, 'posted', '27', 10000, 0, 10000, 1800, 0, 11800, NULL, NULL, 1, NULL, NULL, 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO voucher_lines (id, voucherId, lineNumber, itemId, description, hsnSac, quantity, rate, discount, " +
+                    "taxRateUnits, cessRateUnits, taxMode, treatment, taxable, tax, total, godownId, batchId, stockDirection, " +
+                    "createdAt, updatedAt, revision) VALUES ('l-1', 'v-1', 1, NULL, 'Widget', NULL, 10000, 10000, 0, 180000, 0, " +
+                    "'exclusive', 'taxable', 10000, 1800, 11800, NULL, NULL, NULL, 1, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(12, DatabaseMigrations.migrationsFor(11)).use { connection ->
+            connection.prepare("SELECT reverseCharge, exportType, customFields, total FROM vouchers WHERE id = 'v-1'").use {
+                assertTrue(it.step())
+                assertEquals(0L, it.getLong(0))
+                assertTrue(it.isNull(1))
+                assertTrue(it.isNull(2))
+                assertEquals(11800L, it.getLong(3))
+            }
+            connection.prepare("SELECT freeQuantity, itcEligible FROM voucher_lines WHERE id = 'l-1'").use {
+                assertTrue(it.step())
+                assertEquals(0L, it.getLong(0))
+                assertEquals(1L, it.getLong(1))
             }
         }
     }

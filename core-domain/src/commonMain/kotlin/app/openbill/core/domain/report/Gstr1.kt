@@ -25,13 +25,16 @@ class Gstr1(
     val hsn: List<Hsn>,
     val docs: List<DocRange>,
     val skipped: List<String>,
+    /** Export invoices (table 6A), with or without IGST. */
+    val exp: List<Doc> = emptyList(),
 ) {
     /** One invoice or note with its rate-wise items. */
     class Doc(val voucher: Voucher, val ctin: String?, val items: List<Pair<Rate, TaxAmounts>>) {
         val amounts: TaxAmounts get() = TaxAmounts.sum(items.map { it.second })
     }
 
-    data class B2cs(val intra: Boolean, val pos: String, val rate: Rate, val amounts: TaxAmounts)
+    /** [etin] is the e-commerce operator's GSTIN when the supply went through one. */
+    data class B2cs(val intra: Boolean, val pos: String, val rate: Rate, val amounts: TaxAmounts, val etin: String? = null)
 
     data class Hsn(val b2b: Boolean, val code: String, val description: String, val uqc: String, val rate: Rate, val quantity: Quantity, val amounts: TaxAmounts)
 
@@ -45,6 +48,7 @@ class Gstr1(
         val rows = listOf(
             docsRow("4A B2B invoices", b2b),
             docsRow("5 B2C large invoices", b2cl),
+            docsRow("6A Exports", exp),
             summaryRow("7 B2C others", b2cs.size.toString(), b2csSum, b2csSum.taxable + b2csSum.tax),
             docsRow("9B Credit notes (registered)", cdnr, -1),
             summaryRow("12 HSN summary", hsn.size.toString(), hsnSum, hsnSum.taxable + hsnSum.tax),
@@ -76,24 +80,49 @@ class Gstr1(
         if (b2b.isNotEmpty()) {
             root["b2b"] = b2b.groupBy { it.ctin!! }.toList().sortedBy { it.first }.map { (ctin, list) ->
                 linkedMapOf("ctin" to ctin, "inv" to list.map { d ->
-                    linkedMapOf(
+                    linkedMapOf<String, Any?>(
                         "inum" to d.voucher.number, "idt" to gstDate(d.voucher.date), "val" to num(d.voucher.total),
-                        "pos" to d.voucher.placeOfSupplyStateCode, "rchrg" to "N", "inv_typ" to "R", "itms" to itms(d, intra(d.voucher)),
-                    )
+                        "pos" to d.voucher.placeOfSupplyStateCode, "rchrg" to rchrg(d.voucher), "inv_typ" to (d.voucher.export?.type?.takeIf { it.sez }?.code ?: "R"),
+                    ).apply {
+                        etin(d.voucher)?.let { put("etin", it) }
+                        put("itms", itms(d, intra(d.voucher)))
+                    }
                 })
             }
         }
         if (b2cl.isNotEmpty()) {
             root["b2cl"] = b2cl.groupBy { it.voucher.placeOfSupplyStateCode }.toList().sortedBy { it.first }.map { (pos, list) ->
                 linkedMapOf("pos" to pos, "inv" to list.map { d ->
-                    linkedMapOf("inum" to d.voucher.number, "idt" to gstDate(d.voucher.date), "val" to num(d.voucher.total), "itms" to itms(d, false))
+                    linkedMapOf<String, Any?>("inum" to d.voucher.number, "idt" to gstDate(d.voucher.date), "val" to num(d.voucher.total))
+                        .apply {
+                            etin(d.voucher)?.let { put("etin", it) }
+                            put("itms", itms(d, false))
+                        }
+                })
+            }
+        }
+        if (exp.isNotEmpty()) {
+            root["exp"] = exp.groupBy { it.voucher.export!!.type.code }.toList().sortedByDescending { it.first }.map { (type, list) ->
+                linkedMapOf("exp_typ" to type, "inv" to list.map { d ->
+                    val x = d.voucher.export!!
+                    linkedMapOf<String, Any?>("inum" to d.voucher.number, "idt" to gstDate(d.voucher.date), "val" to num(d.voucher.total)).apply {
+                        x.portCode?.let { put("sbpcode", it) }
+                        x.shippingBillNumber?.let { put("sbnum", it) }
+                        x.shippingBillDate?.let { put("sbdt", gstDate(it)) }
+                        put("itms", d.items.map { (rate, a) -> linkedMapOf("txval" to num(a.taxable), "rt" to JsonText.Num(rate.percentText()), "iamt" to num(a.igst), "csamt" to num(a.cess)) })
+                    }
                 })
             }
         }
         if (b2cs.isNotEmpty()) {
             root["b2cs"] = b2cs.map { r ->
-                linkedMapOf<String, Any?>("sply_ty" to if (r.intra) "INTRA" else "INTER", "pos" to r.pos, "typ" to "OE", "txval" to num(r.amounts.taxable), "rt" to JsonText.Num(r.rate.percentText()))
-                    .apply { heads(this, r.amounts, r.intra) }
+                linkedMapOf<String, Any?>("sply_ty" to if (r.intra) "INTRA" else "INTER", "pos" to r.pos, "typ" to if (r.etin != null) "E" else "OE")
+                    .apply {
+                        r.etin?.let { put("etin", it) }
+                        put("txval", num(r.amounts.taxable))
+                        put("rt", JsonText.Num(r.rate.percentText()))
+                        heads(this, r.amounts, r.intra)
+                    }
             }
         }
         if (cdnr.isNotEmpty()) {
@@ -101,7 +130,7 @@ class Gstr1(
                 linkedMapOf("ctin" to ctin, "nt" to list.map { d ->
                     linkedMapOf(
                         "ntty" to "C", "nt_num" to d.voucher.number, "nt_dt" to gstDate(d.voucher.date), "val" to num(d.voucher.total),
-                        "pos" to d.voucher.placeOfSupplyStateCode, "rchrg" to "N", "inv_typ" to "R", "itms" to itms(d, intra(d.voucher)),
+                        "pos" to d.voucher.placeOfSupplyStateCode, "rchrg" to rchrg(d.voucher), "inv_typ" to "R", "itms" to itms(d, intra(d.voucher)),
                     )
                 })
             }
@@ -133,7 +162,11 @@ class Gstr1(
         return JsonText.write(root)
     }
 
-    private fun intra(v: Voucher) = v.placeOfSupplyStateCode == data.firm.stateCode
+    private fun intra(v: Voucher) = v.isIntraState(data.firm.stateCode)
+
+    private fun rchrg(v: Voucher) = if (v.reverseCharge) "Y" else "N"
+
+    private fun etin(v: Voucher) = v.ecommerceGstin?.trim()?.uppercase()?.takeIf { Gstin.isValid(it) }
 
     private fun itms(d: Doc, intra: Boolean) = d.items.mapIndexed { i, (rate, a) ->
         linkedMapOf("num" to i + 1, "itm_det" to linkedMapOf<String, Any?>("txval" to num(a.taxable), "rt" to JsonText.Num(rate.percentText())).apply { heads(this, a, intra) })
@@ -170,29 +203,35 @@ class Gstr1(
             val b2b = ArrayList<Doc>()
             val b2cl = ArrayList<Doc>()
             val cdnr = ArrayList<Doc>()
-            val b2cs = LinkedHashMap<Triple<Boolean, String, Rate>, TaxAmounts>()
+            val exp = ArrayList<Doc>()
+            data class B2csKey(val intra: Boolean, val pos: String, val rate: Rate, val etin: String?)
+            val b2cs = LinkedHashMap<B2csKey, TaxAmounts>()
             val skipped = ArrayList<String>()
             for (v in outward) {
                 val rows = v.taxRows(state, data.rounding)
                 val gstRows = rows.filter { it.treatment in GST_TREATMENTS }
                 val items = gstRows.groupBy { it.rate }.toList().sortedBy { it.first }.map { (rate, list) -> rate to TaxAmounts.sum(list.map { it.amounts }) }
                 val ctin = registeredGstin(v, data)
-                val intra = v.placeOfSupplyStateCode == state
+                val intra = v.isIntraState(state)
+                val export = v.export?.type
                 when {
                     items.isEmpty() -> skipped += "${v.number}: no taxable lines (nil, exempt or non-GST only); not in B2B/B2C tables"
+                    v.type == VoucherType.SALE && export != null && !export.sez -> exp += Doc(v, null, items)
+                    v.type == VoucherType.SALE && export != null && ctin == null -> skipped += "${v.number}: SEZ supply needs the recipient's GSTIN; not exported"
                     v.type == VoucherType.SALE && ctin != null -> b2b += Doc(v, ctin, items)
                     v.type == VoucherType.SALE && !intra && v.total > b2clLimit(v.date) -> b2cl += Doc(v, null, items)
                     v.type == VoucherType.CREDIT_NOTE && ctin != null -> cdnr += Doc(v, ctin, items)
+                    v.type == VoucherType.CREDIT_NOTE && export != null -> skipped += "${v.number}: credit note on an export; enter it on the portal (CDNUR)"
                     else -> items.forEach { (rate, a) ->
-                        val key = Triple(intra, v.placeOfSupplyStateCode, rate)
+                        val key = B2csKey(intra, v.placeOfSupplyStateCode, rate, v.ecommerceGstin?.trim()?.uppercase()?.takeIf { Gstin.isValid(it) })
                         b2cs[key] = (b2cs[key] ?: TaxAmounts()) + a.negateIf(v.type == VoucherType.CREDIT_NOTE)
                     }
                 }
             }
             return Gstr1(
                 data, b2b, b2cl,
-                b2cs.entries.sortedWith(compareBy({ it.key.second }, { it.key.third })).map { (k, a) -> B2cs(k.first, k.second, k.third, a) },
-                cdnr, hsnRows(data, outward), docRanges(data), skipped,
+                b2cs.entries.sortedWith(compareBy({ it.key.pos }, { it.key.rate }, { it.key.etin.orEmpty() })).map { (k, a) -> B2cs(k.intra, k.pos, k.rate, a, k.etin) },
+                cdnr, hsnRows(data, outward), docRanges(data), skipped, exp,
             )
         }
 

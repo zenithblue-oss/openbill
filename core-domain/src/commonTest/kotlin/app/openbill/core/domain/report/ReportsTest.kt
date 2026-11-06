@@ -69,7 +69,7 @@ class ReportsTest {
     fun gstr3bTables() {
         val t = Reports.run(ReportKind.GSTR3B, data)
         assertEquals(listOf("3.1(a) Outward taxable supplies", "121400.00", "21600.00", "111.00", "111.00", "0.00"), t.rows[0])
-        assertEquals(listOf("4(A)(5) All other ITC", "", "180.00", "0.00", "0.00", "0.00"), t.rows[4])
+        assertEquals(listOf("4(A)(5) All other ITC", "", "180.00", "0.00", "0.00", "0.00"), t.rows[6])
     }
 
     @Test
