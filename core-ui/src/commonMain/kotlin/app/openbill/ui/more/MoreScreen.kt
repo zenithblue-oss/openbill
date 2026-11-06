@@ -235,6 +235,12 @@ fun MoreScreen(
                     session.settings.negativeStockAllowed,
                     { allow -> scope.launch { container.repositories.firms.saveSettings(session.settings.copy(negativeStockAllowed = allow)) } },
                 )
+                if (can(Permission.SETTINGS)) app.openbill.ui.inventory.SwitchRow(
+                    "Require reference for UPI/card payments",
+                    if (session.settings.requirePaymentReference) "UPI and card payments need a UTR or approval code, at the counter and in Money" else "UPI and card references are optional",
+                    session.settings.requirePaymentReference,
+                    { on -> scope.launch { container.repositories.firms.saveSettings(session.settings.copy(requirePaymentReference = on)) } },
+                )
 
                 SectionHeader("Appearance")
                 Text("Theme", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = Spacing.xs))

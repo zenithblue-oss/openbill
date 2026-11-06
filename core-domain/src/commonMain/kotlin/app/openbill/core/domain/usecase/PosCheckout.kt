@@ -6,6 +6,7 @@ import app.openbill.core.domain.model.PartyType
 import app.openbill.core.domain.model.PaymentMethod
 import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherType
+import app.openbill.core.domain.model.needsReference
 import app.openbill.core.domain.repository.Repositories
 import app.openbill.core.model.Money
 import kotlin.time.Instant
@@ -39,11 +40,11 @@ object PosCheckout {
      * bill. Paying less than the bill is refused unless [creditAllowed] (a named customer), when
      * the rest stays outstanding on their account.
      */
-    fun settle(total: Money, tenders: List<PosTender>, creditAllowed: Boolean): PosSettlement {
+    fun settle(total: Money, tenders: List<PosTender>, creditAllowed: Boolean, referenceRequired: Boolean = false): PosSettlement {
         require(total > Money.ZERO) { "The bill total must be above zero" }
         require(tenders.all { it.amount > Money.ZERO }) { "Enter an amount above zero for each payment" }
         tenders.forEach { t ->
-            if (t.method != PaymentMethod.CASH) require(!t.reference.isNullOrBlank()) { "Enter the ${t.method.label()} reference" }
+            if (t.method.needsReference(referenceRequired)) require(!t.reference.isNullOrBlank()) { "Enter the ${t.method.label()} reference" }
         }
         val nonCash = tenders.filter { it.method != PaymentMethod.CASH }.fold(Money.ZERO) { s, t -> s + t.amount }
         require(nonCash <= total) { "Card, UPI and bank payments add up to more than the bill; only cash can be given change" }
@@ -98,7 +99,7 @@ object PosCheckout {
                     MoneyVoucherInput(
                         type = VoucherType.PAYMENT_IN, id = id, firmId = v.firmId, financialYearId = v.financialYearId,
                         stateCode = stateCode, date = v.date, amount = amount, accountId = t.accountId, method = t.method,
-                        partyId = partyId, instrumentNumber = t.reference?.trim()?.takeIf { t.method != PaymentMethod.CASH },
+                        partyId = partyId, instrumentNumber = t.reference?.trim()?.takeIf { it.isNotEmpty() && t.method != PaymentMethod.CASH },
                         instrumentDate = v.date.takeIf { t.method == PaymentMethod.BANK || t.method == PaymentMethod.CHEQUE },
                         allocations = listOf(AllocationRequest(invoiceId, amount)),
                     ),

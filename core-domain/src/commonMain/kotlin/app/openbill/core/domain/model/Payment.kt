@@ -13,6 +13,16 @@ enum class PaymentMethod {
     CARD,
 }
 
+/**
+ * Whether a payment by this method needs a reference. Bank and cheque always do; UPI and card
+ * only when [upiCardRequired] (the firm's "Require reference for UPI/card payments" setting).
+ */
+fun PaymentMethod.needsReference(upiCardRequired: Boolean): Boolean = when (this) {
+    PaymentMethod.CASH -> false
+    PaymentMethod.UPI, PaymentMethod.CARD -> upiCardRequired
+    PaymentMethod.BANK, PaymentMethod.CHEQUE -> true
+}
+
 data class PaymentDetails(
     val voucherId: String,
     val firmId: String,
@@ -56,14 +66,10 @@ data class PaymentDetails(
                 require(upiId == null) { "Bank payments cannot have a UPI id" }
             }
 
-            PaymentMethod.UPI -> {
-                require(instrumentNumber != null) {
-                    "UPI payments require an instrument number"
-                }
-            }
+            // UPI and card references are optional unless the firm requires them (checked on save).
+            PaymentMethod.UPI -> Unit
 
             PaymentMethod.CARD -> {
-                require(instrumentNumber != null) { "Card payments require the approval code or last digits" }
                 require(upiId == null) { "Card payments cannot have a UPI id" }
             }
 

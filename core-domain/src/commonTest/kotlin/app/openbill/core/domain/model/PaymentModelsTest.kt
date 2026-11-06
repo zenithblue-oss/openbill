@@ -53,10 +53,12 @@ class PaymentModelsTest {
     }
 
     @Test
-    fun upiRequiresInstrumentNumberButAllowsUpiId() {
-        assertFailsWith<IllegalArgumentException> {
-            details(method = PaymentMethod.UPI, upiId = "shop@upi")
-        }
+    fun upiAndCardReferencesAreOptionalUnlessTheFirmRequiresThem() {
+        // The model allows it; the payment repository enforces the firm's setting.
+        assertEquals(null, details(method = PaymentMethod.UPI, upiId = "shop@upi").instrumentNumber)
+        assertEquals(null, details(method = PaymentMethod.CARD).instrumentNumber)
+        assertEquals(listOf(false, false, false, true, true), listOf(PaymentMethod.CASH, PaymentMethod.UPI, PaymentMethod.CARD, PaymentMethod.BANK, PaymentMethod.CHEQUE).map { it.needsReference(false) })
+        assertEquals(listOf(false, true, true, true, true), listOf(PaymentMethod.CASH, PaymentMethod.UPI, PaymentMethod.CARD, PaymentMethod.BANK, PaymentMethod.CHEQUE).map { it.needsReference(true) })
         val upi = details(
             method = PaymentMethod.UPI,
             instrumentNumber = "UPI-TXN-1",

@@ -45,7 +45,8 @@ class PosCheckoutTest {
     @Test
     fun nonCashCannotExceedTheBillAndNeedsAReference() {
         assertFailsWith<IllegalArgumentException> { PosCheckout.settle(rs("100.00"), listOf(upi("100.01")), creditAllowed = true) }
-        assertFailsWith<IllegalArgumentException> { PosCheckout.settle(rs("100.00"), listOf(upi("100.00", ref = " ")), creditAllowed = false) }
+        assertFailsWith<IllegalArgumentException> { PosCheckout.settle(rs("100.00"), listOf(upi("100.00", ref = " ")), creditAllowed = false, referenceRequired = true) }
+        assertEquals(rs("100.00"), PosCheckout.settle(rs("100.00"), listOf(upi("100.00", ref = " ")), creditAllowed = false).paid, "optional by default")
         assertFailsWith<IllegalArgumentException> { PosCheckout.settle(rs("100.00"), listOf(cash("0.00")), creditAllowed = true) }
         assertEquals(Money.ZERO, PosCheckout.settle(rs("100.00"), listOf(upi("100.00")), creditAllowed = false).change)
     }

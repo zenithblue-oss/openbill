@@ -65,6 +65,7 @@ import app.openbill.ui.components.pageGutter
 import app.openbill.ui.format.Fmt
 import app.openbill.ui.format.Parse
 import app.openbill.ui.theme.Spacing
+import app.openbill.core.domain.model.needsReference
 import kotlinx.coroutines.launch
 
 /**
@@ -88,6 +89,7 @@ fun MoneyEditorScreen(
     val accounts by remember { repos.ledger.observeAccounts(firmId) }.collectAsState(initial = emptyList())
     val parties by remember { repos.parties.observeParties(firmId) }.collectAsState(initial = emptyList())
     LaunchedEffect(firmId) { runCatching { repos.ledger.ensureSystemAccounts(firmId, container.now()) } }
+    val refRequired = session.settings.requirePaymentReference
     val moneyAccounts = accounts.filter { it.type.isMoney }
     val categories = accounts.filter { it.type == AccountType.EXPENSE && it.code == null }
 
@@ -148,7 +150,7 @@ fun MoneyEditorScreen(
         if (type.isPayment() && party == null) { error = "Choose a party"; return }
         if (type == VoucherType.EXPENSE && categoryId == null) { error = "Choose a category"; return }
         if (type == VoucherType.CONTRA && (toAccountId == null || toAccountId == acc.id)) { error = "Choose a different destination account"; return }
-        if (method != PaymentMethod.CASH && refNo.isBlank()) { error = "Enter the ${refLabel(method).lowercase()}"; return }
+        if (method.needsReference(refRequired) && refNo.isBlank()) { error = refMissing(method); return }
         val tax = Parse.money(gst) ?: run { error = "Enter a valid GST amount"; return }
         val requests = alloc.mapNotNull { (id, s) -> Parse.money(s)?.takeIf { it > Money.ZERO }?.let { AllocationRequest(id, it) } }
         if (alloc.values.any { Parse.money(it) == null }) { error = "Check the allocated amounts"; return }
@@ -156,7 +158,7 @@ fun MoneyEditorScreen(
         val amounts = if (discountOnly) listOf(Money.ZERO) else tenders.map { t -> Parse.money(t.amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero for each mode"; return } }
         tenders.forEach { t ->
             if (t.accountId == null) { error = "Choose an account for each mode"; return }
-            if (t.method != PaymentMethod.CASH && t.ref.isBlank()) { error = "Enter the ${refLabel(t.method).lowercase()}"; return }
+            if (t.method.needsReference(refRequired) && t.ref.isBlank()) { error = refMissing(t.method); return }
         }
         val split = try {
             MoneyVouchers.splitWithDiscount(requests, open, amounts, disc)
@@ -185,7 +187,7 @@ fun MoneyEditorScreen(
                         partyId = partyId.takeIf { type.isPayment() },
                         ledgerAccountId = if (type == VoucherType.EXPENSE) categoryId else toAccountId.takeIf { type == VoucherType.CONTRA },
                         inputTax = if (type == VoucherType.EXPENSE) tax else Money.ZERO,
-                        instrumentNumber = t.ref.takeIf { t.method != PaymentMethod.CASH },
+                        instrumentNumber = t.ref.trim().takeIf { it.isNotEmpty() && t.method != PaymentMethod.CASH },
                         instrumentDate = date.takeIf { t.method == PaymentMethod.CHEQUE || t.method == PaymentMethod.BANK },
                         notes = notes,
                         allocations = split[i],
@@ -248,7 +250,7 @@ fun MoneyEditorScreen(
                         SelectableChip(m.name.lowercase().replaceFirstChar { it.uppercase() }.replace("Upi", "UPI"), method == m, { method = m })
                     }
                 }
-                if (method != PaymentMethod.CASH) FormField(refLabel(method) + " *", refNo, { refNo = it })
+                if (method != PaymentMethod.CASH) FormField(refLabel(method) + if (method.needsReference(refRequired)) " *" else " (optional)", refNo, { refNo = it; error = null })
                 if (type.isPayment()) {
                     extra.forEachIndexed { i, t ->
                         SectionHeader("Also paid by") { TextButton(onClick = { extra.removeAt(i) }) { Text("Remove") } }
@@ -259,7 +261,7 @@ fun MoneyEditorScreen(
                                 SelectableChip(m.name.lowercase().replaceFirstChar { it.uppercase() }.replace("Upi", "UPI"), t.method == m, { extra[i] = t.copy(method = m, accountId = (if (m == PaymentMethod.CASH) moneyAccounts.firstOrNull { it.type == AccountType.CASH } else moneyAccounts.firstOrNull { it.type == AccountType.BANK })?.id ?: t.accountId) })
                             }
                         }
-                        if (t.method != PaymentMethod.CASH) FormField(refLabel(t.method) + " *", t.ref, { v -> extra[i] = t.copy(ref = v) })
+                        if (t.method != PaymentMethod.CASH) FormField(refLabel(t.method) + if (t.method.needsReference(refRequired)) " *" else " (optional)", t.ref, { v -> extra[i] = t.copy(ref = v); error = null })
                     }
                     TextButton(onClick = { extra.add(Tender(accountId = account?.id)) }) { Text("Split: add another payment mode") }
                     if (extra.isNotEmpty()) Text("Total ${Fmt.inr(amountMoney ?: Money.ZERO)}", style = MaterialTheme.typography.titleMedium)
@@ -402,5 +404,9 @@ internal fun refLabel(m: PaymentMethod): String = when (m) {
     PaymentMethod.BANK -> "Bank reference"
     PaymentMethod.CASH -> "Reference"
 }
+
+/** "Enter the …" message for a missing reference; keeps "UPI"/"UTR" in capitals. */
+private fun refMissing(m: PaymentMethod): String =
+    "Enter the " + refLabel(m).let { if (m == PaymentMethod.UPI) it else it.lowercase() }
 
 private data class Tender(val amount: String = "", val accountId: String? = null, val method: PaymentMethod = PaymentMethod.UPI, val ref: String = "")

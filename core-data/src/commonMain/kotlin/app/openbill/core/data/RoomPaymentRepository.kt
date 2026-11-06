@@ -13,6 +13,7 @@ import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.model.isPayment
+import app.openbill.core.domain.model.needsReference
 import app.openbill.core.domain.model.usesPaymentAccount
 import app.openbill.core.domain.model.isPaymentAccount
 import app.openbill.core.domain.repository.PaymentRepository
@@ -56,6 +57,10 @@ class RoomPaymentRepository(
             require(domainAccount.deletedAt == null) { "Payment account is deleted" }
             require(domainAccount.type.isPaymentAccount) {
                 "Payment account must be a cash, bank, or asset account"
+            }
+            val required = database.firmSettingsDao().findByFirm(voucher.firmId)?.requirePaymentReference == true
+            require(details.instrumentNumber != null || !details.method.needsReference(required)) {
+                "Enter the ${details.method.name.lowercase().replace("upi", "UPI")} reference"
             }
             val existing = this.details.findForVoucher(details.voucherId)
             val normalized = details.normalized().copy(

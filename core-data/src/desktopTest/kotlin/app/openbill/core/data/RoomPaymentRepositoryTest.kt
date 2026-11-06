@@ -83,6 +83,26 @@ class RoomPaymentRepositoryTest {
     }
 
     @Test
+    fun upiAndCardReferencesAreRequiredOnlyWhenTheFirmSaysSo(): Unit = runBlocking {
+        seedMasterData()
+        val draft = testPaymentVoucher()
+        vouchers.saveDraft(draft)
+        val cash = cashAccount()
+        fun d(method: PaymentMethod, ref: String? = null) =
+            testPaymentDetails(draft.id, cash.id).copy(method = method, instrumentNumber = ref, instrumentDate = null)
+        payments.savePaymentDetails(d(PaymentMethod.UPI))
+        payments.savePaymentDetails(d(PaymentMethod.CARD))
+        assertNull(payments.findPaymentDetails(draft.id)!!.instrumentNumber, "optional by default")
+
+        firms.saveSettings(testSettings().copy(requirePaymentReference = true))
+        assertEquals("Enter the UPI reference", assertFailsWith<IllegalArgumentException> { payments.savePaymentDetails(d(PaymentMethod.UPI)) }.message)
+        assertFailsWith<IllegalArgumentException> { payments.savePaymentDetails(d(PaymentMethod.CARD)) }
+        payments.savePaymentDetails(d(PaymentMethod.UPI, "UTR-1"))
+        payments.savePaymentDetails(d(PaymentMethod.CASH))
+        assertEquals(PaymentMethod.CASH, payments.findPaymentDetails(draft.id)!!.method)
+    }
+
+    @Test
     fun paymentDetailsRequireADraftPaymentAndAValidPaymentAccount(): Unit = runBlocking {
         seedMasterData()
         val cash = cashAccount()

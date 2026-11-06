@@ -91,6 +91,7 @@ import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PaymentMethod
 import app.openbill.core.domain.model.Voucher
+import app.openbill.core.domain.model.needsReference
 import app.openbill.core.domain.service.StockPosition
 import app.openbill.core.domain.usecase.PosCheckout
 import app.openbill.core.domain.usecase.PosCheckout.label
@@ -588,6 +589,7 @@ fun PosScreen(
             total = total,
             accounts = accounts,
             creditParty = state.party?.takeIf { !cashParty },
+            referenceRequired = session.settings.requirePaymentReference,
             busy = state.saving,
             failure = (state.errors.values + listOfNotNull(state.failure)).firstOrNull(),
             onDismiss = { if (!state.saving) paying = false },
@@ -721,6 +723,7 @@ private fun PayDialog(
     total: Money,
     accounts: List<Account>,
     creditParty: Party?,
+    referenceRequired: Boolean,
     busy: Boolean,
     failure: String?,
     onDismiss: () -> Unit,
@@ -754,7 +757,7 @@ private fun PayDialog(
             }
             PosTender(r.method, account, amount, r.reference.trim().ifEmpty { null })
         }
-        runCatching { PosCheckout.settle(total, tenders, creditAllowed = creditParty != null) }
+        runCatching { PosCheckout.settle(total, tenders, creditAllowed = creditParty != null, referenceRequired = referenceRequired) }
             .onSuccess { onComplete(tenders, it) }
             .onFailure { error = it.message }
     }
@@ -806,7 +809,7 @@ private fun PayDialog(
                             if (r.method != PaymentMethod.CASH) {
                                 OutlinedTextField(
                                     r.reference, { v -> rows[i] = r.copy(reference = v.take(40)); error = null },
-                                    label = { Text(refLabel(r.method)) },
+                                    label = { Text(refLabel(r.method) + if (r.method.needsReference(referenceRequired)) " *" else " (optional)") },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
                                 )
