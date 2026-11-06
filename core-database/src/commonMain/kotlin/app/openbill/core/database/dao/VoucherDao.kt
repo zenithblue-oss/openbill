@@ -103,6 +103,10 @@ interface VoucherDao {
     @Query("UPDATE vouchers SET fulfilment = :fulfilment WHERE id = :id")
     suspend fun setFulfilment(id: String, fulfilment: String?): Int
 
+    /** v17: short-close an open order once; 0 rows when it already was. */
+    @Query("UPDATE vouchers SET shortClosedAt = :at, shortCloseNote = :note, updatedAt = :at, revision = revision + 1 WHERE id = :id AND shortClosedAt IS NULL")
+    suspend fun shortClose(id: String, at: Long, note: String?): Int
+
     @Query(
         "SELECT * FROM vouchers WHERE firmId = :firmId AND partyId = :partyId " +
             "AND type = :type AND status = 'posted' AND deletedAt IS NULL " +

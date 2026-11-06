@@ -119,6 +119,9 @@ class InMemoryVoucherRepository(
             ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
         require(draft.status == VoucherStatus.DRAFT) { "Only drafts can be posted" }
         require(draft.number == null) { "Voucher already has a number" }
+        if (draft.lines.any { it.sourceLineId != null }) {
+            require(vouchers.value.firstOrNull { it.id == draft.referenceVoucherId }?.shortClosedAt == null) { "The order was closed" }
+        }
         val key = NumberKey(draft.firmId, draft.type, draft.financialYearId)
         val next = nextNumbers[key] ?: 1L
         val posted = draft.copy(
@@ -196,6 +199,15 @@ class InMemoryVoucherRepository(
         vouchers.update { current -> current.filterNot { it.id == voucherId } + restored }
         refreshOrder(restored.referenceVoucherId)
         restored
+    }
+
+    override suspend fun shortCloseOrder(orderId: String, note: String?, at: Instant): Voucher = mutex.withLock {
+        app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.CANCEL_DELETE)
+        val order = vouchers.value.firstOrNull { it.id == orderId } ?: throw IllegalArgumentException("Unknown voucher: $orderId")
+        require(Orders.canShortClose(order)) { "Only an open or partly fulfilled order can be closed" }
+        val closed = order.copy(shortClosedAt = at, shortCloseNote = note?.trim()?.ifEmpty { null }, updatedAt = at)
+        vouchers.update { c -> c.map { if (it.id == orderId) closed else it } }
+        closed
     }
 
     override suspend fun softDeleteDraft(id: String, at: Instant): Voucher = mutex.withLock {

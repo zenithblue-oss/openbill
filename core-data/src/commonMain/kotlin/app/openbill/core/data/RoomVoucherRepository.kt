@@ -242,6 +242,10 @@ class RoomVoucherRepository(
         val lines = vouchers.linesFor(voucherId)
         val charges = vouchers.chargesFor(voucherId)
         val voucher = entity.toDomain(lines, charges)
+        if (lines.any { it.sourceLineId != null }) {
+            val order = entity.referenceVoucherId?.let { vouchers.findById(it) }
+            require(order?.shortClosedAt == null) { "Order ${order?.number.orEmpty()} was closed; what it still had pending is no longer billed from it".replace("  ", " ") }
+        }
         val firmSettings = settingsFor(entity.firmId)
         val movements = derivePosted(voucher, firmSettings, at)
         enforceStock(movements, firmSettings)
@@ -286,6 +290,29 @@ class RoomVoucherRepository(
         val fulfilment = Orders.fulfilment(order.toDomain(vouchers.linesFor(order.id), emptyList()), withDetails(vouchers.byReference(order.id)))
         val code = fulfilment.takeIf { it != OrderFulfilment.NONE }?.name?.lowercase()
         if (code != order.fulfilment) vouchers.setFulfilment(order.id, code)
+    }
+
+    override suspend fun shortCloseOrder(orderId: String, note: String?, at: Instant): Voucher = transactions.write {
+        Access.require(Permission.CANCEL_DELETE)
+        val entity = vouchers.findById(orderId) ?: throw IllegalArgumentException("Unknown voucher: $orderId")
+        val order = entity.toDomain(vouchers.linesFor(orderId), emptyList())
+        require(Orders.canShortClose(order)) { "Only an open or partly fulfilled order can be closed" }
+        val clean = note?.replace('\n', ' ')?.trim()?.ifEmpty { null }
+        require(clean == null || clean.length <= Orders.SHORT_CLOSE_NOTE_MAX) { "Keep the note under ${Orders.SHORT_CLOSE_NOTE_MAX} characters" }
+        val pending = Orders.pending(order, withDetails(vouchers.byReference(orderId))).filterValues { it.scaledUnits > 0L }
+        require(pending.isNotEmpty()) { "Nothing is pending on this order" }
+        check(vouchers.shortClose(orderId, at.toEpochMillis(), clean) == 1) { "This order was already closed" }
+        val lines = order.lines.associateBy { it.id }
+        audits.insert(
+            auditEvent(
+                entity, SHORT_CLOSED_ACTION, at,
+                AuditDetails.json(
+                    "note" to clean,
+                    "closed" to pending.entries.joinToString("; ") { (id, q) -> "${lines[id]?.description ?: id}: ${q.format()}" },
+                ),
+            ),
+        )
+        vouchers.findById(orderId)!!.toDomain(vouchers.linesFor(orderId), vouchers.chargesFor(orderId), vouchers.portionsFor(orderId))
     }
 
     override suspend fun cancel(
@@ -725,6 +752,7 @@ class RoomVoucherRepository(
         )
         const val VOUCHER_ENTITY_TYPE = "voucher"
         const val POSTED_ACTION = "voucher.posted"
+        const val SHORT_CLOSED_ACTION = "voucher.short_closed"
         const val CANCELLED_ACTION = "voucher.cancelled"
         const val RESTORED_ACTION = "voucher.restored"
         const val DRAFT_CREATED_ACTION = "voucher.draft_created"

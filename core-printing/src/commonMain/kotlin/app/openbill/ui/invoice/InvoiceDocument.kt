@@ -323,7 +323,7 @@ data class InvoiceDocument(
                 statusNote = when (voucher.status) {
                     VoucherStatus.DRAFT -> if (voucher.type == VoucherType.SALE) "DRAFT - not a valid tax invoice" else "DRAFT"
                     VoucherStatus.CANCELLED -> "CANCELLED" + (voucher.cancellationReason?.let { ": $it" } ?: "")
-                    VoucherStatus.POSTED -> null
+                    VoucherStatus.POSTED -> "SHORT-CLOSED".takeIf { voucher.shortClosedAt != null }
                 },
                 seller = seller,
                 buyer = buyer,

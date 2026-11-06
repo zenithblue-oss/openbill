@@ -75,6 +75,13 @@ interface VoucherRepository {
         at: Instant,
     ): Voucher
 
+    /**
+     * "Close remaining" on a posted sales/purchase order: what is not yet delivered is closed
+     * (status Closed, [note] printed on the order) and no further conversion posts. Needs
+     * [app.openbill.core.domain.model.Permission.CANCEL_DELETE]; audit-logged with the closed quantities.
+     */
+    suspend fun shortCloseOrder(orderId: String, note: String?, at: Instant): Voucher
+
     suspend fun softDeleteDraft(id: String, at: Instant): Voucher
 
     suspend fun restoreDraft(id: String, at: Instant): Voucher

@@ -17,6 +17,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
@@ -68,6 +69,48 @@ class RoomOrdersRecurringTest {
             journal = emptyList(), stock = emptyList(), partyMovements = emptyList(),
         )
         assertTrue(Reports.dayBook(data).rows.none { "SO-0001" in it })
+    }
+
+    @Test
+    fun shortCloseClosesWhatIsPendingOnceAndBlocksFurtherConversions(): Unit = runBlocking {
+        val r = seed()
+        r.vouchers.saveDraft(testVoucher("so", type = VoucherType.SALES_ORDER, charges = emptyList()))
+        r.vouchers.post("so", POSTED_AT)
+        assertFailsWith<IllegalArgumentException>("a draft order cannot be closed") {
+            r.vouchers.saveDraft(testVoucher("so-d", type = VoucherType.SALES_ORDER, lines = listOf(testLine("so-d-l")), charges = emptyList()))
+            r.vouchers.shortCloseOrder("so-d", null, POSTED_AT)
+        }
+        val one = Orders.conversionLines(r.vouchers.findVoucher("so")!!, emptyList(), ::id)!!.map { it.copy(quantity = Quantity.of(1)) }
+        r.vouchers.saveDraft(testVoucher("inv", lines = one, charges = emptyList()).copy(referenceVoucherId = "so"))
+        r.vouchers.post("inv", POSTED_AT)
+        // A second conversion draft made before the close cannot be posted after it.
+        r.vouchers.saveDraft(testVoucher("inv2", lines = one.map { it.copy(id = "inv2-l") }, charges = emptyList()).copy(referenceVoucherId = "so"))
+
+        val cashier = app.openbill.core.domain.model.AppUser("u-c", "Ravi", app.openbill.core.domain.model.Role.CASHIER, pinHash = "1:00:00", createdAt = CREATED_AT)
+        r.users.saveUser(cashier)
+        app.openbill.core.domain.model.Access.current = cashier
+        try {
+            assertFailsWith<app.openbill.core.domain.model.PermissionDeniedException> { r.vouchers.shortCloseOrder("so", "x", POSTED_AT) }
+        } finally {
+            app.openbill.core.domain.model.Access.current = null
+        }
+        assertFailsWith<IllegalArgumentException> { r.vouchers.shortCloseOrder("so", "x".repeat(Orders.SHORT_CLOSE_NOTE_MAX + 1), POSTED_AT) }
+
+        val closed = r.vouchers.shortCloseOrder("so", "  Customer cancelled the rest  ", POSTED_AT)
+        assertEquals(app.openbill.core.domain.model.OrderStatus.CLOSED, Orders.status(closed))
+        assertEquals("Customer cancelled the rest", closed.shortCloseNote)
+        assertEquals(mapOf("line-1" to Quantity.of(1)), Orders.shortClosed(closed, r.vouchers.observeConversions("so").first()), "2 ordered, 1 billed")
+        assertEquals(null, Orders.conversionLines(closed, emptyList(), ::id), "nothing more to convert")
+        assertFalse(Orders.canShortClose(closed))
+        assertFailsWith<IllegalArgumentException>("closed once, no re-open") { r.vouchers.shortCloseOrder("so", null, POSTED_AT) }
+        assertFailsWith<IllegalArgumentException> { r.vouchers.post("inv2", POSTED_AT) }
+
+        val event = r.audit.observeRecent("firm-1", 100).first().single { it.action == "voucher.short_closed" }
+        assertEquals("so", event.voucherId)
+        assertTrue("Customer cancelled the rest" in event.detailsJson.orEmpty() && ": 1" in event.detailsJson.orEmpty(), event.detailsJson)
+        // The fulfilled part stays: cancelling the invoice leaves the order closed with all of it pending.
+        r.vouchers.cancel("inv", "wrong", POSTED_AT)
+        assertEquals(app.openbill.core.domain.model.OrderStatus.CLOSED, Orders.status(r.vouchers.findVoucher("so")!!))
     }
 
     @Test

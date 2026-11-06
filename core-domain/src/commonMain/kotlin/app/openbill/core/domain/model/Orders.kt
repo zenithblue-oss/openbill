@@ -31,7 +31,7 @@ object Orders {
     fun status(order: Voucher): OrderStatus = when (order.status) {
         VoucherStatus.DRAFT -> OrderStatus.DRAFT
         VoucherStatus.CANCELLED -> OrderStatus.CANCELLED
-        VoucherStatus.POSTED -> when (order.fulfilment) {
+        VoucherStatus.POSTED -> if (order.shortClosedAt != null) OrderStatus.CLOSED else when (order.fulfilment) {
             OrderFulfilment.NONE -> OrderStatus.OPEN
             OrderFulfilment.PARTIAL -> OrderStatus.PARTIAL
             OrderFulfilment.COMPLETE -> OrderStatus.CLOSED
@@ -69,6 +69,7 @@ object Orders {
      * lines are left out. Null when nothing is pending.
      */
     fun conversionLines(order: Voucher, conversions: List<Voucher>, newId: () -> String): List<VoucherLine>? {
+        if (order.shortClosedAt != null) return null
         val pending = pending(order, conversions, includeDrafts = true)
         val lines = order.lines.sortedBy { it.lineNumber }.filter { (pending[it.id]?.scaledUnits ?: 0L) > 0L }
             .mapIndexed { i, l ->
@@ -85,4 +86,14 @@ object Orders {
             }
         return lines.ifEmpty { null }
     }
+
+    const val SHORT_CLOSE_NOTE_MAX = 200
+
+    /** Posted orders with something still to deliver can be short-closed (once; there is no re-open). */
+    fun canShortClose(order: Voucher): Boolean =
+        order.type.isOrder() && order.deletedAt == null && status(order).let { it == OrderStatus.OPEN || it == OrderStatus.PARTIAL }
+
+    /** Quantity closed without delivery per order line: what posted conversions left pending. Empty while not short-closed. */
+    fun shortClosed(order: Voucher, conversions: List<Voucher>): Map<String, Quantity> =
+        if (order.shortClosedAt == null) emptyMap() else pending(order, conversions).filterValues { it.scaledUnits > 0L }
 }

@@ -80,6 +80,7 @@ import app.openbill.ui.pdf.InvoicePdf
 import app.openbill.ui.theme.Spacing
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.datetime.toLocalDateTime
 
 /** Unit symbol for each catalogue item used on the voucher (custom lines have none). */
 suspend fun unitsByItem(container: AppContainer, session: Session, lines: List<VoucherLine>): Map<String, String> {
@@ -95,7 +96,18 @@ suspend fun buildInvoiceDocument(container: AppContainer, session: Session, vouc
     val repos = container.repositories
     val party = voucher.partyId?.let { repos.parties.findParty(it) }
     val firm = repos.firms.findFirm(session.firm.id) ?: session.firm
-    val doc = InvoiceDocument.build(voucher, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
+    val built = InvoiceDocument.build(voucher, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
+    // A short-closed order prints when and what was closed, and why.
+    val doc = voucher.shortClosedAt?.let { at ->
+        val closed = Orders.shortClosed(voucher, repos.vouchers.observeConversions(voucher.id).first())
+        built.copy(
+            details = built.details + listOfNotNull(
+                "Short-closed on" to Fmt.date(at.toLocalDateTime(container.timeZone).date),
+                closed.takeIf { it.isNotEmpty() }?.let { c -> "Not delivered" to voucher.lines.filter { it.id in c }.joinToString("; ") { "${it.description} ${Fmt.qty(c.getValue(it.id))}" } },
+                voucher.shortCloseNote?.let { "Close note" to it },
+            ),
+        )
+    } ?: built
     if (party == null || voucher.status != VoucherStatus.POSTED || !container.invoiceStyles.style(firm.id).value.options.showPartyBalance) return doc
     val current = repos.ledger.partyBalance(firm.id, party.id, voucher.date).net
     // This voucher's own receivable/payable lines, not the firm's whole movement history.
@@ -131,6 +143,7 @@ fun InvoiceDetailScreen(
     var party by remember { mutableStateOf<Party?>(null) }
     var units by remember { mutableStateOf(emptyMap<String, String>()) }
     var cancelOpen by remember { mutableStateOf(false) }
+    var shortCloseOpen by remember { mutableStateOf(false) }
     var restoreOf by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -218,12 +231,30 @@ fun InvoiceDetailScreen(
                     }
                 }
 
+                v.shortClosedAt?.let { at ->
+                    val closed = Orders.shortClosed(v, conversions)
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            Text("Closed on ${Fmt.dateLong(at.toLocalDateTime(container.timeZone).date)}: the rest will not be delivered", style = MaterialTheme.typography.bodyMedium)
+                            v.lines.filter { it.id in closed }.forEach { l ->
+                                Text("${l.description}: ${Fmt.qty(closed.getValue(l.id))} short-closed", style = MaterialTheme.typography.bodySmall)
+                            }
+                            v.shortCloseNote?.let { Text("Note: $it", style = MaterialTheme.typography.bodySmall) }
+                        }
+                    }
+                }
+
                 SectionHeader("Items (${v.lines.size})")
                 // Issued orders show how much of each line is already invoiced or billed.
                 val showBilled = v.type.isOrder() && v.status != VoucherStatus.DRAFT
                 val billed = if (showBilled) Orders.converted(conversions) else emptyMap()
                 v.lines.forEach { line ->
-                    LineCard(line, line.itemId?.let { units[it] }, if (showBilled) billed[line.id] ?: Quantity.of(0) else null, v.currency, v.exchangeRate)
+                    LineCard(line, line.itemId?.let { units[it] }, if (showBilled) billed[line.id] ?: Quantity.of(0) else null, v.currency, v.exchangeRate, shortClosed = v.shortClosedAt != null)
                 }
 
                 SectionHeader("Totals")
@@ -324,8 +355,11 @@ fun InvoiceDetailScreen(
                     // Read-only roles (accountant/CA): view and share only.
                 } else if (v.status == VoucherStatus.POSTED && v.type.isOrder()) {
                     val target = v.type.orderTarget()!!
-                    if (v.fulfilment != OrderFulfilment.COMPLETE) {
+                    if (v.fulfilment != OrderFulfilment.COMPLETE && v.shortClosedAt == null) {
                         PrimaryButton(if (target == VoucherType.SALE) "Convert to invoice" else "Convert to purchase bill", { onConvert(v.id, target) }, Modifier.fillMaxWidth())
+                    }
+                    if (canCancel && Orders.canShortClose(v)) {
+                        OutlinedButton(onClick = { shortCloseOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Close remaining") }
                     }
                 } else if (v.status == VoucherStatus.POSTED && v.type.isIssueOnly()) {
                     val inv = converted
@@ -370,6 +404,44 @@ fun InvoiceDetailScreen(
                 Spacer(Modifier.height(Spacing.xl))
             }
         }
+    }
+
+    if (shortCloseOpen) voucher?.let { order ->
+        var note by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        var closing by remember { mutableStateOf(false) }
+        val pending = Orders.pending(order, conversions).filterValues { it.scaledUnits > 0L }
+        val drafts = conversions.count { it.status == VoucherStatus.DRAFT && it.deletedAt == null }
+        AlertDialog(
+            onDismissRequest = { if (!closing) shortCloseOpen = false },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+            title = { Text("Close what is still pending?") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text("The order is marked Closed and these quantities will not be ${if (order.type == VoucherType.SALES_ORDER) "invoiced" else "billed"}. This cannot be undone.")
+                    order.lines.filter { it.id in pending }.forEach { l ->
+                        Text("${l.description}: ${Fmt.qty(pending.getValue(l.id))}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (drafts > 0) Text("$drafts draft ${if (drafts == 1) "conversion" else "conversions"} from this order can no longer be posted.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    FormField(
+                        "Note (optional)", note, { note = it.take(Orders.SHORT_CLOSE_NOTE_MAX); error = null }, error = error,
+                        supporting = "Printed on the order, e.g. customer cancelled the rest", singleLine = false,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !closing, onClick = {
+                    closing = true
+                    scope.launch {
+                        runCatching { container.repositories.vouchers.shortCloseOrder(order.id, note, container.now()) }
+                            .onSuccess { shortCloseOpen = false; messages?.show("Order closed") }
+                            .onFailure { error = it.message ?: "Could not close the order" }
+                        closing = false
+                    }
+                }) { Text("Close remaining") }
+            },
+            dismissButton = { TextButton(enabled = !closing, onClick = { shortCloseOpen = false }) { Text("Keep open") } },
+        )
     }
 
     if (cancelOpen) {
@@ -476,7 +548,7 @@ private fun MetaRow(label: String, value: String) {
 
 /** One invoice line: name and amount on top, then a label/value grid that never breaks mid-figure. */
 @Composable
-private fun LineCard(line: VoucherLine, unit: String?, billed: Quantity? = null, currency: String? = null, exchangeRate: Quantity? = null) {
+private fun LineCard(line: VoucherLine, unit: String?, billed: Quantity? = null, currency: String? = null, exchangeRate: Quantity? = null, shortClosed: Boolean = false) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Spacing.md)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
@@ -506,7 +578,7 @@ private fun LineCard(line: VoucherLine, unit: String?, billed: Quantity? = null,
             line.hsnSac?.let { AmountRow("HSN/SAC", it) }
             billed?.let {
                 val pending = Quantity.ofScaledUnits(maxOf(0L, line.quantity.scaledUnits - it.scaledUnits))
-                AmountRow("Billed ${Fmt.qtyUnit(it, unit)}", if (pending.scaledUnits == 0L) "Done" else "Pending ${Fmt.qtyUnit(pending, unit)}")
+                AmountRow("Billed ${Fmt.qtyUnit(it, unit)}", if (pending.scaledUnits == 0L) "Done" else "${if (shortClosed) "Short-closed" else "Pending"} ${Fmt.qtyUnit(pending, unit)}")
             }
         }
     }
