@@ -115,6 +115,19 @@ class UlidTest {
     }
 
     @Test
+    fun derivedIdsAreStablePerPartsAndDistinctOtherwise() {
+        val a = Ulid.derived("account", "firm-1", "CASH")
+        assertEquals(a, Ulid.derived("account", "firm-1", "CASH"))
+        assertEquals(a, Ulid.parse(a.value))
+        assertEquals(0L, a.timestampMillis)
+        val others = listOf(
+            Ulid.derived("account", "firm-1", "SALES"), Ulid.derived("account", "firm-2", "CASH"),
+            Ulid.derived("account", "firm-1CASH"), Ulid.derived("account", "firm-", "1CASH"),
+        )
+        assertEquals(others.size + 1, (others + a).distinct().size)
+    }
+
+    @Test
     fun fromPartsRequiresExactlyTenRandomBytes() {
         for (size in listOf(0, 9, 11, 16)) {
             assertFailsWith<IllegalArgumentException> {

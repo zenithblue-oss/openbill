@@ -335,6 +335,10 @@ object OpenBillBackup {
                 c.prepare("DELETE FROM sync_outbox").use { it.step() }
                 c.prepare("DELETE FROM sync_state").use { it.step() }
             }
+            // v20: the retained pull tail belongs to the source's pairing too.
+            if (c.longQuery("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_inbox'") > 0) {
+                c.prepare("DELETE FROM sync_inbox").use { it.step() }
+            }
         } finally {
             c.close()
         }

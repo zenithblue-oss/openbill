@@ -59,7 +59,8 @@ class RoomLedgerRepository(
                     "Account ${code.accountName} already exists without system code ${code.name}"
                 }
                 val created = Account(
-                    id = Ulid.create(at.toEpochMilliseconds()).toString(),
+                    // One id per firm and code on every device, so offline devices never create two (docs/10-server.md 6.2.2).
+                    id = Ulid.derived("account", firmId, code.name).toString(),
                     firmId = firmId,
                     name = code.accountName,
                     type = code.accountType,

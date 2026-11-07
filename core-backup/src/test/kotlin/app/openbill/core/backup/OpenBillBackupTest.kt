@@ -55,22 +55,25 @@ class OpenBillBackupTest {
 
     @Test
     fun restoredDatabaseDropsTheSourceDeviceSyncIdentityAndUnsentOps() {
-        val a = location(File(root, "a"), "Alpha", version = 19)
+        val a = location(File(root, "a"), "Alpha", version = 20)
         BundledSQLiteDriver().open(a.databaseFile.path).apply {
             execSQL("CREATE TABLE sync_state (id INTEGER PRIMARY KEY, deviceId TEXT NOT NULL, enabled INTEGER NOT NULL)")
             execSQL("CREATE TABLE sync_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT)")
+            execSQL("CREATE TABLE sync_inbox (n INTEGER PRIMARY KEY AUTOINCREMENT, opId TEXT NOT NULL, seq INTEGER, op TEXT NOT NULL)")
             execSQL("INSERT INTO sync_state VALUES (1, 'device-a', 1)")
             execSQL("INSERT INTO sync_outbox (payload) VALUES ('{}')")
+            execSQL("INSERT INTO sync_inbox (opId, seq, op) VALUES ('op-7', 7, '{}')")
             close()
         }
         val zip = File(root, "out/a.openbill.zip")
         OpenBillBackup.create(a, zip, "1.0")
-        val b = location(File(root, "b"), "Beta", version = 19)
-        OpenBillBackup.restore(zip, b, 19)
+        val b = location(File(root, "b"), "Beta", version = 20)
+        OpenBillBackup.restore(zip, b, 20)
         assertEquals("Alpha", firmName(b.databaseFile))
         BundledSQLiteDriver().open(b.databaseFile.path).let { c ->
             assertEquals(0L, c.longQuery("SELECT COUNT(*) FROM sync_state"))
             assertEquals(0L, c.longQuery("SELECT COUNT(*) FROM sync_outbox"))
+            assertEquals(0L, c.longQuery("SELECT COUNT(*) FROM sync_inbox"))
             c.close()
         }
         // Pre-sync backups have no sync tables and restore as before.

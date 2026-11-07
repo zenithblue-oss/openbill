@@ -38,7 +38,8 @@ class BooksLock(
         val nextStart = year.endDate.plus(DatePeriod(days = 1))
         if (years.none { nextStart >= it.startDate && nextStart <= it.endDate }) {
             firms.saveFinancialYear(
-                FinancialYear(newId(), year.firmId, nextStart, nextStart.plus(DatePeriod(years = 1)).minus(DatePeriod(days = 1))),
+                // Same id on every device (docs/10-server.md 6.2.2): two devices closing the year offline create one next year.
+                FinancialYear(app.openbill.core.model.Ulid.derived("financialYear", year.firmId, nextStart.toString()).toString(), year.firmId, nextStart, nextStart.plus(DatePeriod(years = 1)).minus(DatePeriod(days = 1))),
             )
         }
         return year.copy(closedAt = at).also { firms.saveFinancialYear(it) }

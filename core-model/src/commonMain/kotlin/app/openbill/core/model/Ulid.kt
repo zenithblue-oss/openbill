@@ -112,6 +112,21 @@ value class Ulid private constructor(val value: String) : Comparable<Ulid> {
             return fromParts(epochMillis, bytes)
         }
 
+        /**
+         * Same [parts], same id on every device: for rows unique by a natural key (a firm's system
+         * account, a batch number, a financial year), so two offline devices that create the "same"
+         * row converge on one row instead of colliding (docs/10-server.md section 6.2.2). Timestamp 0,
+         * then 80 bits of two FNV-1a hashes of the parts.
+         */
+        fun derived(vararg parts: String): Ulid {
+            val text = parts.joinToString("\u0000")
+            fun fnv(seed: Long): Long = text.fold(seed) { h, c -> (h xor c.code.toLong()) * 0x100000001b3L }
+            val a = fnv(-0x340d631b7bdddcdbL)
+            val b = fnv(0x6c62272e07bb0142L)
+            val bytes = ByteArray(RANDOM_BYTES) { i -> ((if (i < 8) a ushr (8 * i) else b ushr (8 * (i - 8))) and 0xFF).toByte() }
+            return fromParts(0, bytes)
+        }
+
         private fun decodeTimestamp(canonical: String): Long {
             var timestamp = 0L
             for (index in 0 until TIMESTAMP_LENGTH) {

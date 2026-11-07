@@ -1,5 +1,6 @@
 package app.openbill.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -21,6 +22,31 @@ data class SyncStateEntity(
     val txId: String? = null,
     val txAction: String? = null,
     val txUser: String? = null,
+    /**
+     * v20: this device's document number series (docs/10-server.md 6.5), e.g. `B`: new number
+     * sequences get it in their prefix, so two offline devices never issue the same number. Null
+     * while standalone (numbering unchanged); set when sync is enabled.
+     */
+    val series: String? = null,
+    /** v20: last server `seq` applied here. */
+    @ColumnInfo(defaultValue = "0") val cursor: Long = 0,
+    /** v20: server epoch the cursor belongs to; a new epoch (server restored) re-pushes the retained tail. */
+    val epoch: String? = null,
+)
+
+/**
+ * v20: ops pulled from the server and applied here, kept until the server reports them durable
+ * (in a server backup), so a server restored from that backup can be refilled (section 6.3).
+ * [n] keeps the order they were first pulled in; [seq] is the op's place in the current server
+ * epoch, null after a refill until the op is pulled again.
+ */
+@Entity(tableName = "sync_inbox", indices = [Index(value = ["opId"], unique = true), Index(value = ["seq"])])
+data class SyncInboxEntity(
+    @PrimaryKey(autoGenerate = true) val n: Long = 0,
+    val opId: String,
+    val seq: Long?,
+    /** The op as canonical JSON ([app.openbill.core.sync.SyncOperation.toJson]). */
+    val op: String,
 )
 
 /**
@@ -29,7 +55,7 @@ data class SyncStateEntity(
  */
 @Entity(
     tableName = "sync_outbox",
-    indices = [Index(value = ["opId"], unique = true), Index(value = ["firmId"])],
+    indices = [Index(value = ["opId"], unique = true), Index(value = ["firmId"]), Index(value = ["entity", "entityId"])],
 )
 data class SyncOutboxEntity(
     @PrimaryKey(autoGenerate = true) val seq: Long = 0,

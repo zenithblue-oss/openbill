@@ -307,11 +307,29 @@ object DatabaseMigrations {
         }
     }
 
+    /**
+     * Sync engine state (docs/10-server.md section 6.3): number series, pull cursor and server epoch
+     * on the device row, the retained inbox, and an outbox index for the rebase check. No rows change.
+     */
+    private val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `sync_state` ADD COLUMN `series` TEXT")
+            connection.execSQL("ALTER TABLE `sync_state` ADD COLUMN `cursor` INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE `sync_state` ADD COLUMN `epoch` TEXT")
+            connection.execSQL(
+                "CREATE TABLE IF NOT EXISTS `sync_inbox` (`n` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `opId` TEXT NOT NULL, `seq` INTEGER, `op` TEXT NOT NULL)",
+            )
+            connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_inbox_opId` ON `sync_inbox` (`opId`)")
+            connection.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_inbox_seq` ON `sync_inbox` (`seq`)")
+            connection.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_outbox_entity_entityId` ON `sync_outbox` (`entity`, `entityId`)")
+        }
+    }
+
     /** Each step first drops the sync triggers (recreated on open), so a step may drop or rename columns. */
     val all: List<Migration> = listOf(
         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
         MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
-        MIGRATION_18_19,
+        MIGRATION_18_19, MIGRATION_19_20,
     ).map { step ->
         object : Migration(step.startVersion, step.endVersion) {
             override fun migrate(connection: SQLiteConnection) {

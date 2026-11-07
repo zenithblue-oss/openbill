@@ -110,7 +110,7 @@ class RoomPartyRepository(
             val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
             parties.upsertPrice(
                 PartyItemPriceEntity(
-                    id = existing?.id ?: app.openbill.core.model.Ulid.create(now).toString(),
+                    id = existing?.id ?: app.openbill.core.model.Ulid.derived("partyPrice", price.partyId, price.itemId).toString(),
                     firmId = firmId, partyId = price.partyId, itemId = price.itemId, price = price.price.paise,
                     createdAt = existing?.createdAt ?: now, updatedAt = now,
                 ),

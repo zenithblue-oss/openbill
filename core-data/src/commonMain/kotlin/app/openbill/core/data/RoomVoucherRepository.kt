@@ -278,6 +278,10 @@ class RoomVoucherRepository(
         val posted = updated.toDomain(lines, charges)
         val journalEntries = deriveJournalPosted(posted, at)
         vouchers.update(updated)
+        vouchers.touchLines(voucherId)
+        vouchers.touchCharges(voucherId)
+        vouchers.touchPortions(voucherId)
+        vouchers.touchPaymentDetails(voucherId)
         if (movements.isNotEmpty()) {
             stockMovements.insertAll(movements.map { it.toEntity() })
         }
@@ -294,6 +298,12 @@ class RoomVoucherRepository(
 
     override fun observeHeldBills(firmId: String): Flow<List<Voucher>> =
         vouchers.observeHeld(firmId).map { values -> withDetails(values) }
+
+    /**
+     * Recomputes an order's fulfilment cache inside the caller's write transaction. Sync calls it
+     * after applying pulled ops: fulfilment never travels in ops, each replica derives it (docs/10-server.md 6.2.2).
+     */
+    suspend fun refreshOrderFulfilment(orderId: String?) = refreshOrder(orderId)
 
     /** Keeps an order's fulfilment in step after one of its conversions is posted, cancelled or restored (inside the write). */
     private suspend fun refreshOrder(orderId: String?) {
@@ -313,7 +323,7 @@ class RoomVoucherRepository(
         require(clean == null || clean.length <= Orders.SHORT_CLOSE_NOTE_MAX) { "Keep the note under ${Orders.SHORT_CLOSE_NOTE_MAX} characters" }
         val pending = Orders.pending(order, withDetails(vouchers.byReference(orderId))).filterValues { it.scaledUnits > 0L }
         require(pending.isNotEmpty()) { "Nothing is pending on this order" }
-        check(vouchers.shortClose(orderId, at.toEpochMillis(), clean) == 1) { "This order was already closed" }
+        check(vouchers.shortClose(orderId, maxOf(at.toEpochMillis(), entity.sync.updatedAt), clean) == 1) { "This order was already closed" }
         val lines = order.lines.associateBy { it.id }
         audits.insert(
             auditEvent(
@@ -352,7 +362,8 @@ class RoomVoucherRepository(
         applySerials(voucher, firmSettings, at, reverse = true)
         val journalReversals = deriveJournalCancelled(voucher, at)
 
-        val atMillis = at.toEpochMillis()
+        // A device clock behind the one that posted (docs/10-server.md 6.4) never makes the history go backwards.
+        val atMillis = maxOf(at.toEpochMillis(), entity.sync.updatedAt)
         val updated = entity.copy(
             status = VoucherStatus.CANCELLED.code(),
             cancellationReason = reason,
@@ -397,6 +408,17 @@ class RoomVoucherRepository(
         }
         val trimmedRestoreReason = restoreReason.trim()
         require(trimmedRestoreReason.isNotEmpty()) { "Restore reason cannot be blank" }
+        // A cancelled payment's allocations stop counting; another payment may have settled the
+        // invoice since. Restoring must not push the invoice past its total.
+        if (decodeEnum<VoucherType>(entity.type, "voucher type").isPayment()) {
+            val allocations = database.paymentAllocationDao()
+            for (a in allocations.allocationsForPayment(voucherId)) {
+                val invoice = vouchers.findById(a.invoiceVoucherId) ?: continue
+                require(allocations.effectiveTotalAllocatedForInvoice(invoice.id) + a.amount <= invoice.total) {
+                    "${invoice.number ?: "The invoice"} was settled by another payment after this one was cancelled; restoring it would over-allocate the invoice"
+                }
+            }
+        }
 
         val lines = vouchers.linesFor(voucherId)
         val charges = vouchers.chargesFor(voucherId)
@@ -409,7 +431,7 @@ class RoomVoucherRepository(
         applySerials(posted, firmSettings, at, reverse = false)
         val journalEntries = deriveJournalPosted(posted, at).map { it.copy(date = restoreDate) }
 
-        val atMillis = at.toEpochMillis()
+        val atMillis = maxOf(at.toEpochMillis(), entity.sync.updatedAt)
         val updated = entity.copy(
             status = VoucherStatus.POSTED.code(),
             restoredAt = atMillis,
@@ -583,7 +605,7 @@ class RoomVoucherRepository(
                 val key = Triple(item.id, godown, number)
                 if (key in batchIds) continue
                 val existing = batches.findByNumber(item.id, godown, number)
-                batchIds[key] = existing?.id ?: Ulid.create(at.toEpochMilliseconds()).toString().also { id ->
+                batchIds[key] = existing?.id ?: Ulid.derived("batch", item.id, godown, number).toString().also { id ->
                     batches.insert(
                         BatchEntity(
                             id = id,
@@ -627,7 +649,7 @@ class RoomVoucherRepository(
                 if (existing == null) {
                     serials.insert(
                         SerialNumberEntity(
-                            id = Ulid.create(at.toEpochMilliseconds()).toString(),
+                            id = Ulid.derived("serial", item.id, serial).toString(),
                             itemId = item.id,
                             serialNumber = serial,
                             status = next,
@@ -686,12 +708,19 @@ class RoomVoucherRepository(
         val documentType = type.documentTypeCode()
         val atMillis = at.toEpochMillis()
         val existing = sequences.get(voucher.firmId, documentType, voucher.financialYearId)
+        // A synced device numbers in its own series (docs/10-server.md 6.5): "INV" becomes "INV-B", "INV/" becomes "INV/B".
+        val series = database.syncDao().state()?.series
+        val base = prefixFor(type, settings.findByFirm(voucher.firmId)?.invoicePrefix).trimEnd()
         val sequence = existing ?: VoucherNumberSequenceEntity(
             firmId = voucher.firmId,
             documentType = documentType,
             financialYearId = voucher.financialYearId,
             nextNumber = 1L,
-            prefix = prefixFor(type, settings.findByFirm(voucher.firmId)?.invoicePrefix),
+            prefix = when {
+                series == null -> base
+                base.lastOrNull()?.isLetterOrDigit() == true -> "$base-$series"
+                else -> base + series
+            },
             padding = DEFAULT_PADDING,
             createdAt = atMillis,
             updatedAt = atMillis,

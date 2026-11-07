@@ -23,7 +23,7 @@ import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 19
+const val OPENBILL_DATABASE_VERSION = 20
 
 @Database(
     entities = [
@@ -55,6 +55,7 @@ const val OPENBILL_DATABASE_VERSION = 19
         PartyItemPriceEntity::class,
         SyncStateEntity::class,
         SyncOutboxEntity::class,
+        SyncInboxEntity::class,
     ],
     version = OPENBILL_DATABASE_VERSION,
     exportSchema = true,
@@ -102,6 +103,8 @@ abstract class OpenBillDatabase : RoomDatabase() {
 private object AuditTriggerCallback : RoomDatabase.Callback() {
     override fun onOpen(connection: SQLiteConnection) {
         AuditTriggers.install(connection)
+        // Seeding is not a business write: drop the sync triggers first so it is never recorded.
+        SyncTriggers.drop(connection)
         connection.execSQL(Users.SEED_OWNER)
         // A new install, or a restored backup (whose sync identity was wiped), gets a fresh device id.
         connection.prepare("INSERT OR IGNORE INTO sync_state (id, deviceId, enabled, hlc) VALUES (1, ?, 0, 0)").use {

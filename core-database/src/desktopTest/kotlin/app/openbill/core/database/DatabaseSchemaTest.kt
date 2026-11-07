@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(19, OPENBILL_DATABASE_VERSION)
+        assertEquals(20, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/20.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/19.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/18.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/17.json").exists())
@@ -328,7 +329,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(18, migrations.size)
+        assertEquals(19, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -351,7 +352,33 @@ class DatabaseSchemaTest {
         assertEquals(17, migrations[15].endVersion)
         assertEquals(18, migrations[16].endVersion)
         assertEquals(19, migrations[17].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(19).isEmpty())
+        assertEquals(20, migrations[18].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(20).isEmpty())
+    }
+
+    @Test
+    fun schemaV19MigratesToV20KeepingTheDeviceAndItsUnsentOps() = runBlocking {
+        helper.createDatabase(19).use { connection ->
+            connection.execSQL("INSERT INTO sync_state (id, deviceId, enabled, hlc) VALUES (1, '01HZZZDEVICE00000000000000', 1, 42)")
+            connection.execSQL(
+                "INSERT INTO sync_outbox (opId, firmId, deviceId, hlc, entity, entityId, kind, payload, schemaVersion) " +
+                    "VALUES ('op-1', 'firm-1', '01HZZZDEVICE00000000000000', 42, 'parties', 'p-1', 'upsert', '{}', 19)",
+            )
+        }
+        helper.runMigrationsAndValidate(20, DatabaseMigrations.migrationsFor(19)).close()
+        val db = openBillDatabase(Room.databaseBuilder<OpenBillDatabase>(databasePath.toString()))
+        try {
+            val state = db.syncDao().state()!!
+            assertEquals("01HZZZDEVICE00000000000000", state.deviceId)
+            assertEquals(true, state.enabled)
+            assertEquals(null, state.series)
+            assertEquals(0L, state.cursor)
+            assertEquals(1L, db.syncDao().pendingCount())
+            assertTrue(db.syncDao().hasPending("parties", "p-1"))
+            assertEquals(emptyList(), db.syncDao().retained())
+        } finally {
+            db.close()
+        }
     }
 
     @Test

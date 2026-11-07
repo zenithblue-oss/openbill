@@ -30,10 +30,13 @@ object PosCheckout {
 
     fun isCashSale(party: Party?): Boolean = party != null && party.name.equals(CASH_SALE, ignoreCase = true) && party.gstin == null
 
-    /** Existing "Cash sale" customer of the firm, or a new one (unregistered, in the firm's state) to save. */
-    fun cashSaleParty(parties: List<Party>, firmId: String, stateCode: String, newId: () -> String, at: Instant): Pair<Party, Boolean> =
+    /**
+     * Existing "Cash sale" customer of the firm, or a new one (unregistered, in the firm's state) to save.
+     * Its id is derived from the firm, so two devices that both start POS offline create one party.
+     */
+    fun cashSaleParty(parties: List<Party>, firmId: String, stateCode: String, at: Instant): Pair<Party, Boolean> =
         parties.firstOrNull { it.firmId == firmId && it.deletedAt == null && isCashSale(it) }?.let { it to false }
-            ?: (Party(id = newId(), firmId = firmId, name = CASH_SALE, type = PartyType.CUSTOMER, stateCode = stateCode, createdAt = at, updatedAt = at) to true)
+            ?: (Party(id = app.openbill.core.model.Ulid.derived("cashSaleParty", firmId).toString(), firmId = firmId, name = CASH_SALE, type = PartyType.CUSTOMER, stateCode = stateCode, createdAt = at, updatedAt = at) to true)
 
     /**
      * Splits [total] across [tenders]. Only cash gives change, so card/UPI/bank may not exceed the

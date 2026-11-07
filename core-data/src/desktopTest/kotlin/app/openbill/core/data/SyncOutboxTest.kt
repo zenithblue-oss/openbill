@@ -69,11 +69,11 @@ class SyncOutboxTest {
     @Test
     fun masterWritesRecordOneGroupPerWriteWithDeviceUserAndClock(): Unit = runBlocking {
         val (_, repos, outbox) = open()
-        outbox.enable()
+        outbox.enable("A")
         val firm = outbox.recorded { repos.firms.saveFirm(testFirm()) }
         assertEquals(listOf(Triple("audit_events", "upsert", "firm.save"), Triple("firms", "upsert", "firm.save")), firm.shape().sortedBy { it.first })
         assertEquals(1, firm.map { it.groupId }.distinct().size)
-        assertTrue(firm.all { it.firmId == "firm-1" && it.deviceId == outbox.deviceId() && it.userId == Access.OWNER_ID && it.schemaVersion == 19 })
+        assertTrue(firm.all { it.firmId == "firm-1" && it.deviceId == outbox.deviceId() && it.userId == Access.OWNER_ID && it.schemaVersion == 20 })
         val row = firm.single { it.entity == "firms" }
         assertEquals("firm-1", row.entityId)
         assertEquals("OpenBill Traders", row.payload.getValue("name").jsonPrimitive.content)
@@ -99,18 +99,22 @@ class SyncOutboxTest {
     @Test
     fun invoiceLifecycleAndPaymentRecordDomainActions(): Unit = runBlocking {
         val (_, repos, outbox) = open()
-        outbox.enable()
+        outbox.enable("A")
         seed(repos)
+        // Drafts stay on the device (docs/10-server.md section 18).
         val draft = outbox.recorded { repos.vouchers.saveDraft(sale("sale-1")) }
-        assertTrue(draft.all { it.action == "voucher.saveDraft" })
-        assertTrue(draft.any { it.entity == "voucher_lines" && it.entityId == "line-sale-1" && it.firmId == "firm-1" })
+        assertEquals(emptyList(), draft)
 
         val post = outbox.recorded { repos.vouchers.post("sale-1", POSTED_AT) }
         assertTrue(post.all { it.action == "voucher.post" } && post.map { it.groupId }.distinct().size == 1)
         val posted = post.last { it.entity == "vouchers" }
         assertEquals(VoucherStatus.POSTED.name.lowercase(), posted.payload.getValue("status").jsonPrimitive.content.lowercase())
+        assertEquals("INV-A-0001", posted.payload.getValue("number").jsonPrimitive.content, "numbered in the device's series")
+        assertFalse("fulfilment" in posted.payload.keys, "derived cache stays out of ops")
+        // The post carries the whole document: its lines are touched after the voucher row.
+        assertTrue(post.indexOfFirst { it.entity == "voucher_lines" && it.entityId == "line-sale-1" } > post.indexOf(posted))
         assertTrue(post.any { it.entity == "journal_entries" })
-        assertTrue(post.any { it.entity == "voucher_number_sequences" && it.entityId.startsWith("firm-1|") })
+        assertTrue(post.none { it.entity == "voucher_number_sequences" }, "number counters are per device")
 
         val cancel = outbox.recorded { repos.vouchers.cancel("sale-1", "Wrong rate", CANCELLED_AT) }
         assertTrue(cancel.all { it.action == "voucher.cancel" })
@@ -130,33 +134,45 @@ class SyncOutboxTest {
             repos.vouchers.softDeleteDraft("sale-2", POSTED_AT)
             repos.vouchers.purgeDraft("sale-2")
         }
-        val gone = purge.single { it.entity == "vouchers" && it.kind == SyncOperation.Kind.DELETE }
-        assertEquals("sale-2", gone.entityId)
-        assertEquals("voucher.purgeDraft", gone.action)
+        assertEquals(emptyList(), purge, "trashing and purging a draft is local")
+    }
+
+    @Test
+    fun cacheOnlyUpdatesAndStartupSeedingRecordNothingAndRawWritesAreMarked(): Unit = runBlocking {
+        val (db, repos, outbox) = open()
+        outbox.enable("A")
+        seed(repos)
+        repos.vouchers.saveDraft(sale("sale-1"))
+        repos.vouchers.post("sale-1", POSTED_AT)
+        val fulfilment = outbox.recorded { db.voucherDao().setFulfilment("sale-1", "partial") }
+        assertEquals(emptyList(), fulfilment)
+        // A write outside a repository (import, maintenance SQL) is recorded with an explicit action.
+        val raw = outbox.recorded { db.partyDao().findById("party-1")!!.let { db.partyDao().update(it.copy(phone = "99")) } }
+        assertEquals(listOf("unattributed"), raw.map { it.action }.distinct())
     }
 
     @Test
     fun writesInOneOuterTransactionShareOneGroup(): Unit = runBlocking {
         val (_, repos, outbox) = open()
-        outbox.enable()
+        outbox.enable("A")
         seed(repos)
         val ops = outbox.recorded {
             repos.transaction {
                 repos.parties.saveParty(testParty("p-2", addresses = emptyList()))
-                repos.vouchers.saveDraft(sale("sale-9"))
+                repos.users.saveUser(AppUser("user-asha", "Asha", Role.ACCOUNTANT, pinHash = "h", createdAt = CREATED_AT))
             }
             repos.parties.saveParty(testParty("p-3", addresses = emptyList()))
         }
         val (inside, after) = ops.partition { it.entityId != "p-3" && !(it.entity == "audit_events" && it.payload["entityId"]?.jsonPrimitive?.content == "p-3") }
         assertEquals(1, inside.map { it.groupId }.distinct().size)
-        assertEquals(setOf("party.save", "voucher.saveDraft"), inside.mapNotNull { it.action }.toSet())
+        assertEquals(setOf("party.save", "user.save"), inside.mapNotNull { it.action }.toSet())
         assertTrue(after.isNotEmpty() && after.none { it.groupId == inside.first().groupId })
     }
 
     @Test
     fun failedWritesLeaveNoOps(): Unit = runBlocking {
         val (_, repos, outbox) = open()
-        outbox.enable()
+        outbox.enable("A")
         seed(repos)
         val failed = outbox.recorded {
             assertFailsWith<IllegalStateException> {
@@ -173,7 +189,7 @@ class SyncOutboxTest {
     @Test
     fun userPinHashNeverLeavesTheDeviceAndUserIsStamped(): Unit = runBlocking {
         val (_, repos, outbox) = open()
-        outbox.enable()
+        outbox.enable("A")
         repos.firms.saveFirm(testFirm())
         val user = AppUser("user-asha", "Asha", Role.ACCOUNTANT, pinHash = "secret-hash", createdAt = CREATED_AT)
         val saved = outbox.recorded { repos.users.saveUser(user) }.single()
@@ -192,7 +208,7 @@ class SyncOutboxTest {
     @Test
     fun erasingAFirmLeavesNoCopyOfItsRowsInTheOutbox(): Unit = runBlocking {
         val (_, repos, outbox) = open()
-        outbox.enable()
+        outbox.enable("A")
         seed(repos)
         repos.firms.saveFirm(testFirm(id = "firm-2", name = "Kept"))
         repos.vouchers.saveDraft(sale("sale-1"))
@@ -205,7 +221,7 @@ class SyncOutboxTest {
     @Test
     fun disablingDropsUnsentOpsAndStopsRecording(): Unit = runBlocking {
         val (_, repos, outbox) = open()
-        outbox.enable()
+        outbox.enable("A")
         seed(repos)
         assertTrue(outbox.size() > 0)
         outbox.disable()
@@ -218,7 +234,7 @@ class SyncOutboxTest {
     fun sameWritesGiveTheSameOpsOnAnyDeviceAndJsonRoundTrips(): Unit = runBlocking {
         suspend fun run(): List<SyncOperation> {
             val (_, repos, outbox) = open()
-            outbox.enable()
+            outbox.enable("A")
             seed(repos)
             repos.vouchers.saveDraft(sale("sale-1"))
             repos.vouchers.post("sale-1", POSTED_AT)

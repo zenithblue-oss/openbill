@@ -54,14 +54,15 @@ class PosCheckoutTest {
     @Test
     fun cashSalePartyIsReusedOrCreated() {
         val at = Instant.fromEpochMilliseconds(1_700_000_000_000)
-        val (made, isNew) = PosCheckout.cashSaleParty(emptyList(), "f", "27", { "p1" }, at)
+        val (made, isNew) = PosCheckout.cashSaleParty(emptyList(), "f", "27", at)
+        assertEquals(made.id, PosCheckout.cashSaleParty(emptyList(), "f", "27", at).first.id, "same id on every device")
         assertTrue(isNew)
         assertEquals("Cash sale", made.name)
         assertEquals("27", made.stateCode)
         val other = Party(id = "p2", firmId = "f", name = "Acme", type = PartyType.CUSTOMER, createdAt = at, updatedAt = at)
-        val (found, again) = PosCheckout.cashSaleParty(listOf(other, made), "f", "27", { "x" }, at)
+        val (found, again) = PosCheckout.cashSaleParty(listOf(other, made), "f", "27", at)
         assertFalse(again)
-        assertEquals("p1", found.id)
+        assertEquals(made.id, found.id)
         assertFalse(PosCheckout.isCashSale(other))
     }
 }

@@ -228,7 +228,7 @@ fun PosScreen(
     LaunchedEffect(model) {
         if (billId != null) return@LaunchedEffect
         runCatching {
-            val (party, isNew) = PosCheckout.cashSaleParty(repos.parties.observeParties(firm.id).first(), firm.id, firm.stateCode, container::newId, container.now())
+            val (party, isNew) = PosCheckout.cashSaleParty(repos.parties.observeParties(firm.id).first(), firm.id, firm.stateCode, container.now())
             if (isNew) repos.parties.saveParty(party)
             party
         }.onSuccess { model.setParty(it) }.onFailure { messages?.show("Could not set up the Cash sale customer: ${it.message}") }

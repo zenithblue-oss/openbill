@@ -111,7 +111,8 @@ class RoomPaymentRepository(
             )
             policy.requireWithinInvoice(invoice, effective, request)
             PaymentAllocation(
-                id = Ulid.create(at.toEpochMilliseconds()).toString(),
+                // Unique per payment and invoice: two devices allocating the same pair converge on one row.
+                id = Ulid.derived("allocation", payment.id, invoice.id).toString(),
                 firmId = payment.firmId,
                 paymentVoucherId = payment.id,
                 invoiceVoucherId = invoice.id,

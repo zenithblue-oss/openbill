@@ -105,6 +105,20 @@ interface VoucherDao {
     @Query("UPDATE vouchers SET fulfilment = :fulfilment WHERE id = :id")
     suspend fun setFulfilment(id: String, fulfilment: String?): Int
 
+    // A draft's lines, charges and payment details stay on the device (docs/10-server.md section 18).
+    // Posting touches them once the voucher is posted, so the post op group carries the whole document.
+    @Query("UPDATE voucher_lines SET id = id WHERE voucherId = :voucherId")
+    suspend fun touchLines(voucherId: String)
+
+    @Query("UPDATE voucher_charges SET id = id WHERE voucherId = :voucherId")
+    suspend fun touchCharges(voucherId: String)
+
+    @Query("UPDATE voucher_charge_portions SET id = id WHERE voucherId = :voucherId")
+    suspend fun touchPortions(voucherId: String)
+
+    @Query("UPDATE payment_details SET voucherId = voucherId WHERE voucherId = :voucherId")
+    suspend fun touchPaymentDetails(voucherId: String)
+
     /** Rupee rates of [itemId] on the party's posted sales, newest first (the invoice line's price history). */
     @Query(
         "SELECT v.date AS date, l.rate AS rate FROM voucher_lines l JOIN vouchers v ON v.id = l.voucherId " +
