@@ -336,6 +336,31 @@ class CliTest {
     }
 
     @Test
+    fun partyTermsSpecialRatesAndItemDetails() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        val p = ok("--json", "party", "update", "Acme Stores", "--credit-limit", "5000", "--credit-days", "30", "--group", "Retail", "--currency", "usd").out
+        assertTrue("\"creditLimit\": \"5000.00\"" in p && "\"creditDays\": 30" in p && "\"group\": \"Retail\"" in p && "\"defaultCurrency\": \"USD\"" in p, p)
+        assertEquals(3, run("party", "update", "Acme Stores", "--credit-days", "400").code)
+        assertTrue("creditDays" !in ok("--json", "party", "update", "Acme Stores", "--credit-days", "none").out)
+
+        ok("party", "price", "set", "Acme Stores", "BOLT", "10.00")
+        assertTrue("10.00" in ok("party", "price", "list", "Acme Stores").out)
+        val inv = ok("--json", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:10").out
+        assertTrue("\"total\": \"118.00\"" in inv, inv) // special rate, not the list price
+        ok("party", "price", "remove", "Acme Stores", "BOLT")
+        assertEquals(4, run("party", "price", "remove", "Acme Stores", "BOLT").code)
+
+        val i = ok("--json", "item", "update", "BOLT", "--low-stock", "5", "--reorder-qty", "20", "--category", "Hardware").out
+        assertTrue("\"category\": \"Hardware\"" in i && "\"lowStockLevel\": \"5\"" in i && "\"reorderQuantity\": \"20\"" in i, i)
+        assertTrue("Hardware" in ok("item", "category", "list").out)
+        assertEquals(5, run("item", "category", "add", "hardware").code)
+        assertEquals(3, run("item", "update", "BOLT", "--reorder-qty", "0").code)
+        assertEquals(3, run("item", "update", "BOLT", "--field", "Colour=Red").code) // no custom fields set up
+        assertEquals(0, run("db", "check").code)
+    }
+
+    @Test
     fun exitCodes() {
         seed()
         assertEquals(2, run("party", "add").code) // missing --name

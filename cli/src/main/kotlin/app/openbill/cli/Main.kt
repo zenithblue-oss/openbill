@@ -113,8 +113,11 @@ fun rootCommand(cli: CliState): CliktCommand = Root(cli).subcommands(
     backupCommands(cli),
     dbCommands(cli),
     Group("firm", "Firms (businesses)").subcommands(FirmList(cli), FirmShow(cli)),
-    Group("party", "Customers and suppliers").subcommands(PartyList(cli), PartyShow(cli), PartyAdd(cli)),
-    Group("item", "Items and services").subcommands(ItemList(cli), ItemShow(cli), ItemAdd(cli)),
+    Group("party", "Customers and suppliers").subcommands(PartyList(cli), PartyShow(cli), PartyAdd(cli), PartyUpdate(cli), partyPriceCommands(cli)),
+    Group("item", "Items and services").subcommands(
+        ItemList(cli), ItemShow(cli), ItemAdd(cli), ItemUpdate(cli),
+        Group("category", "Item categories").subcommands(CategoryList(cli), CategoryAdd(cli)),
+    ),
     invoiceCommands(cli),
     orderCommands(cli),
     recurringCommands(cli),

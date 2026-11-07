@@ -2,8 +2,11 @@ package app.openbill.cli
 
 import app.openbill.core.domain.csv.MasterCsv
 import app.openbill.core.domain.model.Firm
+import app.openbill.core.domain.model.DocumentField
 import app.openbill.core.domain.model.Item
+import app.openbill.core.domain.model.ItemCategory
 import app.openbill.core.domain.model.Party
+import app.openbill.core.domain.model.PartyItemPrice
 import app.openbill.core.domain.model.PartyType
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.model.Money
@@ -11,10 +14,14 @@ import app.openbill.core.model.Quantity
 import app.openbill.core.model.Rate
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.optional
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.groups.OptionGroup
+import com.github.ajalt.clikt.parameters.groups.provideDelegate
 import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
@@ -30,15 +37,25 @@ fun firmJson(f: Firm) = jsonOf(
     "phone" to f.phone, "email" to f.email,
 )
 
+// Fields added after 1.0.1 appear only when set, so existing scripts see the same keys.
 fun partyJson(p: Party) = jsonOf(
     "id" to p.id, "name" to p.name, "type" to p.type.name.lowercase(), "phone" to p.phone, "email" to p.email,
     "gstin" to p.gstin, "stateCode" to p.stateCode, "openingBalance" to p.openingBalance,
     "openingBalanceType" to p.openingBalanceType.name.lowercase(), "notes" to p.notes,
+    *listOfNotNull(
+        p.creditLimit?.let { "creditLimit" to it }, p.creditDays?.let { "creditDays" to it },
+        p.category?.let { "group" to it }, p.defaultCurrency?.let { "defaultCurrency" to it },
+    ).toTypedArray(),
 )
 
-fun itemJson(i: Item, unit: String?) = jsonOf(
+fun itemJson(i: Item, unit: String?, category: String? = null) = jsonOf(
     "id" to i.id, "name" to i.name, "sku" to i.sku, "unit" to unit, "hsnSac" to i.hsnSac, "isService" to i.isService,
     "gstRate" to i.taxRate.percent(), "salePrice" to i.salePrice, "purchasePrice" to i.purchasePrice, "mrp" to i.mrp,
+    *listOfNotNull(
+        category?.let { "category" to it }, i.lowStockLevel?.let { "lowStockLevel" to it.format() },
+        i.reorderQuantity?.let { "reorderQuantity" to it.format() },
+        i.customFields.takeIf { it.isNotEmpty() }?.let { f -> "fields" to jsonOf(*f.map { it.label to it.value }.toTypedArray()) },
+    ).toTypedArray(),
 )
 
 /** Rate as a percent string, e.g. "18" or "12.5". */
@@ -138,18 +155,105 @@ class PartyAdd(private val cli: CliState) : CliktCommand("add") {
     private val email by option("--email")
     private val gstin by option("--gstin")
     private val state by option("--state", help = "Two-digit GST state code")
+    private val terms by PartyTerms()
 
     override fun run() = cli.withData(write = true) {
         val f = firm()
         val now = now()
-        val p = Party(
-            id = cli.env.newId(), firmId = f.id, name = name.trim(), type = PartyType.valueOf(type.uppercase()),
-            phone = phone, email = email, gstin = gstin?.uppercase(), stateCode = state ?: gstin?.take(2),
-            createdAt = now, updatedAt = now,
+        val p = terms.apply(
+            Party(
+                id = cli.env.newId(), firmId = f.id, name = name.trim(), type = PartyType.valueOf(type.uppercase()),
+                phone = phone, email = email, gstin = gstin?.uppercase(), stateCode = state ?: gstin?.take(2),
+                createdAt = now, updatedAt = now,
+            ),
         )
         validateParty(p)
         repos.parties.saveParty(p)
         if (cli.json) cli.printJson(partyJson(p)) else cli.out.println(p.id)
+    }
+}
+
+/** Credit terms (owner or manager only, as in the app), group and default export currency. `none` clears one. */
+class PartyTerms : OptionGroup("Terms") {
+    val creditLimit by option("--credit-limit", help = "Amount, or none")
+    val creditDays by option("--credit-days", help = "0 to 365 days, or none")
+    val group by option("--group", help = "Party group, or none")
+    val currency by option("--currency", help = "Default currency of export invoices (ISO code), or none")
+
+    fun apply(p: Party): Party {
+        fun clear(v: String?) = v?.trim()?.equals("none", true) == true
+        val days = creditDays?.let { if (clear(it)) null else it.trim().toIntOrNull() ?: fail(Exit.VALIDATION, "Credit days must be a whole number") }
+        return runCatching {
+            p.copy(
+                creditLimit = if (creditLimit == null) p.creditLimit else if (clear(creditLimit)) null else parseMoney(creditLimit!!),
+                creditDays = if (creditDays == null) p.creditDays else days,
+                category = if (group == null) p.category else if (clear(group)) null else group!!.trim(),
+                defaultCurrency = if (currency == null) p.defaultCurrency else if (clear(currency)) null else currency!!.trim().uppercase(),
+            )
+        }.getOrElse { fail(Exit.VALIDATION, it.message ?: "Invalid party terms") }
+    }
+}
+
+/** `party update REF`: contact details and terms; options not given keep their value. */
+class PartyUpdate(private val cli: CliState) : CliktCommand("update") {
+    override fun help(context: Context) = "Change a party's details, credit terms, group or default currency"
+    private val ref by argument()
+    private val name by option("--name")
+    private val phone by option("--phone")
+    private val email by option("--email")
+    private val gstin by option("--gstin")
+    private val state by option("--state")
+    private val terms by PartyTerms()
+
+    override fun run() = cli.withData(write = true) {
+        val old = findParty(firm().id, ref)
+        val p = terms.apply(
+            old.copy(
+                name = name?.trim() ?: old.name, phone = phone ?: old.phone, email = email ?: old.email,
+                gstin = gstin?.uppercase() ?: old.gstin, stateCode = state ?: gstin?.take(2) ?: old.stateCode, updatedAt = now(),
+            ),
+        )
+        validateParty(p)
+        repos.parties.saveParty(p)
+        if (cli.json) cli.printJson(partyJson(p)) else cli.out.println(p.id)
+    }
+}
+
+/** `party price list|set|remove`: special sale rates new invoice lines start at. */
+fun partyPriceCommands(cli: CliState) = Group("price", "A party's special rates for items").subcommands(PartyPriceList(cli), PartyPriceSet(cli, remove = false), PartyPriceSet(cli, remove = true))
+
+class PartyPriceList(private val cli: CliState) : CliktCommand("list") {
+    override fun help(context: Context) = "List a party's special rates"
+    private val ref by argument("PARTY")
+    override fun run() = cli.withData(write = false) {
+        val f = firm()
+        val p = findParty(f.id, ref)
+        val names = items(f.id).associateBy { it.id }
+        val prices = repos.parties.observePrices(p.id).first()
+        if (cli.json) cli.printJson(toJson(prices.map { jsonOf("itemId" to it.itemId, "item" to names[it.itemId]?.name, "price" to it.price, "listPrice" to names[it.itemId]?.salePrice) }))
+        else cli.printTable(listOf(Col("ITEM"), Col("PRICE", true), Col("LIST", true)), prices.map { listOf(names[it.itemId]?.name ?: it.itemId, it.price.indian(), names[it.itemId]?.salePrice?.indian() ?: "-") })
+    }
+}
+
+class PartyPriceSet(private val cli: CliState, private val remove: Boolean) : CliktCommand(if (remove) "remove" else "set") {
+    override fun help(context: Context) = if (remove) "Remove a party's special rate for an item" else "Set a party's special rate for an item (owner or manager)"
+    private val ref by argument("PARTY")
+    private val item by argument("ITEM")
+    private val price by argument("PRICE").optional()
+
+    override fun run() = cli.withData(write = true) {
+        val f = firm()
+        val p = findParty(f.id, ref)
+        val i = findItem(f.id, item)
+        if (remove) {
+            repos.parties.findPrice(p.id, i.id) ?: fail(Exit.NOT_FOUND, "${p.name} has no special rate for ${i.name}")
+            repos.parties.deletePrice(p.id, i.id)
+        } else {
+            val amount = parseMoney(price ?: fail(Exit.USAGE, "Give the PRICE"))
+            repos.parties.savePrice(f.id, runCatching { PartyItemPrice(p.id, i.id, amount) }.getOrElse { fail(Exit.VALIDATION, it.message!!) })
+        }
+        if (cli.json) cli.printJson(jsonOf("party" to p.name, "item" to i.name, "price" to if (remove) null else parseMoney(price!!)))
+        else cli.out.println(if (remove) "Removed" else "Set ${p.name} / ${i.name} to ${parseMoney(price!!).indian()}")
     }
 }
 
@@ -182,7 +286,7 @@ class ItemShow(private val cli: CliState) : CliktCommand("show") {
     override fun run() = cli.withData(write = false) {
         val f = firm()
         val i = findItem(f.id, ref)
-        val j = itemJson(i, units(f.id).symbolOf(i.unitId))
+        val j = itemJson(i, units(f.id).symbolOf(i.unitId), categoryName(i))
         if (cli.json) cli.printJson(j) else cli.printFields(j.map { it.key to it.value.toString().trim('"').takeUnless { v -> v == "null" } })
     }
 }
@@ -197,12 +301,117 @@ class ItemAdd(private val cli: CliState) : CliktCommand("add") {
     private val salePrice by option("--sale-price").default("0")
     private val purchasePrice by option("--purchase-price").default("0")
     private val service by option("--service").flag()
+    private val details by ItemDetails()
 
     override fun run() = cli.withData(write = true) {
         val f = firm()
-        val i = newItem(f.id, name, sku, unit, hsn, gstRate, salePrice, purchasePrice, service)
+        val i = details.apply(this, newItem(f.id, name, sku, unit, hsn, gstRate, salePrice, purchasePrice, service))
         repos.catalog.saveItem(i)
-        if (cli.json) cli.printJson(itemJson(i, units(f.id).symbolOf(i.unitId))) else cli.out.println(i.id)
+        if (cli.json) cli.printJson(itemJson(i, units(f.id).symbolOf(i.unitId), categoryName(i))) else cli.out.println(i.id)
+    }
+}
+
+/** Stock levels, category and custom field values. `none` clears one; `--field LABEL=` clears a field. */
+class ItemDetails : OptionGroup("Details") {
+    val lowStock by option("--low-stock", help = "Low-stock level, or none")
+    val reorderQty by option("--reorder-qty", help = "Quantity to reorder at the low-stock level, or none")
+    val category by option("--category", help = "Category name (created if missing), or none")
+    val fields by option("--field", help = "LABEL=VALUE for a custom item field set up in the app's settings (repeatable)").multiple()
+
+    suspend fun apply(d: Data, item: Item): Item = with(d) {
+        fun clear(v: String) = v.trim().equals("none", true)
+        fun qty(v: String?, old: Quantity?, what: String) = when {
+            v == null -> old
+            clear(v) -> null
+            else -> runCatching { Quantity.parse(v.trim()) }.getOrElse { fail(Exit.VALIDATION, "Invalid $what '$v'") }
+        }
+        val categoryId = when {
+            category == null -> item.categoryId
+            clear(category!!) -> null
+            else -> {
+                val name = category!!.trim()
+                val all = repos.catalog.observeCategories(item.firmId).first().filter { it.deletedAt == null }
+                all.firstOrNull { it.name.equals(name, true) }?.id ?: ItemCategory(cli.env.newId(), item.firmId, name, createdAt = now(), updatedAt = now())
+                    .also { repos.catalog.saveCategory(it) }.id
+            }
+        }
+        var custom = item.customFields
+        if (fields.isNotEmpty()) {
+            val labels = repos.firms.findSettings(item.firmId)?.itemFieldLabels.orEmpty()
+            for (spec in fields) {
+                val (label, value) = spec.split('=', limit = 2).takeIf { it.size == 2 } ?: fail(Exit.USAGE, "--field takes LABEL=VALUE")
+                val known = labels.firstOrNull { it.equals(label.trim(), true) }
+                    ?: fail(Exit.VALIDATION, "No custom item field '$label'" + if (labels.isEmpty()) " (set them up in the app's settings)" else "; fields: ${labels.joinToString()}")
+                custom = custom.filterNot { it.label.equals(known, true) } +
+                    listOfNotNull(value.trim().ifEmpty { null }?.let { runCatching { DocumentField(known, it) }.getOrElse { e -> fail(Exit.VALIDATION, e.message!!) } })
+            }
+            custom = labels.mapNotNull { l -> custom.firstOrNull { it.label == l } }
+        }
+        runCatching {
+            item.copy(
+                lowStockLevel = qty(lowStock, item.lowStockLevel, "low-stock level"),
+                reorderQuantity = qty(reorderQty, item.reorderQuantity, "reorder quantity"),
+                categoryId = categoryId, customFields = custom,
+            )
+        }.getOrElse { fail(Exit.VALIDATION, it.message ?: "Invalid item details") }
+    }
+}
+
+suspend fun Data.categoryName(i: Item) = i.categoryId?.let { id -> repos.catalog.observeCategories(i.firmId).first().firstOrNull { it.id == id }?.name }
+
+/** `item update REF`: options not given keep their value. */
+class ItemUpdate(private val cli: CliState) : CliktCommand("update") {
+    override fun help(context: Context) = "Change an item's prices, tax, stock levels, category or custom fields"
+    private val ref by argument()
+    private val name by option("--name")
+    private val sku by option("--sku")
+    private val hsn by option("--hsn")
+    private val gstRate by option("--gst-rate", help = "Percent, e.g. 18")
+    private val salePrice by option("--sale-price")
+    private val purchasePrice by option("--purchase-price")
+    private val details by ItemDetails()
+
+    override fun run() = cli.withData(write = true) {
+        val f = firm()
+        val old = findItem(f.id, ref)
+        if (!sku.isNullOrBlank() && items(f.id).any { it.id != old.id && it.sku.equals(sku, true) }) fail(Exit.CONFLICT, "SKU '$sku' already exists")
+        val i = details.apply(
+            this,
+            runCatching {
+                old.copy(
+                    name = name?.trim() ?: old.name, sku = sku?.trim()?.ifBlank { null } ?: old.sku, hsnSac = hsn?.trim()?.ifBlank { null } ?: old.hsnSac,
+                    taxRate = gstRate?.let { runCatching { parseRate(it) }.getOrElse { _ -> fail(Exit.VALIDATION, "Invalid GST rate '$it'") } } ?: old.taxRate,
+                    salePrice = salePrice?.let(::parseMoney) ?: old.salePrice, purchasePrice = purchasePrice?.let(::parseMoney) ?: old.purchasePrice,
+                    updatedAt = now(),
+                )
+            }.getOrElse { if (it is CliFailure) throw it else fail(Exit.VALIDATION, it.message ?: "Invalid item") },
+        )
+        repos.catalog.saveItem(i)
+        if (cli.json) cli.printJson(itemJson(i, units(f.id).symbolOf(i.unitId), categoryName(i))) else cli.out.println(i.id)
+    }
+}
+
+class CategoryList(private val cli: CliState) : CliktCommand("list") {
+    override fun help(context: Context) = "List item categories with their item counts"
+    override fun run() = cli.withData(write = false) {
+        val f = firm()
+        val counts = items(f.id).groupingBy { it.categoryId }.eachCount()
+        val list = repos.catalog.observeCategories(f.id).first().filter { it.deletedAt == null }.sortedBy { it.name.lowercase() }
+        if (cli.json) cli.printJson(toJson(list.map { jsonOf("id" to it.id, "name" to it.name, "items" to (counts[it.id] ?: 0)) }))
+        else cli.printTable(listOf(Col("NAME"), Col("ITEMS", true), Col("ID")), list.map { listOf(it.name, (counts[it.id] ?: 0).toString(), it.id) })
+    }
+}
+
+class CategoryAdd(private val cli: CliState) : CliktCommand("add") {
+    override fun help(context: Context) = "Add an item category; prints its id"
+    private val name by argument()
+    override fun run() = cli.withData(write = true) {
+        val f = firm()
+        if (name.isBlank()) fail(Exit.USAGE, "Give a category name")
+        if (repos.catalog.observeCategories(f.id).first().any { it.deletedAt == null && it.name.equals(name.trim(), true) }) fail(Exit.CONFLICT, "Category '$name' already exists")
+        val c = ItemCategory(cli.env.newId(), f.id, name.trim(), createdAt = now(), updatedAt = now())
+        repos.catalog.saveCategory(c)
+        if (cli.json) cli.printJson(jsonOf("id" to c.id, "name" to c.name)) else cli.out.println(c.id)
     }
 }
 
