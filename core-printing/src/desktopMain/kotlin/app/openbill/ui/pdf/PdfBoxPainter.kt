@@ -5,11 +5,12 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import org.apache.fontbox.ttf.TTFParser
 import org.apache.fontbox.ttf.TrueTypeFont
-import org.apache.fontbox.ttf.gsub.GsubWorkerFactory
 import org.apache.pdfbox.io.RandomAccessReadBuffer
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
+import org.apache.pdfbox.pdmodel.PDResources
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject
 import org.apache.pdfbox.pdmodel.common.PDRectangle
 import org.apache.pdfbox.pdmodel.font.PDType0Font
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject
@@ -30,8 +31,31 @@ object PdfFonts {
 
     private val ttf: Map<FontRole, TrueTypeFont> = bytes.mapValues { (_, b) -> TTFParser().parse(RandomAccessReadBuffer(b)) }
     private val devaTtf: Map<FontRole, TrueTypeFont> = devaBytes.mapValues { (_, b) -> TTFParser().parse(RandomAccessReadBuffer(b)) }
-    private val devaGsub = devaTtf.mapValues { (_, f) -> GsubWorkerFactory().getGsubWorker(f.getUnicodeCmapLookup(), f.getGsubData()) }
     private val lock = Any()
+
+    // Devanagari is shaped by the JDK's OpenType engine (HarfBuzz: full GSUB reordering and GPOS
+    // mark placement), not PDFBox's GSUB worker, which misorders reph + i-matra ("र्ति").
+    // Sized at units-per-em so glyph positions come out in font units.
+    private val devaAwt = devaBytes.mapValues { (r, b) ->
+        java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, b.inputStream()).deriveFont(devaTtf.getValue(r).unitsPerEm.toFloat())
+    }
+    private val frc = java.awt.font.FontRenderContext(null, false, true)
+
+    /** A shaped Devanagari run: glyph ids with pen positions (font units, y up) and the total advance. */
+    class Shaped(val glyphs: IntArray, val x: FloatArray, val y: FloatArray, val advance: Float, val unitsPerEm: Int)
+
+    fun shape(text: String, role: FontRole): Shaped {
+        val gv = devaAwt.getValue(role).layoutGlyphVector(frc, text.toCharArray(), 0, text.length, java.awt.Font.LAYOUT_LEFT_TO_RIGHT)
+        val n = gv.numGlyphs
+        val codes = gv.getGlyphCodes(0, n, null)
+        val pos = gv.getGlyphPositions(0, n + 1, null)
+        // Joiners shape to the JDK's invisible glyph (0xFFFE/0xFFFF), which has nothing to draw.
+        val keep = (0 until n).filter { codes[it] in 1 until 0xFFFE }
+        return Shaped(
+            IntArray(keep.size) { codes[keep[it]] }, FloatArray(keep.size) { pos[2 * keep[it]] }, FloatArray(keep.size) { -pos[2 * keep[it] + 1] },
+            pos[2 * n], devaTtf.getValue(role).unitsPerEm,
+        )
+    }
 
     fun fontBytes(role: FontRole): ByteArray = bytes.getValue(role)
     fun devanagariBytes(role: FontRole): ByteArray = devaBytes.getValue(role)
@@ -76,17 +100,15 @@ object PdfFonts {
     /** The text as it will be drawn, unsupported characters as '?'. */
     fun sanitize(text: String, role: FontRole): String = runs(text, role).joinToString("") { it.text }
 
-    val metrics = FontMetrics { text, role, size ->
-        val parts = runs(text, role)
-        synchronized(lock) {
-            parts.sumOf { run ->
-                val font = if (run.devanagari) devaTtf.getValue(role) else ttf.getValue(role)
-                var ids = run.text.codePoints().toArray().map { glyph(font, it) }
-                if (run.devanagari) ids = devaGsub.getValue(role).applyTransforms(ids)
-                (ids.sumOf { font.getAdvanceWidth(it).toDouble() } * size / font.unitsPerEm).toDouble()
-            }.toFloat()
+    /** Advance of one run in points, exactly as [PdfBoxPainter] draws it. */
+    fun runWidth(run: Run, role: FontRole, size: Float): Float =
+        if (run.devanagari) shape(run.text, role).let { it.advance * size / it.unitsPerEm }
+        else synchronized(lock) {
+            val font = ttf.getValue(role)
+            (run.text.codePoints().toArray().sumOf { font.getAdvanceWidth(glyph(font, it)).toDouble() } * size / font.unitsPerEm).toFloat()
         }
-    }
+
+    val metrics = FontMetrics { text, role, size -> runs(text, role).sumOf { runWidth(it, role, size).toDouble() }.toFloat() }
 }
 
 /** Paints an [InvoiceLayout] with PDFBox: embedded font subsets, vector shapes, PNG/JPEG images. */
@@ -128,20 +150,23 @@ object PdfBoxPainter {
                             cs.stroke()
                         }
                         is DrawOp.Text -> {
-                            val runs = PdfFonts.runs(op.text, op.role)
-                            if (runs.isNotEmpty()) {
-                                cs.beginText()
-                                cs.setNonStrokingColor(Color(op.color, true))
-                                cs.newLineAtOffset(op.x, h - op.y)
-                                // Each showText advances the text position, so runs follow each other.
-                                runs.forEach { run ->
-                                    val font = if (run.devanagari) {
-                                        deva.getOrPut(op.role) { PDType0Font.load(doc, PdfFonts.devanagariBytes(op.role).inputStream(), subsetFonts) }
-                                    } else fonts.getValue(op.role)
-                                    cs.setFont(font, op.size)
+                            var x = op.x
+                            PdfFonts.runs(op.text, op.role).forEach { run ->
+                                if (run.devanagari) {
+                                    val font = deva.getOrPut(op.role) {
+                                        // setFont registers the font for subsetting on save; the glyphs themselves go in a form.
+                                        PDType0Font.load(doc, PdfFonts.devanagariBytes(op.role).inputStream(), subsetFonts).also { cs.setFont(it, op.size) }
+                                    }
+                                    cs.drawForm(shapedText(doc, page, font, PdfFonts.shape(run.text, op.role), run.text, x, h - op.y, op.size, op.color))
+                                } else {
+                                    cs.beginText()
+                                    cs.setNonStrokingColor(Color(op.color, true))
+                                    cs.setFont(fonts.getValue(op.role), op.size)
+                                    cs.newLineAtOffset(x, h - op.y)
                                     cs.showText(run.text)
+                                    cs.endText()
                                 }
-                                cs.endText()
+                                x += PdfFonts.runWidth(run, op.role, op.size)
                             }
                         }
                         is DrawOp.Image -> images[op.kind]?.let { cs.drawImage(it, op.x, h - op.y - op.h, op.w, op.h) }
@@ -150,6 +175,37 @@ object PdfBoxPainter {
             }
         }
         return doc
+    }
+
+    /**
+     * A shaped Devanagari run as a form XObject: each glyph id set at its shaped position
+     * (PDFBox's showText would re-shape the text itself). ActualText keeps the run copyable
+     * and searchable as the original Unicode, ligature glyphs included.
+     */
+    private fun shapedText(
+        doc: PDDocument, page: PDPage, font: PDType0Font, s: PdfFonts.Shaped, text: String,
+        x: Float, y: Float, size: Float, color: Argb,
+    ): PDFormXObject {
+        if (font.willBeSubset()) font.addGlyphsToSubset(s.glyphs.toSet())
+        val form = PDFormXObject(doc)
+        form.bBox = page.mediaBox
+        form.resources = PDResources()
+        val name = form.resources.add(font).name
+        val scale = size / s.unitsPerEm
+        fun f(v: Float) = String.format(java.util.Locale.ROOT, "%.3f", v)
+        fun hex(b: ByteArray) = b.joinToString("") { String.format("%02X", it.toInt() and 0xFF) }
+        val c = Color(color, true)
+        val sb = StringBuilder()
+        sb.append("/Span <</ActualText <FEFF").append(hex(text.toByteArray(Charsets.UTF_16BE))).append(">>> BDC\n")
+        sb.append("BT /").append(name).append(' ').append(f(size)).append(" Tf ")
+        sb.append(f(c.red / 255f)).append(' ').append(f(c.green / 255f)).append(' ').append(f(c.blue / 255f)).append(" rg\n")
+        s.glyphs.forEachIndexed { i, g ->
+            sb.append("1 0 0 1 ").append(f(x + s.x[i] * scale)).append(' ').append(f(y + s.y[i] * scale)).append(" Tm <")
+                .append(hex(font.encodeGlyphId(g))).append("> Tj\n")
+        }
+        sb.append("ET\nEMC\n")
+        form.contentStream.createOutputStream().use { it.write(sb.toString().toByteArray(Charsets.US_ASCII)) }
+        return form
     }
 
     private fun rect(cs: PDPageContentStream, r: DrawOp.Rect, pageH: Float) {

@@ -102,6 +102,14 @@ class DesktopPdfSamplesTest {
         // Shaping: the conjunct क्ष is narrower than its three code points side by side.
         val parts = listOf("क", "्", "ष").sumOf { PdfFonts.metrics.width(it, r, 10f).toDouble() }
         assertTrue(PdfFonts.metrics.width("क्ष", r, 10f) < parts, "GSUB applied when measuring")
+        // Reph + i-matra ("र्ति" in आपूर्ति): i-matra glyph first, then ta, then the reph; ra itself is gone.
+        val ttf = org.apache.fontbox.ttf.TTFParser().parse(org.apache.pdfbox.io.RandomAccessReadBuffer(PdfFonts.devanagariBytes(r)))
+        val gid = { cp: Int -> ttf.getUnicodeCmapLookup().getGlyphId(cp) }
+        val s = PdfFonts.shape("र्ति", r)
+        assertEquals(3, s.glyphs.size)
+        assertEquals(gid(0x0924), s.glyphs[1])
+        assertTrue(gid(0x0930) !in s.glyphs.toList() && gid(0x093F) != s.glyphs[2] && s.x[0] < s.x[1])
+        assertEquals(s.advance * 10f / s.unitsPerEm, PdfFonts.metrics.width("र्ति", r, 10f))
     }
 
     @Test
@@ -115,7 +123,13 @@ class DesktopPdfSamplesTest {
             if (t.paper.thermal) assertTrue(words.none { s -> s.any { app.openbill.ui.pdf.isDevanagari(it.code) } }, "${t.id}: receipts stay English")
             else assertTrue(words.any { "कुल" in it } && words.any { "कर बीजक" in it || "बीजक" in it }, "${t.id}: Hindi labels")
             val bytes = PdfBoxPainter.toPdf(layout)
-            Loader.loadPDF(bytes).use { assertEquals(layout.pages.size, it.numberOfPages) }
+            Loader.loadPDF(bytes).use { pdf ->
+                assertEquals(layout.pages.size, pdf.numberOfPages)
+                // Every font is embedded, the Devanagari one too (it is drawn through form XObjects).
+                val fonts = pdf.getPage(0).resources.fontNames.map { pdf.getPage(0).resources.getFont(it) }
+                assertTrue(fonts.all { it.isEmbedded }, "${t.id}: fonts embedded")
+                if (!t.paper.thermal) assertTrue(fonts.any { "Devanagari" in it.name }, "${t.id}: Devanagari font")
+            }
             out?.let { File(it, "${t.id}-hi.pdf").writeBytes(bytes); ImageIO.write(PdfBoxPainter.preview(layout, 0, 1200), "png", File(it, "${t.id}-hi.png")) }
         }
     }

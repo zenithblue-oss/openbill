@@ -15,9 +15,7 @@ enum class InvoiceLanguage(val label: String) {
 }
 
 /**
- * Keys are the lower-cased English labels used by the templates; GST terms stay recognisable (GSTIN, HSN/SAC, CGST).
- * Avoid reph + i-matra clusters such as "र्ति": the PDFBox Devanagari shaper misorders them.
- */
+ * Keys are the lower-cased English labels used by the templates; GST terms stay recognisable (GSTIN, HSN/SAC, CGST). */
 private val HINDI_LABELS: Map<String, String> = mapOf(
     // Document titles and copy labels
     "tax invoice" to "कर बीजक",
@@ -51,11 +49,11 @@ private val HINDI_LABELS: Map<String, String> = mapOf(
     "issued" to "जारी",
     "due date" to "देय तिथि",
     "due" to "देय",
-    "place of supply" to "सप्लाई का स्थान",
+    "place of supply" to "आपूर्ति का स्थान",
     "place" to "स्थान",
-    "supply" to "सप्लाई",
-    "supply details" to "सप्लाई विवरण",
-    "supply type" to "सप्लाई का प्रकार",
+    "supply" to "आपूर्ति",
+    "supply details" to "आपूर्ति विवरण",
+    "supply type" to "आपूर्ति का प्रकार",
     "type" to "प्रकार",
     "intra-state" to "राज्य के भीतर",
     "inter-state" to "अंतर-राज्यीय",
