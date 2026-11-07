@@ -257,7 +257,10 @@ fun StockSummaryScreen(
                             Text(
                                 godowns.mapNotNull { g -> s.byGodown[g.id]?.takeIf { it.scaledUnits != 0L }?.let { "${g.name} ${Fmt.qty(it)}" } }
                                     .joinToString(" · ").ifEmpty { "No movements" } +
-                                    (s.item.lowStockLevel?.let { " · low at ${Fmt.qty(it)}" } ?: ""),
+                                    (s.item.lowStockLevel?.let { " · low at ${Fmt.qty(it)}" } ?: "") +
+                                    (s.item.lowStockLevel?.takeIf { s.isLow }?.let { level ->
+                                        " · order ${Fmt.qty(app.openbill.core.domain.report.Reports.suggestedOrder(s.item.reorderQuantity, app.openbill.core.model.Quantity.ofScaledUnits(level.scaledUnits - s.quantity.scaledUnits)))}"
+                                    } ?: ""),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )

@@ -285,6 +285,8 @@ data class ItemForm(
     val trackBatch: Boolean = false,
     val trackSerial: Boolean = false,
     val lowStock: String = "",
+    /** Suggested order quantity once stock reaches [lowStock]. */
+    val reorder: String = "",
     val barcode: String = "",
     /** Optional second unit and how many primary units one of it holds ("12" for a box of 12). */
     val altUnitId: String? = null,
@@ -314,6 +316,7 @@ object ItemRules {
         Validation.moneyError(form.salePrice)?.let { put("sale", it) }
         Validation.moneyError(form.purchasePrice)?.let { put("purchase", it) }
         if (form.lowStock.isNotBlank() && Parse.quantity(form.lowStock) == null) put("low", "Enter a quantity")
+        if (form.trackInventory && !form.isService && form.reorder.isNotBlank() && Parse.quantity(form.reorder)?.let { it.scaledUnits > 0 } != true) put("reorder", "Enter a quantity above zero")
         if (form.openingQty.isNotBlank() && (Parse.quantity(form.openingQty)?.let { it.scaledUnits < 0 } != false)) put("opening", "Enter a quantity")
         Validation.moneyError(form.openingCost)?.let { put("openingCost", it) }
         // The opening adjustment needs batch or serial numbers it cannot collect; failing after the item is saved would duplicate it on retry.
@@ -367,6 +370,7 @@ class ItemEditorModel(
                         trackBatch = item.trackBatch,
                         trackSerial = item.trackSerial,
                         lowStock = item.lowStockLevel?.format().orEmpty(),
+                        reorder = item.reorderQuantity?.format().orEmpty(),
                         barcode = item.barcode.orEmpty(),
                         altUnitId = item.alternateUnitId,
                         altFactor = item.alternateUnitFactor?.format().orEmpty(),
@@ -426,6 +430,7 @@ class ItemEditorModel(
                     trackBatch = form.trackBatch && form.trackInventory && !form.isService,
                     trackSerial = form.trackSerial && form.trackInventory && !form.isService,
                     lowStockLevel = Parse.quantity(form.lowStock).takeIf { form.lowStock.isNotBlank() },
+                    reorderQuantity = Parse.quantity(form.reorder).takeIf { form.reorder.isNotBlank() && form.trackInventory && !form.isService },
                     barcode = form.barcode.trim().ifBlank { null },
                     alternateUnitId = form.altUnitId,
                     alternateUnitFactor = form.altUnitId?.let { Parse.quantity(form.altFactor) },
@@ -608,14 +613,26 @@ fun ItemEditScreen(
                         SwitchRow("Batch and expiry", "Enter a batch number on each purchase and sale", form.trackBatch, { v -> model.edit { it.copy(trackBatch = v, trackSerial = it.trackSerial && !v) } })
                         SwitchRow("Serial / IMEI numbers", "One number per unit; duplicates are rejected", form.trackSerial, { v -> model.edit { it.copy(trackSerial = v, trackBatch = it.trackBatch && !v) } })
                         form.errors["serial"]?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        FormField(
-                            "Low-stock level",
-                            form.lowStock,
-                            { v -> model.edit { it.copy(lowStock = v) } },
-                            error = form.errors["low"],
-                            keyboardType = KeyboardType.Decimal,
-                            supporting = "Alert when stock falls to this quantity",
-                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            FormField(
+                                "Low-stock level",
+                                form.lowStock,
+                                { v -> model.edit { it.copy(lowStock = v) } },
+                                Modifier.weight(1f),
+                                error = form.errors["low"],
+                                keyboardType = KeyboardType.Decimal,
+                                supporting = "Alert when stock falls to this",
+                            )
+                            FormField(
+                                "Reorder quantity",
+                                form.reorder,
+                                { v -> model.edit { it.copy(reorder = v) } },
+                                Modifier.weight(1f),
+                                error = form.errors["reorder"],
+                                keyboardType = KeyboardType.Decimal,
+                                supporting = "Suggested order in the low-stock report",
+                            )
+                        }
                         if (itemId == null) {
                             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                                 FormField(

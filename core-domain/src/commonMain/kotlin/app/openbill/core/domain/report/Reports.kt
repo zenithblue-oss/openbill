@@ -315,13 +315,24 @@ object Reports {
         }.sortedWith(compareBy({ it.second.scaledUnits - it.third.scaledUnits }, { it.first.name.lowercase() }))
         return ReportTable(
             "Low-stock report",
-            listOf(col("item", "Item"), col("unit", "Unit"), col("on_hand", "On hand", ColumnKind.QUANTITY), col("level", "Low-stock level", ColumnKind.QUANTITY), col("short", "Short by", ColumnKind.QUANTITY)),
+            listOf(
+                col("item", "Item"), col("unit", "Unit"), col("on_hand", "On hand", ColumnKind.QUANTITY), col("level", "Low-stock level", ColumnKind.QUANTITY),
+                col("short", "Short by", ColumnKind.QUANTITY), col("reorder", "Order", ColumnKind.QUANTITY),
+            ),
             rows.map { (item, onHand, level) ->
-                listOf(item.name, data.unitById[item.unitId]?.symbol.orEmpty(), onHand.format(), level.format(), Quantity.ofScaledUnits(level.scaledUnits - onHand.scaledUnits).format())
+                val short = Quantity.ofScaledUnits(level.scaledUnits - onHand.scaledUnits)
+                listOf(item.name, data.unitById[item.unitId]?.symbol.orEmpty(), onHand.format(), level.format(), short.format(), suggestedOrder(item.reorderQuantity, short).format())
             },
-            notes = listOf("As of ${data.to}; all godowns. Set an item's low-stock level in the item form."),
+            notes = listOf(
+                "As of ${data.to}; all godowns. Set an item's low-stock level and reorder quantity in the item form.",
+                "Order is the item's reorder quantity, raised to the shortfall when that is larger.",
+            ),
         )
     }
+
+    /** What to order for an item short by [short]: its reorder quantity, at least the shortfall; the shortfall when none is set. */
+    fun suggestedOrder(reorder: Quantity?, short: Quantity): Quantity =
+        if (reorder == null) short else Quantity.ofScaledUnits(maxOf(reorder.scaledUnits, short.scaledUnits))
 
     /** Value of all inventory at the end of [through] (inclusive). */
     fun stockValue(data: ReportData, through: kotlinx.datetime.LocalDate): Money {
