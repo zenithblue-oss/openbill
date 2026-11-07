@@ -370,7 +370,7 @@ class CliTest {
         val r = run("--json", "export", "attachments", "--out", zip.path)
         assertTrue(r.code == 0 && "\"files\": 1" in r.out, r.err + r.out)
         val names = java.util.zip.ZipFile(zip).use { z -> z.entries().toList().map { it.name } }
-        assertEquals(listOf("index.csv", "party_${id}/gst.png"), names)
+        assertEquals(listOf("index.csv", "Party_${id}/gst.png"), names) // the app's folder names
         val list = run("--json", "report", "list").out
         app.openbill.core.domain.report.ReportKind.entries.forEach { assertTrue("\"${it.key}\"" in list, it.key) }
     }

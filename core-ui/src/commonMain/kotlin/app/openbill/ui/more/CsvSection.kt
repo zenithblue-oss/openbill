@@ -33,8 +33,8 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import app.openbill.core.domain.csv.MasterCsv
-import app.openbill.core.domain.csv.AttachmentOwner
 import app.openbill.core.domain.csv.attachmentExport
+import app.openbill.core.domain.csv.attachmentOwners
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.VoucherType
@@ -61,7 +61,7 @@ private suspend fun postOpenings(container: AppContainer, firmId: String, items:
 
 private const val MAX_EXPORT = 150L * 1024 * 1024
 
-// AttachmentOwner and attachmentExport live in core-domain (csv/AttachmentExport.kt), shared with the CLI.
+// attachmentOwners and attachmentExport live in core-domain (csv/AttachmentExport.kt), shared with the CLI.
 
 /** CSV import of parties and items (dry-run preview first, all rows or none), CSV export, and the recycle bin. */
 @Composable
@@ -163,12 +163,10 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
         modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
             run {
                 progress = Progress("Collecting attachments")
-                val parties = repos.parties.observeParties(firmId).first()
-                val names = parties.associate { it.id to it.name }
-                val owners = repos.vouchers.observeVouchers(firmId, LocalDate(2000, 1, 1), LocalDate(2099, 12, 31)).first()
-                    .sortedWith(compareBy({ it.date }, { it.number ?: "" }))
-                    .map { AttachmentOwner(it.id, docLabels(it.type).title, it.number ?: "draft", it.date.toString(), it.status.name.lowercase(), it.partyId?.let(names::get)) } +
-                    parties.sortedBy { it.name.lowercase() }.map { AttachmentOwner(it.id, "Party", null, null, null, it.name) }
+                val owners = attachmentOwners(
+                    repos.vouchers.observeVouchers(firmId, LocalDate(2000, 1, 1), LocalDate(2099, 12, 31)).first(),
+                    repos.parties.observeParties(firmId).first(),
+                )
                 // ponytail: the ZIP is built in memory, so the export stops at MAX_EXPORT bytes; stream to the file if that is too small.
                 var total = 0L
                 val files = owners.associate { o ->

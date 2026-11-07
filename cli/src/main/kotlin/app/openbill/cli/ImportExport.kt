@@ -3,8 +3,8 @@ package app.openbill.cli
 import app.openbill.core.domain.csv.Csv
 import app.openbill.core.domain.csv.CsvImport
 import app.openbill.core.domain.csv.MasterCsv
-import app.openbill.core.domain.csv.AttachmentOwner
 import app.openbill.core.domain.csv.attachmentExport
+import app.openbill.core.domain.csv.attachmentOwners
 import com.github.ajalt.clikt.parameters.options.required
 import app.openbill.core.model.Progress
 import app.openbill.core.domain.model.Item
@@ -130,12 +130,10 @@ class ExportAttachments(private val cli: CliState) : CliktCommand("attachments")
     override fun run() = cli.withData(write = false, app.openbill.core.domain.model.Permission.EXPORT) {
         val f = firm()
         val store = app.openbill.core.backup.AttachmentStore(File(dataDir, "attachments"))
-        val parties = repos.parties.observeParties(f.id).first()
-        val names = parties.associate { it.id to it.name }
-        val owners = repos.vouchers.observeVouchers(f.id, kotlinx.datetime.LocalDate(2000, 1, 1), kotlinx.datetime.LocalDate(2099, 12, 31)).first()
-            .sortedWith(compareBy({ it.date }, { it.number ?: "" }))
-            .map { AttachmentOwner(it.id, it.type.label(), it.number ?: "draft", it.date.toString(), it.status.name.lowercase(), it.partyId?.let(names::get)) } +
-            parties.sortedBy { it.name.lowercase() }.map { AttachmentOwner(it.id, "party", null, null, null, it.name) }
+        val owners = attachmentOwners(
+            repos.vouchers.observeVouchers(f.id, kotlinx.datetime.LocalDate(2000, 1, 1), kotlinx.datetime.LocalDate(2099, 12, 31)).first(),
+            repos.parties.observeParties(f.id).first(),
+        )
         // ponytail: built in memory like the app's export; stream entries if attachment folders grow past a few hundred MB.
         val files = owners.associate { o -> o.id to store.list(o.id).map { it to store.file(o.id, it).readBytes() } }.filterValues { it.isNotEmpty() }
         if (files.isEmpty()) fail(Exit.NOT_FOUND, "No attachments in ${f.name}")
