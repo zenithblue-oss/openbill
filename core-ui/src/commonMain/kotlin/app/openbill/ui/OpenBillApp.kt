@@ -149,6 +149,7 @@ import app.openbill.ui.theme.Motion
 import app.openbill.ui.theme.OpenBillTheme
 import app.openbill.ui.theme.motionTween
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.delay
@@ -167,6 +168,17 @@ fun OpenBillApp(container: AppContainer, backHandler: BackHandlerSlot? = null) {
     val slot: BackHandlerSlot = backHandler ?: { enabled, onBack -> keyBack.Handler(enabled, onBack) }
     val keyboardShell = backHandler == null
     val appearance by container.appearance.settings.collectAsState()
+    LaunchedEffect(Unit) {
+        // Once: the pre-v18 device switch moves onto every business, before anyone signs in.
+        runCatching {
+            container.appLock.migrateLegacyManagersSwitch {
+                val repo = container.repositories.firms
+                repo.observeFirms().first().forEach { f ->
+                    repo.findSettings(f.id)?.let { repo.saveSettings(it.copy(managersChangeSettings = true)) }
+                }
+            }
+        }
+    }
     OpenBillTheme(appearance) {
         Surface(Modifier.fillMaxSize()) {
             val locked by container.appLock.locked.collectAsState()
@@ -228,10 +240,13 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
     }.collectAsState(initial = null)
     val p = parts
     if (p == null) {
+        Access.loadManagersChangeSettings(false)
         LoadingState()
         return
     }
     val s = Session(firm, p.first, p.second)
+    // The active business's switch decides whether a manager holds SETTINGS (never owner controls).
+    Access.loadManagersChangeSettings(p.first.managersChangeSettings)
     val nav = rememberSaveable(saver = Navigator.Saver) { Navigator() }
     val stateHolder = rememberSaveableStateHolder()
     nav.onRemoved = { removed -> if (removed != nav.current) stateHolder.removeState(removed.key) }

@@ -80,15 +80,16 @@ object Access {
     val actorId: String get() = current?.id ?: OWNER_ID
 
     /**
-     * Owner's switch "Managers can change business settings" (off by default): managers then also
-     * hold [Permission.SETTINGS]. Loaded from the device settings at start; changed only via
-     * [setManagersChangeSettings].
+     * Owner's per-business switch "Managers can change this business's settings" (off by default):
+     * managers then also hold [Permission.SETTINGS], never [Permission.OWNER_CONTROLS],
+     * [Permission.MANAGE_USERS] or [Permission.BACKUP_RESTORE]. Stored in the business's settings
+     * (so it travels with backups) and loaded when that business opens.
      */
     @Volatile
     var managersChangeSettings: Boolean = false
         private set
 
-    /** Startup load of the persisted switch (no permission check: nobody is signed in yet). */
+    /** Load of the active business's stored switch (no permission check: it only mirrors the database). */
     fun loadManagersChangeSettings(on: Boolean) {
         managersChangeSettings = on
     }

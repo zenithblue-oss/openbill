@@ -85,23 +85,22 @@ fun UsersScreen(container: AppContainer, session: Session, onBack: () -> Unit) {
                     )
                 }
                 item {
-                    var managersSettings by remember { mutableStateOf(container.appLock.managersChangeSettings) }
+                    val managersSettings = session.settings.managersChangeSettings
                     val scope = rememberCoroutineScope()
+                    val messages = LocalAppMessages.current
                     ListItem(
-                        headlineContent = { Text("Managers can change business settings") },
+                        headlineContent = { Text("Managers can change this business's settings") },
                         supportingContent = {
-                            Text("Default godown, negative stock, numbering, templates and other settings. Users, backups, app lock and adding or deleting a business stay with the owner.")
+                            Text("Default godown, negative stock, numbering, templates and other settings of ${session.firm.name}. Saved with the business and its backups. Users, backups, app lock and adding or deleting a business stay with the owner.")
                         },
                         trailingContent = { Switch(checked = managersSettings, onCheckedChange = null) },
                         modifier = Modifier.toggleable(managersSettings, role = SemanticsRole.Switch) { on ->
-                            container.appLock.managersChangeSettings = on
-                            managersSettings = on
                             scope.launch {
                                 runCatching {
-                                    container.repositories.audit.record(
-                                        AuditEvent(container.newId(), session.firm.id, "settings", "managersChangeSettings", action = "settings.managers_change_settings", detailsJson = "{\"on\":$on}", createdAt = container.now()),
-                                    )
-                                }
+                                    val repo = container.repositories.firms
+                                    val current = repo.findSettings(session.firm.id) ?: session.settings
+                                    repo.saveSettings(current.copy(managersChangeSettings = on))
+                                }.onFailure { messages?.show(it.message ?: "Could not save") }
                             }
                         },
                     )

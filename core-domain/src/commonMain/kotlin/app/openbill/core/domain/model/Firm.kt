@@ -49,13 +49,31 @@ data class FirmSettings(
     val lockDate: LocalDate? = null,
     /** UPI and card payments (POS and payment entry) must carry a reference; off = optional. */
     val requirePaymentReference: Boolean = false,
+    /** Owner's switch: managers may change this business's settings (never owner-only controls). */
+    val managersChangeSettings: Boolean = false,
+    /** Batches expiring within this many days are flagged on the dashboard; 0 = off. */
+    val nearExpiryDays: Int = 30,
+    /** Posting a sale that takes a party over its credit limit is blocked; off = warning only. */
+    val blockOverCreditLimit: Boolean = false,
+    /** Labels of the business's custom item fields, in order. */
+    val itemFieldLabels: List<String> = emptyList(),
+    /** Custom item field values print under the item name on documents. */
+    val printItemFields: Boolean = false,
 ) {
     init {
         require(firmId.isNotBlank()) { "FirmSettings firmId cannot be blank" }
+        require(nearExpiryDays in 0..365) { "Near-expiry window must be 0 to 365 days" }
+        require(itemFieldLabels.size <= MAX_ITEM_FIELDS) { "At most $MAX_ITEM_FIELDS custom item fields" }
+        require(itemFieldLabels.all { it.isNotBlank() && it.length <= 30 && '\t' !in it && '\n' !in it }) { "Item field labels are 1 to 30 characters" }
+        require(itemFieldLabels.map { it.lowercase() }.distinct().size == itemFieldLabels.size) { "Item field labels must be different" }
         require(financialYearStartMonth in 1..12) {
             "Financial year start month must be between 1 and 12"
         }
         require(invoicePrefix.isNotBlank()) { "Invoice prefix cannot be blank" }
+    }
+
+    companion object {
+        const val MAX_ITEM_FIELDS = 5
     }
 }
 

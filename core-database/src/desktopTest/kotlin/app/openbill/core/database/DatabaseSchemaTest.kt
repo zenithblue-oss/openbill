@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(17, OPENBILL_DATABASE_VERSION)
+        assertEquals(18, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/18.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/17.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/16.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/15.json").exists())
@@ -326,7 +327,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(16, migrations.size)
+        assertEquals(17, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -347,7 +348,8 @@ class DatabaseSchemaTest {
         assertEquals(15, migrations[13].endVersion)
         assertEquals(16, migrations[14].endVersion)
         assertEquals(17, migrations[15].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(17).isEmpty())
+        assertEquals(18, migrations[16].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(18).isEmpty())
     }
 
     @Test
@@ -657,6 +659,55 @@ class DatabaseSchemaTest {
                 assertTrue(it.isNull(1))
                 assertEquals(2L, it.getLong(2))
             }
+        }
+    }
+
+    @Test
+    fun schemaV17MigratesToV18WithManagersOffAndNoTermsGroupsOrPartyPrices() {
+        helper.createDatabase(17).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) " +
+                    "VALUES ('firm-1', 'Firm', '27', 'Line 1', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO firm_settings (firmId, financialYearStartMonth, invoicePrefix, defaultGodownId, taxEnabled, roundToRupee, roundingMode, negativeStockAllowed, createdAt, updatedAt) " +
+                    "VALUES ('firm-1', 4, 'INV', NULL, 1, 1, 'half_up', 0, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO parties (id, firmId, name, type, openingBalance, openingBalanceType, creditLimit, createdAt, updatedAt, revision) " +
+                    "VALUES ('p-1', 'firm-1', 'Asha', 'customer', 0, 'debit', 500000, 1, 1, 1)",
+            )
+            connection.execSQL("INSERT INTO units (id, firmId, name, symbol, decimalPlaces, createdAt, updatedAt, revision) VALUES ('u-1', 'firm-1', 'Piece', 'pcs', 0, 1, 1, 1)")
+            connection.execSQL(
+                "INSERT INTO items (id, firmId, name, unitId, isService, taxRateUnits, cessRateUnits, salePrice, purchasePrice, trackInventory, trackBatch, trackSerial, lowStockLevel, createdAt, updatedAt, revision) " +
+                    "VALUES ('i-1', 'firm-1', 'Soap', 'u-1', 0, 0, 0, 1000, 800, 1, 0, 0, 50000, 1, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(18, DatabaseMigrations.migrationsFor(17)).use { connection ->
+            connection.prepare("SELECT managersChangeSettings, nearExpiryDays, blockOverCreditLimit, itemFieldLabels, printItemFields FROM firm_settings").use {
+                assertTrue(it.step())
+                assertEquals(0L, it.getLong(0), "the device switch is carried over by the app, not here")
+                assertEquals(30L, it.getLong(1))
+                assertEquals(0L, it.getLong(2))
+                assertTrue(it.isNull(3))
+                assertEquals(0L, it.getLong(4))
+            }
+            connection.prepare("SELECT creditLimit, creditDays, category FROM parties").use {
+                assertTrue(it.step())
+                assertEquals(500000L, it.getLong(0))
+                assertTrue(it.isNull(1))
+                assertTrue(it.isNull(2))
+            }
+            connection.prepare("SELECT lowStockLevel, reorderQuantity, customFields FROM items").use {
+                assertTrue(it.step())
+                assertEquals(50000L, it.getLong(0))
+                assertTrue(it.isNull(1))
+                assertTrue(it.isNull(2))
+            }
+            connection.execSQL("INSERT INTO party_item_prices (id, firmId, partyId, itemId, price, createdAt, updatedAt) VALUES ('pp-1', 'firm-1', 'p-1', 'i-1', 900, 1, 1)")
+            assertTrue(runCatching {
+                connection.execSQL("INSERT INTO party_item_prices (id, firmId, partyId, itemId, price, createdAt, updatedAt) VALUES ('pp-2', 'firm-1', 'p-1', 'i-1', 950, 1, 1)")
+            }.isFailure, "one special price per party and item")
         }
     }
 

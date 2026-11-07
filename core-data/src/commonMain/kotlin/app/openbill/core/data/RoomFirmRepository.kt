@@ -64,7 +64,7 @@ class RoomFirmRepository(
         val inVouchers = "voucherId IN (SELECT id FROM vouchers WHERE firmId = ?)"
         val inItems = "itemId IN (SELECT id FROM items WHERE firmId = ?)"
         val deletes = listOf(
-            "audit_events", "attachments", "journal_entries", "payment_details", "payment_allocations", "stock_movements",
+            "audit_events", "attachments", "party_item_prices", "journal_entries", "payment_details", "payment_allocations", "stock_movements",
         ).map { "DELETE FROM $it WHERE firmId = ?" } +
             listOf("voucher_charge_portions", "voucher_charges", "voucher_lines").map { "DELETE FROM $it WHERE $inVouchers" } +
             listOf("DELETE FROM vouchers WHERE firmId = ?", "DELETE FROM voucher_number_sequences WHERE firmId = ?") +
@@ -96,7 +96,13 @@ class RoomFirmRepository(
         transactions.write {
             val existing = this@RoomFirmRepository.settings.findByFirm(settings.firmId)
             val now = Clock.System.now()
+            // Who may change settings is the owner's call, even for a manager allowed to change the rest.
+            val switchChanged = settings.managersChangeSettings != (existing?.managersChangeSettings ?: false)
+            if (switchChanged) Access.require(Permission.OWNER_CONTROLS)
             this@RoomFirmRepository.settings.upsert(settings.toEntity(existing, now))
+            if (switchChanged) {
+                audit(settings.firmId, "settings", "managersChangeSettings", "settings.managers_change_settings", AuditDetails.json("on" to settings.managersChangeSettings), now)
+            }
             val oldLock = existing?.lockDate
             val newLock = settings.lockDate?.toString()
             if (oldLock != newLock) {

@@ -4,8 +4,10 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import app.openbill.core.database.PartyAddressEntity
 import app.openbill.core.database.PartyEntity
+import app.openbill.core.database.PartyItemPriceEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -82,4 +84,26 @@ interface PartyDao {
 
     @Query("DELETE FROM party_addresses WHERE partyId = :partyId")
     suspend fun deleteAddressesForParty(partyId: String): Int
+
+    @Query("SELECT * FROM party_item_prices WHERE partyId = :partyId ORDER BY itemId")
+    fun observePrices(partyId: String): Flow<List<PartyItemPriceEntity>>
+
+    @Query("SELECT * FROM party_item_prices WHERE partyId = :partyId AND itemId = :itemId LIMIT 1")
+    suspend fun findPrice(partyId: String, itemId: String): PartyItemPriceEntity?
+
+    @Query("SELECT * FROM party_item_prices WHERE partyId = :partyId")
+    suspend fun pricesFor(partyId: String): List<PartyItemPriceEntity>
+
+    @Upsert
+    suspend fun upsertPrice(price: PartyItemPriceEntity)
+
+    @Query("DELETE FROM party_item_prices WHERE partyId = :partyId AND itemId = :itemId")
+    suspend fun deletePrice(partyId: String, itemId: String): Int
+
+    /** Distinct non-blank groups of the business's active parties, by name. */
+    @Query(
+        "SELECT DISTINCT category FROM parties WHERE firmId = :firmId AND deletedAt IS NULL " +
+            "AND category IS NOT NULL AND category != '' ORDER BY category COLLATE NOCASE",
+    )
+    fun observeCategories(firmId: String): Flow<List<String>>
 }

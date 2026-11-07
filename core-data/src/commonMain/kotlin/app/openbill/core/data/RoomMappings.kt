@@ -144,6 +144,11 @@ internal fun FirmSettingsEntity.toDomain(): FirmSettings = FirmSettings(
     negativeStockAllowed = negativeStockAllowed,
     lockDate = lockDate?.let(LocalDate::parse),
     requirePaymentReference = requirePaymentReference,
+    managersChangeSettings = managersChangeSettings,
+    nearExpiryDays = nearExpiryDays,
+    blockOverCreditLimit = blockOverCreditLimit,
+    itemFieldLabels = itemFieldLabels.orEmpty().split('\n').filter { it.isNotBlank() },
+    printItemFields = printItemFields,
 )
 
 internal fun FirmSettings.toEntity(
@@ -160,6 +165,11 @@ internal fun FirmSettings.toEntity(
     negativeStockAllowed = negativeStockAllowed,
     lockDate = lockDate?.toString(),
     requirePaymentReference = requirePaymentReference,
+    managersChangeSettings = managersChangeSettings,
+    nearExpiryDays = nearExpiryDays,
+    blockOverCreditLimit = blockOverCreditLimit,
+    itemFieldLabels = itemFieldLabels.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+    printItemFields = printItemFields,
     createdAt = existing?.createdAt ?: now.toEpochMillis(),
     updatedAt = now.toEpochMillis(),
 )
@@ -206,6 +216,8 @@ internal fun PartyEntity.toDomain(addresses: List<PartyAddressEntity>): Party = 
     updatedAt = sync.updatedAt.toInstant(),
     deletedAt = sync.deletedAt?.toInstant(),
     defaultCurrency = defaultCurrency,
+    creditDays = creditDays,
+    category = category,
 )
 
 internal fun Party.toEntity(existing: PartyEntity?): PartyEntity = PartyEntity(
@@ -223,6 +235,8 @@ internal fun Party.toEntity(existing: PartyEntity?): PartyEntity = PartyEntity(
     notes = notes,
     sync = syncFor(createdAt, updatedAt, deletedAt, existing?.sync),
     defaultCurrency = defaultCurrency,
+    creditDays = creditDays,
+    category = category,
 )
 
 internal fun PartyAddressEntity.toDomain(): PartyAddress = PartyAddress(
@@ -349,6 +363,8 @@ internal fun ItemEntity.toDomain(): Item = Item(
     createdAt = sync.createdAt.toInstant(),
     updatedAt = sync.updatedAt.toInstant(),
     deletedAt = sync.deletedAt?.toInstant(),
+    reorderQuantity = reorderQuantity?.let(Quantity::ofScaledUnits),
+    customFields = DocumentField.decode(customFields),
 )
 
 internal fun Item.toEntity(existing: ItemEntity?): ItemEntity = ItemEntity(
@@ -375,6 +391,8 @@ internal fun Item.toEntity(existing: ItemEntity?): ItemEntity = ItemEntity(
     sync = syncFor(createdAt, updatedAt, deletedAt, existing?.sync),
     alternateUnitId = alternateUnitId,
     alternateUnitFactor = alternateUnitFactor?.scaledUnits,
+    reorderQuantity = reorderQuantity?.scaledUnits,
+    customFields = DocumentField.encode(customFields),
 )
 
 internal fun VoucherEntity.toDomain(

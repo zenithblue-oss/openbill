@@ -23,7 +23,7 @@ import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 17
+const val OPENBILL_DATABASE_VERSION = 18
 
 @Database(
     entities = [
@@ -52,6 +52,7 @@ const val OPENBILL_DATABASE_VERSION = 17
         AttachmentEntity::class,
         RecurringScheduleEntity::class,
         UserEntity::class,
+        PartyItemPriceEntity::class,
     ],
     version = OPENBILL_DATABASE_VERSION,
     exportSchema = true,

@@ -145,6 +145,35 @@ class RoomAccessTest {
     }
 
     @Test
+    fun managersSwitchIsStoredPerBusinessAndOnlyTheOwnerFlipsIt(): Unit = runBlocking {
+        val manager = AppUser("u-m", "Asha", Role.MANAGER, pinHash = "1:00:00", createdAt = CREATED_AT)
+        repos.users.saveUser(manager)
+        try {
+            Access.current = null
+            repos.firms.saveSettings(testSettings(negativeStockAllowed = true).copy(managersChangeSettings = true))
+            assertTrue(repos.firms.findSettings("firm-1")!!.managersChangeSettings, "kept in the database, so backups carry it")
+            assertTrue(repos.audit.observeRecent("firm-1", 100).first().any { it.action == "settings.managers_change_settings" })
+
+            // A restored backup with the switch on: the app loads it, the manager edits settings only.
+            Access.loadManagersChangeSettings(repos.firms.findSettings("firm-1")!!.managersChangeSettings)
+            Access.current = manager
+            repos.firms.saveSettings(repos.firms.findSettings("firm-1")!!.copy(negativeStockAllowed = false))
+            assertFailsWith<PermissionDeniedException>("the switch itself") {
+                repos.firms.saveSettings(repos.firms.findSettings("firm-1")!!.copy(managersChangeSettings = false))
+            }
+            assertTrue(repos.firms.findSettings("firm-1")!!.managersChangeSettings)
+            assertFailsWith<PermissionDeniedException>("erasing a business") { repos.firms.eraseFirm("firm-1") }
+            assertFailsWith<PermissionDeniedException>("users") { repos.users.saveUser(cashier.copy(role = Role.MANAGER)) }
+            assertTrue(!Access.can(app.openbill.core.domain.model.Permission.BACKUP_RESTORE))
+            assertTrue(!Access.can(app.openbill.core.domain.model.Permission.MANAGE_USERS))
+            assertTrue(!Access.can(app.openbill.core.domain.model.Permission.OWNER_CONTROLS))
+        } finally {
+            Access.current = null
+            Access.loadManagersChangeSettings(false)
+        }
+    }
+
+    @Test
     fun draftCreationIsLoggedOnce(): Unit = runBlocking {
         Access.current = cashier
         repos.vouchers.saveDraft(service("v-1"))

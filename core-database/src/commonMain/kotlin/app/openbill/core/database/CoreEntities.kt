@@ -33,6 +33,16 @@ data class FirmSettingsEntity(
     @ColumnInfo(defaultValue = "NULL") val lockDate: String? = null,
     /** v17: UPI and card payments must carry a reference (UTR, approval code); off by default. */
     @ColumnInfo(defaultValue = "0") val requirePaymentReference: Boolean = false,
+    /** v18: owner's switch letting managers change this business's settings (was a device setting). */
+    @ColumnInfo(defaultValue = "0") val managersChangeSettings: Boolean = false,
+    /** v18: batches expiring within this many days are flagged; 0 turns the alert off. */
+    @ColumnInfo(defaultValue = "30") val nearExpiryDays: Int = 30,
+    /** v18: posting a sale over the party's credit limit is blocked instead of only warned. */
+    @ColumnInfo(defaultValue = "0") val blockOverCreditLimit: Boolean = false,
+    /** v18: labels of the business's custom item fields, one per line. */
+    @ColumnInfo(defaultValue = "NULL") val itemFieldLabels: String? = null,
+    /** v18: print custom item fields under the item name on documents. */
+    @ColumnInfo(defaultValue = "0") val printItemFields: Boolean = false,
 )
 
 @Entity(
@@ -74,6 +84,7 @@ data class FinancialYearEntity(
         Index(value = ["firmId", "name"]),
         Index(value = ["firmId", "phone"]),
         Index(value = ["firmId", "gstin"]),
+        Index(value = ["firmId", "category"]),
         Index(value = ["deletedAt"]),
     ],
 )
@@ -93,6 +104,34 @@ data class PartyEntity(
     @Embedded val sync: SyncMetadata,
     /** v17: ISO 4217 code new export/SEZ invoices to this party start in; NULL for rupees. */
     @ColumnInfo(defaultValue = "NULL") val defaultCurrency: String? = null,
+    /** v18: credit terms in days; a sale's due date defaults to its date plus these. */
+    @ColumnInfo(defaultValue = "NULL") val creditDays: Int? = null,
+    /** v18: user-defined group (flat list) for filtering and reports. */
+    @ColumnInfo(defaultValue = "NULL") val category: String? = null,
+)
+
+/** v18: special sale rate for one party and item, applied to new invoice lines. */
+@Entity(
+    tableName = "party_item_prices",
+    foreignKeys = [
+        ForeignKey(entity = FirmEntity::class, parentColumns = ["id"], childColumns = ["firmId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = PartyEntity::class, parentColumns = ["id"], childColumns = ["partyId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(entity = ItemEntity::class, parentColumns = ["id"], childColumns = ["itemId"], onDelete = ForeignKey.CASCADE),
+    ],
+    indices = [
+        Index(value = ["partyId", "itemId"], unique = true),
+        Index(value = ["itemId"]),
+        Index(value = ["firmId"]),
+    ],
+)
+data class PartyItemPriceEntity(
+    @PrimaryKey val id: String,
+    val firmId: String,
+    val partyId: String,
+    val itemId: String,
+    val price: Long,
+    val createdAt: Long,
+    val updatedAt: Long,
 )
 
 @Entity(
@@ -263,6 +302,10 @@ data class ItemEntity(
     /** Optional second unit and how many primary units (scaled quantity) one of it holds. */
     @ColumnInfo(defaultValue = "NULL") val alternateUnitId: String? = null,
     @ColumnInfo(defaultValue = "NULL") val alternateUnitFactor: Long? = null,
+    /** v18: suggested quantity to order when stock falls to [lowStockLevel] (scaled). */
+    @ColumnInfo(defaultValue = "NULL") val reorderQuantity: Long? = null,
+    /** v18: values of the business's custom item fields, "label<TAB>value" per line. */
+    @ColumnInfo(defaultValue = "NULL") val customFields: String? = null,
 )
 
 @Entity(

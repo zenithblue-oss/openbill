@@ -154,10 +154,6 @@ class AppContainer(
     /** Optional PIN lock shown before any data (device setting). */
     val appLock by lazy { app.openbill.ui.settings.AppLockController(platform.settingsStore) }
 
-    init {
-        // Loads the owner's "managers can change settings" switch before anyone signs in.
-        appLock
-    }
 
     /** "New version" banner and its setting (device setting; on by default where supported). */
     val updates by lazy { app.openbill.ui.settings.UpdateController(platform.settingsStore, platform.supportsUpdateCheck) }

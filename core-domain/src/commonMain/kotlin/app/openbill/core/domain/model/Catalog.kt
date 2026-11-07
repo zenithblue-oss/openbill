@@ -87,6 +87,10 @@ data class Item(
     val createdAt: Instant,
     val updatedAt: Instant,
     val deletedAt: Instant? = null,
+    /** Suggested quantity to order once stock reaches [lowStockLevel]. */
+    val reorderQuantity: Quantity? = null,
+    /** Values of the business's custom item fields (labels from FirmSettings.itemFieldLabels). */
+    val customFields: List<DocumentField> = emptyList(),
 ) {
     init {
         require(id.isNotBlank()) { "Item id cannot be blank" }
@@ -101,5 +105,7 @@ data class Item(
         require(alternateUnitFactor == null || alternateUnitFactor.scaledUnits > 0) { "Alternate unit conversion must be above zero" }
         require(alternateUnitId == null || alternateUnitId != unitId) { "Alternate unit must differ from the unit" }
         require(updatedAt >= createdAt) { "Item updatedAt cannot precede createdAt" }
+        require(reorderQuantity == null || reorderQuantity.scaledUnits > 0) { "Reorder quantity must be above zero" }
+        require(customFields.all { it.value.length <= 60 }) { "Item field values are up to 60 characters" }
     }
 }

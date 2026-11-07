@@ -75,17 +75,17 @@ class AppLockController(private val store: SettingsStore) {
     private var backgroundAt: Long? = null
     private var lastActivityAt: Long? = null
 
-    init {
-        Access.loadManagersChangeSettings(runCatching { store.getString(KEY_MANAGER_SETTINGS) }.getOrNull() == "true")
+    /**
+     * Before schema 18 the owner's "managers can change settings" switch lived on the device. When
+     * it was on, [apply] turns it on for every business (once); the device copy is then cleared.
+     * [apply] runs before anyone signs in, as the owner; a failure leaves the key for the next start.
+     */
+    suspend fun migrateLegacyManagersSwitch(apply: suspend () -> Unit) {
+        val legacy = runCatching { store.getString(KEY_MANAGER_SETTINGS) }.getOrNull()
+        if (legacy.isNullOrEmpty()) return
+        if (legacy == "true") apply()
+        store.putString(KEY_MANAGER_SETTINGS, "")
     }
-
-    /** Owner's switch: managers may change business settings (default off); persisted on this device. */
-    var managersChangeSettings: Boolean
-        get() = Access.managersChangeSettings
-        set(value) {
-            Access.setManagersChangeSettings(value)
-            store.putString(KEY_MANAGER_SETTINGS, value.toString())
-        }
 
     /** Desktop: minutes without input before it locks again; 0 = never. When set, minimising locks too. */
     var idleMinutes: Int

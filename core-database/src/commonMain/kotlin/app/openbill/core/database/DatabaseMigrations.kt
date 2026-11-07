@@ -255,7 +255,38 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
+    /**
+     * Per-business manager switch, near-expiry window, credit-limit blocking and custom item
+     * fields; reorder quantity and custom values on items; credit terms and groups on parties;
+     * party-wise item prices. Existing rows: managers off (the device switch is carried over by
+     * the app once), 30-day expiry window, warn only, no fields, terms, groups or special prices.
+     */
+    private val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE `firm_settings` ADD COLUMN `managersChangeSettings` INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE `firm_settings` ADD COLUMN `nearExpiryDays` INTEGER NOT NULL DEFAULT 30")
+            connection.execSQL("ALTER TABLE `firm_settings` ADD COLUMN `blockOverCreditLimit` INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE `firm_settings` ADD COLUMN `itemFieldLabels` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `firm_settings` ADD COLUMN `printItemFields` INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE `items` ADD COLUMN `reorderQuantity` INTEGER DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `items` ADD COLUMN `customFields` TEXT DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `parties` ADD COLUMN `creditDays` INTEGER DEFAULT NULL")
+            connection.execSQL("ALTER TABLE `parties` ADD COLUMN `category` TEXT DEFAULT NULL")
+            connection.execSQL("CREATE INDEX IF NOT EXISTS `index_parties_firmId_category` ON `parties` (`firmId`, `category`)")
+            connection.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_item_prices` (`id` TEXT NOT NULL, `firmId` TEXT NOT NULL, `partyId` TEXT NOT NULL, " +
+                    "`itemId` TEXT NOT NULL, `price` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), " +
+                    "FOREIGN KEY(`firmId`) REFERENCES `firms`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                    "FOREIGN KEY(`partyId`) REFERENCES `parties`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                    "FOREIGN KEY(`itemId`) REFERENCES `items`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_party_item_prices_partyId_itemId` ON `party_item_prices` (`partyId`, `itemId`)")
+            connection.execSQL("CREATE INDEX IF NOT EXISTS `index_party_item_prices_itemId` ON `party_item_prices` (`itemId`)")
+            connection.execSQL("CREATE INDEX IF NOT EXISTS `index_party_item_prices_firmId` ON `party_item_prices` (`firmId`)")
+        }
+    }
+
+    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
 
     fun migrationsFor(
         startVersion: Int,
