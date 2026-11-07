@@ -44,6 +44,20 @@ class BarcodeLabelsTest {
     }
 
     @Test
+    fun rollStockPrintsOneLabelPerPageAtTheLabelSize() {
+        val labels = List(3) { BarcodeLabel("Item $it", "SKU-$it", "₹5.00") }
+        val layout = BarcodeLabels.layout(labels, metrics, stock = app.openbill.ui.pdf.LabelStock.ROLL_50X25)
+        assertEquals(3, layout.pages.size)
+        layout.pages.forEach { p ->
+            assertEquals(141.73f, p.width, 0.05f)
+            assertEquals(70.87f, p.height, 0.05f)
+            assertTrue(p.ops.none { it is DrawOp.Rect && it.stroke != null }, "no cut guide on a roll")
+            assertTrue(p.ops.filterIsInstance<DrawOp.Rect>().all { it.x >= 0f && it.x + it.w <= p.width && it.y + it.h <= p.height }, "bars stay on the label")
+        }
+        assertEquals(listOf("SKU-0", "SKU-1", "SKU-2"), layout.pages.map { p -> p.ops.filterIsInstance<DrawOp.Text>().single { it.text.startsWith("SKU") }.text })
+    }
+
+    @Test
     fun emptyListStillGivesOnePage() {
         assertEquals(1, BarcodeLabels.layout(emptyList(), metrics).pages.size)
     }

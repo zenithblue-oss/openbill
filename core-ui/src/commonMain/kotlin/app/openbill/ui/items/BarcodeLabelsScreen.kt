@@ -41,6 +41,7 @@ import app.openbill.ui.components.EmptyState
 import app.openbill.ui.components.LoadingState
 import app.openbill.ui.components.LocalAppMessages
 import app.openbill.ui.components.SelectableChip
+import app.openbill.ui.pdf.LabelStock
 import app.openbill.ui.components.pageGutter
 import app.openbill.ui.format.Fmt
 import app.openbill.ui.pdf.BarcodeLabel
@@ -75,6 +76,9 @@ fun BarcodeLabelsScreen(
     var withPrice by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    val store = container.platform.settingsStore
+    var stock by remember { mutableStateOf(LabelStock.fromName(runCatching { store.getString(KEY_STOCK) }.getOrNull())) }
+    var stockPicker by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
     val labels = items?.let { barcodeLabels(it, copies, withPrice) }.orEmpty()
@@ -84,7 +88,7 @@ fun BarcodeLabelsScreen(
         busy = true
         scope.launch {
             runCatching {
-                val layout = withContext(Dispatchers.Default) { BarcodeLabels.layout(labels, container.platform.pdfFontMetrics) }
+                val layout = withContext(Dispatchers.Default) { BarcodeLabels.layout(labels, container.platform.pdfFontMetrics, stock = stock) }
                 container.platform.pdfAction("Barcode-labels", layout, action)
             }
                 .onSuccess { msg -> msg?.let { messages?.show(it) } }
@@ -127,9 +131,11 @@ fun BarcodeLabelsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         SelectableChip("Print price", withPrice, { withPrice = !withPrice })
+                        SelectableChip(stock.label, stock.roll, { stockPicker = true })
                         val pages = (labels.size + BarcodeLabels.PER_PAGE - 1) / BarcodeLabels.PER_PAGE
                         Text(
-                            "${labels.size} labels · $pages ${if (pages == 1) "sheet" else "sheets"} (A4, ${BarcodeLabels.PER_PAGE} per sheet)",
+                            if (stock.roll) "${labels.size} ${if (labels.size == 1) "label" else "labels"}, one per page for a label printer"
+                            else "${labels.size} ${if (labels.size == 1) "label" else "labels"} ·$pages ${if (pages == 1) "sheet" else "sheets"} (A4, ${BarcodeLabels.PER_PAGE} per sheet)",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -152,4 +158,18 @@ fun BarcodeLabelsScreen(
             }
         }
     }
+    if (stockPicker) {
+        app.openbill.ui.components.PickerSheet(
+            title = "Label stock",
+            options = LabelStock.entries.toList(),
+            label = { it.label },
+            supporting = { if (it.roll) "For label printers (TSC, Zebra, thermal): set the same label size in the printer's settings" else null },
+            selected = { it == stock },
+            onSelect = { s -> stock = s; runCatching { store.putString(KEY_STOCK, s.name) }; stockPicker = false },
+            onDismiss = { stockPicker = false },
+            searchable = false,
+        )
+    }
 }
+
+private const val KEY_STOCK = "labels.stock"
