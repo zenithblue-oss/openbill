@@ -267,7 +267,7 @@ Scope:
 - Consolidated reporting across multiple firms.
 - Staff users and role-based permissions with a local audit log.
 - Online catalogue export as static HTML/PDF; optional hosted store later.
-- Loyalty points and party-wise pricing.
+- Loyalty points and party-wise pricing (party-wise pricing done).
 - POS billing for counter sales with barcode scanning, held bills, and multi-tender payment.
 - Other P1 items from docs/01 not tied to a feature above: purchase orders, delivery
   challans, sales orders, reverse charge, and GSTR-3B and GSTR-2 working reports. Each is
@@ -277,6 +277,12 @@ Scope:
 - Every other P1 row in docs/01 not named above (for example the modules screen, unlimited
   recurring schedules, party categories, bulk item edit, CA report pack, and custom item
   fields) is scheduled in this phase; the parity tracker below gives the group-level map.
+- Items and parties P1 (done): item photos, categories with bulk edit, custom item fields,
+  opening stock in the item CSV, price changes in the item timeline, near-expiry card,
+  reorder quantity; party credit limit and terms (warn, or block by setting; due date;
+  overdue column), party groups, special party rates with last-charged history, Android
+  contact picker and vCard import, offline GSTIN state and PAN. Online GSTIN lookup of the
+  legal name and address needs a licensed API and is not built.
 - Multi-currency for export and SEZ invoices (done: currency and exchange rate per document,
   rupee GST, ledger and returns; party default currency and realised exchange gain/loss on
   payments, schema v17). Year-end revaluation of open foreign-currency balances is later.

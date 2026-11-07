@@ -78,12 +78,12 @@ against what is usable in the app today. A feature counts 1 when it works end to
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
 **1.0 scope: 100% (136 of 136 P0 features)** `████████████████████`
-**Full parity: about 66% (184 of 277 P0+P1+P2 features)** `█████████████░░░░░░░`
+**Full parity: about 71% (195 of 277 P0+P1+P2 features)** `██████████████░░░░░░`
 
 | Area | Status | Done |
 | --- | --- | --- |
 | Billing and vouchers | Invoices, quotations, proforma, challans, sales/purchase orders with partial conversion, recurring invoices, credit/debit notes, purchases, duplicate, recycle bin, restore cancelled, attachments | 100% (22 / 22) |
-| Parties and items | Masters, ledgers, statements, shipping addresses with ship-to GSTIN, party notes and attachments, alternate units, CSV import (one transaction), offline HSN/SAC search, business switcher | 100% (31 / 31 P0) |
+| Parties and items | Masters, ledgers, statements, shipping addresses with ship-to GSTIN, party notes and attachments, alternate units, CSV import (one transaction) with opening stock, offline HSN/SAC search, business switcher; P1: item photos, bulk edit, custom fields, credit limit and terms, party groups, special party rates, contact picker and vCard import | 100% (31 / 31 P0) |
 | Inventory | Godowns, batches (FEFO picker), serials (batch or serial per item), adjustments, transfers, valuation, labels, low-stock card and report | 100% |
 | Payments and accounting | Payments, allocation, split tender, expenses, accounts, ageing, reconciliation, reminder templates | 100% (14 / 14) |
 | Reports and GST | Registers, books, day summary, statements, stock, low stock, batch expiry, profit, GST/HSN, GSTR-1 JSON, GSTR-2/3B working, Tally XML, multi-report share/email/ZIP, CA pack | 100% (19 / 19 P0) |

@@ -92,22 +92,22 @@ First-run acceptance criteria:
 | Create and edit party | Name, phone, email, GSTIN, type | P0 | Done | Customer and supplier flags |
 | Billing and shipping addresses | Multiple shipping addresses | P0 | Done | Address book per party |
 | Opening balance | Receivable or payable | P0 | Done | Posted as an opening entry |
-| Credit limit and terms | Optional | P1 | Partial | Warn, do not block, unless configured |
+| Credit limit and terms | Optional | P1 | Done | Invoice warns when a sale goes over the limit; posting is blocked only with the "Block sales over credit limit" setting; credit days set the due date and the outstanding report's overdue column; only owners and managers change them |
 | Party ledger | Running balance and documents | P0 | Done | Drill-down to voucher |
 | Statement export | PDF and CSV | P0 | Done | Date-range filters |
 | Party search | Name and phone | P0 | Done | Local index |
-| Contact import | Pick a phone contact | P1 | Not started | One contact at a time, explicit consent |
-| GSTIN autofill | Legal name and address | P1 | Not started | Manual fallback |
+| Contact import | Pick a phone contact | P1 | Done | Android system contact picker, one contact at a time, no contacts permission; vCard (.vcf) import on all platforms skips contacts already saved |
+| GSTIN autofill | Legal name and address | P1 | Partial | Offline only: state and PAN read from the GSTIN; legal name and address need a licensed online lookup (not built) |
 | Birthday and appointment reminders | CRM-lite features | P2 | Not started | Local notifications only |
-| Party-wise item price | Special pricing per party | P1 | Not started | Phase 7 |
-| Party categories | Group parties for filtering and reports | P1 | Not started | Flat list of user-defined groups |
+| Party-wise item price | Special pricing per party | P1 | Done | Special rates on the party (owners and managers); new sale lines and POS start at them and stay editable; a cashier may keep one |
+| Party categories | Group parties for filtering and reports | P1 | Done | One free-text group per party; party list filter and a Group column in the outstanding report |
 | Ship-to GSTIN and delivery site | Separate GSTIN per shipping address, with an unregistered option | P0 | Done | Required for compliant invoices |
 | Shared ledger | Party sees their own ledger entries through a link; party can hide or re-enable sharing | P2 | Not started | Needs the server (S); read-only link with expiry |
 | Service reminders | Per-item service period; reminder to owner and party shortly before due date | P2 | Not started | Local notifications; party message via share intent |
 | Smart greetings | Templated festival or birthday messages sent to parties | P2 | Not started | Share-intent only; no bulk sending service |
 | Loyalty and reward points | Points earned per paid bill, redeemable on later invoices; redemption cannot exceed balance | P2 | Not started | Phase 7; per-firm rules |
 | CRM lite | Follow-up notes and simple customer history beyond the ledger | P2 | Not started | Notes, tags, next-contact date |
-| Price history for a party | Shows the last few sale or purchase prices for the item and party while billing | P1 | Not started | Read-only hint panel |
+| Price history for a party | Shows the last few sale or purchase prices for the item and party while billing | P1 | Done | Sales: the last three posted rates and the party rate shown under the line rate |
 | Notes and attachments | Free text and files | P0 | Done | Files included in backup; expense receipt attachments are post-1.0 |
 | Delete and restore | Recycle bin | P0 | Done | Soft delete with audit event |
 
@@ -116,9 +116,9 @@ First-run acceptance criteria:
 | Feature | Observed behavior | Priority | Status | Notes |
 | --- | --- | --- | --- | --- |
 | Item master | Name, SKU, category, unit, HSN/SAC, tax rate | P0 | Done | Goods and services |
-| Multiple prices | Sale, purchase, MRP, wholesale | P0 | Done | Party-specific price later |
+| Multiple prices | Sale, purchase, MRP, wholesale | P0 | Done | Party-specific rates in section 3 |
 | Units | Primary and alternate units with conversion | P0 | Done | Decimal quantities |
-| Item images | Upload and show on invoice | P1 | Not started | Optional |
+| Item images | Upload and show on invoice | P1 | Done | Photo picker or camera (Android); shown in the item list, POS grid and item search, kept in backups; not printed on invoices |
 | Categories | Grouping and filtering | P0 | Done | Tree or flat list |
 | HSN/SAC search | Search by code or description | P0 | Done | Offline dataset |
 | Stock tracking | On/off per item | P0 | Done | Service items do not affect stock |
@@ -131,19 +131,19 @@ First-run acceptance criteria:
 | Barcode label printing | A4 sheets and thermal labels | P0 | Done | Desktop and Android thermal |
 | Negative stock | Allow or block per firm | P0 | Done | Explicit setting |
 | Stock valuation | Costing method | P0 | Done | Document the method; start with weighted average |
-| Item timeline | History of movements | P1 | Done | Read-only audit view |
+| Item timeline | History of movements | P1 | Done | Read-only audit view, with sale and purchase price changes from the audit trail |
 | Bulk item upload | CSV or Excel | P0 | Done | CSV import is 1.0; Excel upload is post-1.0; dry-run validation required |
-| Bulk edit items | Change tax rate, category, or godown for a selection | P1 | Not started | Preview and confirm; audit event per item |
-| Bulk categorisation | Assign categories to many items at once | P1 | Not started | Part of bulk edit |
-| Opening stock on upload | Quantity, godown, and batch columns in the upload file | P1 | Not started | Posts opening movements |
+| Bulk edit items | Change tax rate, category, or godown for a selection | P1 | Done | Tax rate, category and sale price for a selection, all or nothing, audit event per item; godown is per movement, not per item |
+| Bulk categorisation | Assign categories to many items at once | P1 | Done | Part of bulk edit |
+| Opening stock on upload | Quantity, godown, and batch columns in the upload file | P1 | Done | opening_qty, opening_cost, godown, batch, expiry columns; one posted "Opening stock" adjustment in the import transaction (apps; the CLI rejects these columns) |
 | Wholesale price | Optional second selling price used for bulk sales | P0 | Done | Covered by multiple prices; explicit toggle |
-| Custom item fields | User-defined extra fields (MRP, manufacturing date, part number) shown on documents | P1 | Not started | Typed fields; optional on print |
+| Custom item fields | User-defined extra fields (MRP, manufacturing date, part number) shown on documents | P1 | Done | Up to five text fields per business, searchable; optionally printed after the line description |
 | Renamable serial label | Serial field relabelled by the user (model number, part number) | P2 | Not started | Label setting per item |
 | Batch and serial exclusivity | An item uses either batches or serials, not both | P0 | Done | Validation rule; document in the data model |
 | Duplicate and sold serial checks | Block reuse of a serial already in stock or already sold | P0 | Done | Part of serial invariants |
 | FEFO batch suggestion | Suggest the earliest-expiring batch when selling | P1 | Done | Suggestion only; user can override |
-| Near-expiry alerts | Notify before batches expire | P1 | Not started | Local notification and dashboard card; configurable window |
-| Reorder level | Reorder threshold and suggested reorder quantity | P1 | Partial | Extends low-stock alerts |
+| Near-expiry alerts | Notify before batches expire | P1 | Done | Dashboard card with a per-business window (default 30 days); no OS notification, as the app runs no background job |
+| Reorder level | Reorder threshold and suggested reorder quantity | P1 | Done | Reorder quantity per item; the low-stock report suggests the order |
 | Batch and expiry report | Stock by batch with expiry dates | P1 | Done | Report; see section 7 |
 | Godown transfer | Single and bulk transfers between locations; enabling godowns moves existing stock to a default location | P0 | Done | Reversing movements on edit; warn when editing old documents changes opening stock |
 | Multi-godown stock view | Per-item quantity by location | P0 | Done | Limit of locations in a picker is a UI choice, not a data limit |
