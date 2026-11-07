@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -153,12 +154,19 @@ fun ItemListScreen(
     val unitById = units.associateBy { it.id }
     var query by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf(0) } // 0 all, 1 goods, 2 services
+    var categoryFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    val categories by remember(firmId) { container.repositories.catalog.observeCategories(firmId) }.collectAsState(initial = emptyList())
     // Paged by name, searched in SQL; grows as the list scrolls.
     val limit = remember(firmId) { mutableIntStateOf(PAGE_SIZE) }
     val items by remember(firmId) {
-        snapshotFlow { Triple(query, kind, limit.intValue) }
-            .flatMapLatest { (q, k, n) -> container.repositories.catalog.observeItemPage(firmId, if (k == 0) null else k == 2, q, n) }
+        snapshotFlow { listOf(query, kind, limit.intValue, categoryFilter) }
+            .flatMapLatest { (q, k, n, c) -> container.repositories.catalog.observeItemPage(firmId, if (k == 0) null else k == 2, q as String, n as Int, c as String?) }
     }.collectAsState(initial = null)
+    // Bulk edit (owner and manager): ids picked in selection mode.
+    var selecting by rememberSaveable { mutableStateOf(false) }
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    var bulkOpen by remember { mutableStateOf(false) }
+    var pickCategory by remember { mutableStateOf(false) }
     val anyItem by remember(firmId) { container.repositories.catalog.observeItemPage(firmId, null, "", 1) }.collectAsState(initial = null)
     val slabsToday = remember { gstSlabsOn(container.today()) }
     // ponytail: whole-catalogue scan for the advisory; a SQL count by rate if catalogues grow past ~50k items.
@@ -170,11 +178,31 @@ fun ItemListScreen(
     val canEdit = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = { CollapsingTopBar("Items", scrollBehavior) },
+        topBar = {
+            CollapsingTopBar(if (selecting) "${picked.size} selected" else "Items", scrollBehavior) {
+                if (canEdit && selecting) {
+                    TextButton(onClick = { picked = picked + items.orEmpty().map { it.id } }) { Text("Select shown") }
+                    TextButton(onClick = { selecting = false; picked = emptySet() }) { Text("Done") }
+                } else if (canEdit && anyItem?.isNotEmpty() == true) {
+                    TextButton(onClick = { selecting = true }) { Text("Select") }
+                }
+            }
+        },
+        bottomBar = {
+            if (selecting) androidx.compose.material3.BottomAppBar {
+                Text(
+                    if (picked.isEmpty()) "Tap items to select them" else "${picked.size} selected",
+                    Modifier.weight(1f).padding(horizontal = Spacing.md),
+                )
+                TextButton(enabled = picked.isNotEmpty(), onClick = { picked = emptySet() }) { Text("Clear") }
+                PrimaryButton("Edit ${picked.size}", { bulkOpen = true }, enabled = picked.isNotEmpty())
+                Spacer(Modifier.padding(end = Spacing.sm))
+            }
+        },
         snackbarHost = { AppSnackbarHost() },
         floatingActionButton = {
             // With a navigation rail, its header FAB is the screen's one create action.
-            if (!LocalWidthClass.current.usesRail && canEdit) ExtendedFloatingActionButton(
+            if (!LocalWidthClass.current.usesRail && canEdit && !selecting) ExtendedFloatingActionButton(
                 onClick = { onOpen(null) },
                 expanded = !listState.lastScrolledForward || !listState.canScrollBackward,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
@@ -226,18 +254,29 @@ fun ItemListScreen(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
                         listOf("All", "Goods", "Services").forEachIndexed { i, label -> SelectableChip(label, kind == i, { kind = i; limit.intValue = PAGE_SIZE }) }
+                        if (categories.isNotEmpty() || categoryFilter != null) {
+                            SelectableChip(
+                                categoryFilter?.let { id -> categories.firstOrNull { it.id == id }?.name ?: "Category" } ?: "Any category",
+                                categoryFilter != null,
+                                { pickCategory = true },
+                            )
+                        }
                     }
                 }
                 if (filtered.isEmpty()) {
                     item(key = "empty") { EmptyState(Icons.Outlined.Search, "No match", "No item matches your search or filter.") }
                 }
                 items(filtered, key = { it.id }) { item ->
+                    val isPicked = item.id in picked
                     ListItem(
-                        leadingContent = { Monogram(item.name) },
+                        leadingContent = {
+                            if (selecting) androidx.compose.material3.Checkbox(checked = isPicked, onCheckedChange = null) else Monogram(item.name)
+                        },
                         headlineContent = { Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                         supportingContent = {
                             Text(
                                 listOfNotNull(
+                                    item.categoryId?.let { id -> categories.firstOrNull { it.id == id }?.name },
                                     item.hsnSac?.let { (if (item.isService) "SAC " else "HSN ") + it },
                                     "GST ${Fmt.percent(item.taxRate)}%" + if (item.taxRate !in slabsToday) " (not a current slab)" else "",
                                 ).joinToString(" · "),
@@ -261,7 +300,8 @@ fun ItemListScreen(
                             )
                             // Without item rights a row opens the read-only stock view, so only stocked goods open.
                             .then(
-                                if (canEdit) Modifier.clickable(onClickLabel = "Edit item") { onOpen(item.id) }
+                                if (selecting) Modifier.toggleable(isPicked, role = Role.Checkbox) { picked = if (it) picked + item.id else picked - item.id }
+                                else if (canEdit) Modifier.clickable(onClickLabel = "Edit item") { onOpen(item.id) }
                                 else if (item.trackInventory && !item.isService) Modifier.clickable(onClickLabel = "Open item stock") { onOpen(item.id) }
                                 else Modifier,
                             ),
@@ -270,12 +310,30 @@ fun ItemListScreen(
             }
         }
     }
+    if (bulkOpen) {
+        BulkItemEditDialog(container, firmId, allItems.filter { it.id in picked }, slabsToday) { applied ->
+            bulkOpen = false
+            if (applied) { selecting = false; picked = emptySet() }
+        }
+    }
+    if (pickCategory) {
+        PickerSheet<app.openbill.core.domain.model.ItemCategory?>(
+            title = "Show category",
+            options = listOf<app.openbill.core.domain.model.ItemCategory?>(null) + categories.sortedBy { it.name.lowercase() },
+            label = { it?.name ?: "Any category" },
+            selected = { it?.id == categoryFilter },
+            key = { it?.id ?: "any" },
+            onSelect = { categoryFilter = it?.id; limit.intValue = PAGE_SIZE; pickCategory = false },
+            onDismiss = { pickCategory = false },
+        )
+    }
 }
 
 data class ItemForm(
     val loaded: Boolean = false,
     val name: String = "",
     val isService: Boolean = false,
+    val categoryId: String? = null,
     val unitId: String? = null,
     val hsnSac: String = "",
     val gstRate: Rate = Rate.ofPercent(18),
@@ -361,6 +419,7 @@ class ItemEditorModel(
                         loaded = true,
                         name = item.name,
                         isService = item.isService,
+                        categoryId = item.categoryId,
                         unitId = item.unitId,
                         hsnSac = item.hsnSac.orEmpty(),
                         gstRate = item.taxRate,
@@ -422,6 +481,7 @@ class ItemEditorModel(
                     name = form.name.trim(),
                     unitId = form.unitId!!,
                     isService = form.isService,
+                    categoryId = form.categoryId,
                     hsnSac = form.hsnSac.trim().ifBlank { null },
                     taxRate = form.gstRate,
                     salePrice = Parse.money(form.salePrice) ?: Money.ZERO,
@@ -527,6 +587,17 @@ fun ItemEditScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                     SelectableChip("Goods", !form.isService, { model.edit { it.copy(isService = false) } })
                     SelectableChip("Service", form.isService, { model.edit { it.copy(isService = true) } })
+                }
+                val categories by remember { container.repositories.catalog.observeCategories(session.firm.id) }.collectAsState(initial = emptyList())
+                var pickCategory by remember { mutableStateOf(false) }
+                PickerField(
+                    "Category",
+                    form.categoryId?.let { id -> categories.firstOrNull { it.id == id }?.name }.orEmpty(),
+                    { pickCategory = true },
+                    placeholder = "Optional, for filtering and bulk edits",
+                )
+                if (pickCategory) {
+                    ItemCategorySheet(container, session.firm.id, form.categoryId, { id -> model.edit { it.copy(categoryId = id) }; pickCategory = false }, { pickCategory = false })
                 }
                 PickerField(
                     "Unit *",

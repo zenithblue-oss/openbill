@@ -174,6 +174,25 @@ class RoomAccessTest {
     }
 
     @Test
+    fun bulkItemEditIsAllOrNothingLoggedPerItemAndNotForCashiers(): Unit = runBlocking {
+        repos.catalog.saveItem(testItem(id = "item-2", name = "Bolt", sku = "B-1"))
+        val edit = app.openbill.core.domain.usecase.BulkItemEdit(categoryId = app.openbill.core.domain.usecase.BulkItemEdit.NO_CATEGORY, salePrice = app.openbill.core.domain.usecase.PriceChange.parse("+10%"))
+        val changed = repos.catalog.observeItems("firm-1").first().mapNotNull { edit.apply(it, ARCHIVED_AT) }
+        assertEquals(2, changed.size)
+        Access.current = cashier
+        assertFailsWith<PermissionDeniedException> { repos.catalog.saveItems(changed) }
+        Access.current = null
+        // A barcode clash on the second item rolls back the first too.
+        repos.catalog.saveItem(testItem(id = "item-3", name = "Nut", sku = "N-1").copy(barcode = "X1"))
+        assertTrue(runCatching { repos.catalog.saveItems(listOf(changed[0], changed[1].copy(barcode = "X1"))) }.isFailure)
+        assertEquals(testItem().salePrice, repos.catalog.findItem(changed[0].id)!!.salePrice)
+        repos.catalog.saveItems(changed)
+        assertEquals(changed.map { it.salePrice }, changed.map { repos.catalog.findItem(it.id)!!.salePrice })
+        assertEquals(2, repos.audit.observeRecent("firm-1", 100).first().count { it.action == "item.bulk_updated" })
+        assertEquals(listOf("item-3"), repos.catalog.observeItemPage("firm-1", null, "", 10, categoryId = "category-1").first().map { it.id }, "the others left the category")
+    }
+
+    @Test
     fun draftCreationIsLoggedOnce(): Unit = runBlocking {
         Access.current = cashier
         repos.vouchers.saveDraft(service("v-1"))

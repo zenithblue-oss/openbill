@@ -23,14 +23,23 @@ class RoomCatalogRepository(
     override fun observeItems(firmId: String): Flow<List<Item>> =
         items.observeActive(firmId).map { values -> values.map { it.toDomain() } }
 
-    override fun observeItemPage(firmId: String, services: Boolean?, query: String, limit: Int): Flow<List<Item>> =
-        items.observePage(firmId, services, query.trim(), limit).map { values -> values.map { it.toDomain() } }
+    override fun observeItemPage(firmId: String, services: Boolean?, query: String, limit: Int, categoryId: String?): Flow<List<Item>> =
+        items.observePage(firmId, services, query.trim(), limit, categoryId).map { values -> values.map { it.toDomain() } }
 
     override suspend fun findItem(id: String): Item? = items.findById(id)?.toDomain()
 
     override suspend fun saveItem(item: Item) {
         Access.require(Permission.MANAGE_MASTERS)
-        transactions.write {
+        transactions.write { write(item, bulk = false) }
+    }
+
+    override suspend fun saveItems(items: List<Item>) {
+        Access.require(Permission.MANAGE_MASTERS)
+        transactions.write { items.forEach { write(it, bulk = true) } }
+    }
+
+    private suspend fun write(item: Item, bulk: Boolean) {
+        run {
             val existing = items.findById(item.id)
             item.barcode?.let { code ->
                 val clash = items.findByBarcode(item.firmId, code)
@@ -46,8 +55,16 @@ class RoomCatalogRepository(
             }
             val priceChanged = existing != null && (existing.salePrice != entity.salePrice || existing.purchasePrice != entity.purchasePrice)
             database.audit(
-                item.firmId, "item", item.id, if (existing == null) "item.created" else "item.updated",
-                if (priceChanged) AuditDetails.json("salePrice" to entity.salePrice, "oldSalePrice" to existing?.salePrice) else null,
+                item.firmId, "item", item.id, if (existing == null) "item.created" else if (bulk) "item.bulk_updated" else "item.updated",
+                when {
+                    bulk && existing != null -> AuditDetails.json(
+                        "salePrice" to entity.salePrice, "oldSalePrice" to existing.salePrice, "taxRateUnits" to entity.taxRateUnits,
+                        "oldTaxRateUnits" to existing.taxRateUnits, "categoryId" to entity.categoryId, "oldCategoryId" to existing.categoryId,
+                        "unitId" to entity.unitId, "oldUnitId" to existing.unitId,
+                    )
+                    priceChanged -> AuditDetails.json("salePrice" to entity.salePrice, "oldSalePrice" to existing?.salePrice)
+                    else -> null
+                },
             )
         }
     }

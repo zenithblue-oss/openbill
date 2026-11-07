@@ -11,12 +11,15 @@ import kotlin.time.Instant
 interface CatalogRepository {
     fun observeItems(firmId: String): Flow<List<Item>>
 
-    /** The first [limit] active items by name ([services] null = all) whose name, SKU, HSN/SAC or barcode contains [query]. */
-    fun observeItemPage(firmId: String, services: Boolean?, query: String, limit: Int): Flow<List<Item>> =
+    /**
+     * The first [limit] active items by name ([services] null = all; [categoryId] null = any) whose
+     * name, SKU, HSN/SAC, barcode or custom field values contain [query].
+     */
+    fun observeItemPage(firmId: String, services: Boolean?, query: String, limit: Int, categoryId: String? = null): Flow<List<Item>> =
         observeItems(firmId).map { all ->
             val q = query.trim()
             all.filter {
-                it.deletedAt == null && (services == null || it.isService == services) &&
+                it.deletedAt == null && (services == null || it.isService == services) && (categoryId == null || it.categoryId == categoryId) &&
                     (q.isEmpty() || it.name.contains(q, true) || it.sku?.contains(q, true) == true || it.hsnSac?.contains(q) == true || it.barcode?.contains(q, true) == true)
             }.take(limit)
         }
@@ -24,6 +27,9 @@ interface CatalogRepository {
     suspend fun findItem(id: String): Item?
 
     suspend fun saveItem(item: Item)
+
+    /** Bulk edit: saves all of [items] or none, logging a bulk-update event per item. */
+    suspend fun saveItems(items: List<Item>) = items.forEach { saveItem(it) }
 
     suspend fun archiveItem(id: String, at: Instant)
 
