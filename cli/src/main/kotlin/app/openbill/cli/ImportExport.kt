@@ -134,13 +134,20 @@ class ExportAttachments(private val cli: CliState) : CliktCommand("attachments")
             repos.vouchers.observeVouchers(f.id, kotlinx.datetime.LocalDate(2000, 1, 1), kotlinx.datetime.LocalDate(2099, 12, 31)).first(),
             repos.parties.observeParties(f.id).first(),
         )
-        // ponytail: built in memory like the app's export; stream entries if attachment folders grow past a few hundred MB.
-        val files = owners.associate { o -> o.id to store.list(o.id).map { it to store.file(o.id, it).readBytes() } }.filterValues { it.isNotEmpty() }
+        val files = owners.associate { o -> o.id to store.list(o.id) }.filterValues { it.isNotEmpty() }
         if (files.isEmpty()) fail(Exit.NOT_FOUND, "No attachments in ${f.name}")
         val target = out.absoluteFile
         target.parentFile.mkdirs()
-        target.writeBytes(app.openbill.core.domain.report.ZipWriter.write(attachmentExport(owners, files)))
-        val count = files.values.sumOf { it.size }
+        // Streamed one attachment at a time into a temp file, moved into place only when complete.
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        val count = try {
+            tmp.outputStream().buffered().use { os ->
+                val zip = app.openbill.core.domain.report.ZipWriter.Stream(os::write)
+                attachmentExport(owners, files, { id, name -> runCatching { store.file(id, name) }.getOrNull()?.readBytes() }, zip::add).also { zip.finish() }
+            }.also { java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING) }
+        } finally {
+            tmp.delete()
+        }
         when {
             cli.json -> cli.printJson(jsonOf("file" to target.path, "files" to count, "records" to files.size))
             cli.quiet -> cli.out.println(target.path)

@@ -38,19 +38,28 @@ fun attachmentOwners(vouchers: List<Voucher>, parties: List<Party>): List<Attach
 private fun safeName(s: String) = s.replace(Regex("[^A-Za-z0-9._ -]"), "_").trimEnd('.', ' ').ifEmpty { "_" }
 
 /**
- * ZIP entries for the attachment export: one folder per owner ("Kind_number_id") holding its
- * files, plus index.csv listing each file with its record. [files] maps owner id to (name, bytes).
+ * The attachment export, entry by entry into [add] (a [app.openbill.core.domain.report.ZipWriter.Stream]):
+ * one folder per owner ("Kind_number_id") holding its files, then index.csv listing each file
+ * with its record. [files] maps owner id to file names; [read] loads one file (null: gone, skipped),
+ * so only one file is in memory at a time. Returns the number of files written.
  * Shared by the app's Export attachments and `openbill export attachments`.
  */
-fun attachmentExport(owners: List<AttachmentOwner>, files: Map<String, List<Pair<String, ByteArray>>>): List<Pair<String, ByteArray>> {
+suspend fun attachmentExport(
+    owners: List<AttachmentOwner>,
+    files: Map<String, List<String>>,
+    read: suspend (ownerId: String, name: String) -> ByteArray?,
+    add: (path: String, bytes: ByteArray) -> Unit,
+): Int {
     val rows = mutableListOf(Csv.row(listOf("file", "record", "number", "date", "status", "party", "bytes")))
-    val entries = owners.flatMap { o ->
+    owners.forEach { o ->
         val folder = listOfNotNull(o.kind, o.number, o.id).joinToString("_") { safeName(it) }
-        files[o.id].orEmpty().map { (name, bytes) ->
+        files[o.id].orEmpty().forEach { name ->
+            val bytes = read(o.id, name) ?: return@forEach
             val path = "$folder/${safeName(name)}"
+            add(path, bytes)
             rows += Csv.row(listOf(path, o.kind, o.number, o.date, o.status, o.party, bytes.size.toString()))
-            path to bytes
         }
     }
-    return listOf("index.csv" to (rows.joinToString("\r\n") + "\r\n").encodeToByteArray()) + entries
+    add("index.csv", (rows.joinToString("\r\n") + "\r\n").encodeToByteArray())
+    return rows.size - 1
 }

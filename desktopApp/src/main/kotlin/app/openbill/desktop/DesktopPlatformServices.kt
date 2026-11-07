@@ -237,6 +237,22 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         return "Saved ${target.name}"
     }
 
+    override suspend fun saveStream(fileName: String, write: suspend (sink: (ByteArray) -> Unit) -> Unit): String? {
+        val target = withContext(Dispatchers.IO) { chooseSaveFile(fileName) } ?: return null
+        withContext(Dispatchers.IO) {
+            target.parentFile?.mkdirs()
+            val tmp = File(target.parentFile, target.name + ".tmp")
+            try {
+                tmp.outputStream().buffered().use { out -> write(out::write) }
+                java.nio.file.Files.move(tmp.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } finally {
+                tmp.delete()
+            }
+            revealInFolder(target)
+        }
+        return "Saved ${target.name}"
+    }
+
     /**
      * No share sheet on desktop: the files go to Documents/OpenBill exports, whose folder is opened.
      * For [email] a mail draft opens too; mailto links cannot carry attachments, so the user

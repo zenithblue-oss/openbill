@@ -96,6 +96,12 @@ interface PlatformServices {
     suspend fun saveFile(fileName: String, bytes: ByteArray): String? = "Saving files is not available here"
 
     /**
+     * [saveFile] for exports too large to hold in memory: [write] streams the content into the
+     * chosen file through its sink. A failed write leaves no partial file. Null when cancelled.
+     */
+    suspend fun saveStream(fileName: String, write: suspend (sink: (ByteArray) -> Unit) -> Unit): String? = "Saving files is not available here"
+
+    /**
      * Shares report files: the share sheet on Android ([email] limits it to mail apps); on desktop,
      * which has no share sheet, the files go to a folder that is opened, with a mail draft for [email].
      * Nothing is sent over the network by the app. Returns a message for the user, if any.

@@ -59,8 +59,6 @@ private suspend fun postOpenings(container: AppContainer, firmId: String, items:
     )
 }
 
-private const val MAX_EXPORT = 150L * 1024 * 1024
-
 // attachmentOwners and attachmentExport live in core-domain (csv/AttachmentExport.kt), shared with the CLI.
 
 /** CSV import of parties and items (dry-run preview first, all rows or none), CSV export, and the recycle bin. */
@@ -167,19 +165,15 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
                     repos.vouchers.observeVouchers(firmId, LocalDate(2000, 1, 1), LocalDate(2099, 12, 31)).first(),
                     repos.parties.observeParties(firmId).first(),
                 )
-                // ponytail: the ZIP is built in memory, so the export stops at MAX_EXPORT bytes; stream to the file if that is too small.
-                var total = 0L
-                val files = owners.associate { o ->
-                    o.id to container.platform.attachments(o.id).mapNotNull { name ->
-                        container.platform.attachmentBytes(o.id, name)?.also {
-                            total += it.size
-                            if (total > MAX_EXPORT) error("Attachments are over ${MAX_EXPORT / (1024 * 1024)} MB, too much for one ZIP; a backup carries them all")
-                        }?.let { name to it }
-                    }
-                }.filterValues { it.isNotEmpty() }
+                val files = owners.associate { o -> o.id to container.platform.attachments(o.id) }.filterValues { it.isNotEmpty() }
                 if (files.isEmpty()) return@run "No attachments in ${session.firm.name}"
-                val zip = withContext(Dispatchers.Default) { app.openbill.core.domain.report.ZipWriter.write(attachmentExport(owners, files)) }
-                container.platform.saveFile("attachments-${container.today()}.zip", zip)
+                // Streamed into the chosen file one attachment at a time: no size cap from memory.
+                container.platform.saveStream("attachments-${container.today()}.zip") { sink ->
+                    progress = Progress("Writing ZIP")
+                    val zip = app.openbill.core.domain.report.ZipWriter.Stream(sink)
+                    attachmentExport(owners, files, { id, name -> container.platform.attachmentBytes(id, name) }, zip::add)
+                    zip.finish()
+                }
             }
         },
     )

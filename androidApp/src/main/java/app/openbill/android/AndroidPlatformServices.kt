@@ -193,6 +193,21 @@ class AndroidPlatformServices(
         return "Saved $fileName"
     }
 
+    override suspend fun saveStream(fileName: String, write: suspend (sink: (ByteArray) -> Unit) -> Unit): String? {
+        val uri = requireHooks().createFile(fileName) ?: return null
+        withContext(Dispatchers.IO) {
+            try {
+                val stream = context.contentResolver.openOutputStream(uri, "wt") ?: error("Could not open the chosen location")
+                stream.buffered().use { out -> write(out::write) }
+            } catch (e: Throwable) {
+                // No half-written ZIP left behind for the user to mistake for a complete export.
+                runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+                throw e
+            }
+        }
+        return "Saved $fileName"
+    }
+
     override suspend fun shareFiles(subject: String, files: List<Pair<String, ByteArray>>, email: Boolean): String? {
         if (files.isEmpty()) return "Nothing to share"
         val mailto = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))

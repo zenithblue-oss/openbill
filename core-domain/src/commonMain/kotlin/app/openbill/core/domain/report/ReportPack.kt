@@ -122,26 +122,51 @@ object ZipWriter {
     fun write(files: List<Pair<String, ByteArray>>): ByteArray {
         require(files.map { it.first }.toSet().size == files.size) { "Duplicate file names in the bundle" }
         val out = Bytes()
-        val central = Bytes()
-        files.forEach { (name, data) ->
-            val nameBytes = name.encodeToByteArray()
-            val crc = crc32(data)
-            val offset = out.size
-            // Local header: version 20, UTF-8 names (bit 11), stored, 1980-01-01 00:00.
-            out.int(0x04034b50); out.short(20); out.short(0x0800); out.short(0); out.short(0); out.short(0x21)
-            out.int(crc); out.int(data.size); out.int(data.size); out.short(nameBytes.size); out.short(0)
-            out.bytes(nameBytes); out.bytes(data)
-            central.int(0x02014b50); central.short(20); central.short(20); central.short(0x0800); central.short(0); central.short(0); central.short(0x21)
-            central.int(crc); central.int(data.size); central.int(data.size); central.short(nameBytes.size); central.short(0); central.short(0)
-            central.short(0); central.short(0); central.int(0); central.int(offset); central.bytes(nameBytes)
-        }
-        val cdOffset = out.size
-        val cd = central.toByteArray()
-        out.bytes(cd)
-        out.int(0x06054b50); out.short(0); out.short(0); out.short(files.size); out.short(files.size)
-        out.int(cd.size); out.int(cdOffset); out.short(0)
+        Stream(out::bytes).apply { files.forEach { (name, data) -> add(name, data) } }.finish()
         return out.toByteArray()
     }
+
+    /**
+     * The same ZIP written entry by entry to [sink] (a file), so only the current entry is in
+     * memory, however large the whole. Plain ZIP (no ZIP64): up to 4 GB and 65,535 entries.
+     */
+    class Stream(private val sink: (ByteArray) -> Unit) {
+        private val central = Bytes()
+        private val names = HashSet<String>()
+        private var offset = 0L
+
+        fun add(name: String, data: ByteArray) {
+            require(names.add(name)) { "Duplicate file names in the bundle" }
+            val nameBytes = name.encodeToByteArray()
+            check(names.size <= 0xFFFF && offset + 30 + nameBytes.size + data.size <= MAX) { TOO_BIG }
+            val crc = crc32(data)
+            // Local header: version 20, UTF-8 names (bit 11), stored, 1980-01-01 00:00.
+            val local = Bytes()
+            local.int(0x04034b50); local.short(20); local.short(0x0800); local.short(0); local.short(0); local.short(0x21)
+            local.int(crc); local.int(data.size); local.int(data.size); local.short(nameBytes.size); local.short(0)
+            local.bytes(nameBytes)
+            sink(local.toByteArray())
+            sink(data)
+            central.int(0x02014b50); central.short(20); central.short(20); central.short(0x0800); central.short(0); central.short(0); central.short(0x21)
+            central.int(crc); central.int(data.size); central.int(data.size); central.short(nameBytes.size); central.short(0); central.short(0)
+            central.short(0); central.short(0); central.int(0); central.int(offset.toInt()); central.bytes(nameBytes)
+            offset += 30 + nameBytes.size + data.size
+        }
+
+        /** Writes the central directory; the ZIP is complete after this. */
+        fun finish() {
+            val cd = central.toByteArray()
+            check(offset + cd.size + 22 <= MAX) { TOO_BIG }
+            val end = Bytes()
+            end.int(0x06054b50); end.short(0); end.short(0); end.short(names.size); end.short(names.size)
+            end.int(cd.size); end.int(offset.toInt()); end.short(0)
+            sink(cd)
+            sink(end.toByteArray())
+        }
+    }
+
+    private const val MAX = 0xFFFFFFFFL
+    private const val TOO_BIG = "Too much for one ZIP (over 4 GB or 65,535 files); a backup carries everything"
 
     private class Bytes {
         private var buf = ByteArray(1024)
