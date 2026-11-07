@@ -23,4 +23,18 @@ class VoucherNumberingTest {
         assertFailsWith<IllegalArgumentException> { VoucherNumbering.format("INV", 0, 4) }
         assertFailsWith<IllegalArgumentException> { VoucherNumbering.format("INV", 1, 0) }
     }
+
+    @Test
+    fun capsNumbersAtGstSixteenCharacters() {
+        assertEquals("ABCDEFGHIJK-0001", VoucherNumbering.format("ABCDEFGHIJK", 1, 4))
+        assertFailsWith<IllegalArgumentException> { VoucherNumbering.format("ABCDEFGHIJKL", 1, 4) }
+        assertFailsWith<IllegalArgumentException> { VoucherNumbering.format("ABCDEFGHIJK", 10_000, 4) }
+    }
+
+    @Test
+    fun seriesIsAppendedOnlyWhenSynced() {
+        assertEquals("INV", VoucherNumbering.seriesPrefix("INV", null))
+        assertEquals("INV-B", VoucherNumbering.seriesPrefix("INV ", "B"))
+        assertEquals("INV/B", VoucherNumbering.seriesPrefix("INV/", "B"))
+    }
 }

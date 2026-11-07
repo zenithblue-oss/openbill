@@ -96,6 +96,25 @@ class SyncOutboxTest {
         assertTrue(edit.zipWithNext().all { (a, b) -> a.seq < b.seq && a.hlc <= b.hlc })
     }
 
+    /** A standalone install never sees the series: bare numbers, nothing recorded; the GST 16-character cap holds with a series. */
+    @Test
+    fun standaloneNumberingIsUnchangedAndSeriesFitsGstLength(): Unit = runBlocking {
+        val (db, repos, outbox) = open()
+        repos.firms.saveFirm(testFirm())
+        repos.firms.saveSettings(testSettings(defaultGodownId = null, invoicePrefix = "ABCDEFGHIJK"))
+        repos.firms.saveFinancialYear(testFinancialYear())
+        repos.parties.saveParty(testParty())
+        repos.vouchers.saveDraft(sale("sale-1"))
+        assertEquals("ABCDEFGHIJK-0001", repos.vouchers.post("sale-1", POSTED_AT).number, "16 characters: the most GST allows")
+        assertEquals(0L, outbox.size(), "standalone records nothing")
+        assertEquals(null, db.syncDao().state()?.series)
+
+        // With a series the same prefix would give ABCDEFGHIJK-A-0001 (18): pairing is refused with a clear reason.
+        val refused = assertFailsWith<IllegalArgumentException> { outbox.enable("A") }
+        assertTrue("16" in refused.message!!, refused.message)
+        assertFalse(outbox.isEnabled())
+    }
+
     @Test
     fun invoiceLifecycleAndPaymentRecordDomainActions(): Unit = runBlocking {
         val (_, repos, outbox) = open()

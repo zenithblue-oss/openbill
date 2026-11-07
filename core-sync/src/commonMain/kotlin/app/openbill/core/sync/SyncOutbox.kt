@@ -1,7 +1,9 @@
 package app.openbill.core.sync
 
+import androidx.room.useReaderConnection
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
+import app.openbill.core.domain.model.VoucherNumbering
 
 /**
  * This device's unsent operations (docs/10-server.md section 6.2). The sync triggers fill it in
@@ -23,6 +25,16 @@ class SyncOutbox(private val database: OpenBillDatabase) {
      */
     suspend fun enable(series: String, cursor: Long = 0, epoch: String? = null) {
         require(SERIES.matches(series)) { "A number series is 1-3 capital letters or digits, got '$series'" }
+        // GST: numbers stay within 16 characters with the series added (other document prefixes are 3 letters at most).
+        val prefixes = database.useReaderConnection { c ->
+            c.usePrepared("SELECT invoicePrefix FROM firm_settings") { s -> buildList { while (s.step()) add(s.getText(0)) } }
+        }
+        prefixes.forEach { prefix ->
+            val sample = VoucherNumbering.seriesPrefix(prefix, series)
+            require(runCatching { VoucherNumbering.format(sample, 1, 4) }.isSuccess) {
+                "With series $series invoice numbers would start ${sample}-0001, over GST's ${VoucherNumbering.MAX_LENGTH} characters: use a shorter series or invoice prefix"
+            }
+        }
         DatabaseTransactionRunner(database).write("sync.enable") { dao.pair(series, cursor, epoch) }
     }
 

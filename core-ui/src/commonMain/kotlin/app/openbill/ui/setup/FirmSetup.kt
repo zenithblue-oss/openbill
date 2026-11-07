@@ -4,6 +4,7 @@ import app.openbill.core.domain.model.FinancialYear
 import app.openbill.core.domain.model.Firm
 import app.openbill.core.domain.model.FirmSettings
 import app.openbill.core.domain.model.UnitOfMeasure
+import app.openbill.core.domain.model.VoucherNumbering
 import app.openbill.ui.AppContainer
 import app.openbill.ui.forms.Validation
 import app.openbill.ui.pdf.ImageKind
@@ -103,7 +104,8 @@ object FirmSetupRules {
             ?: Validation.gstinStateMismatch(form.gstin, form.stateCode)?.let { put("gstin", it) }
         Validation.phoneError(form.phone)?.let { put("phone", it) }
         if (form.invoicePrefix.isBlank()) put("prefix", "Prefix is required")
-        else if (form.invoicePrefix.trim().length > 12) put("prefix", "Keep the prefix under 12 characters")
+        // GST caps invoice numbers at 16 characters: the prefix plus a 4-digit number must fit.
+        else runCatching { VoucherNumbering.format(form.invoicePrefix.trim(), 1, 4) }.exceptionOrNull()?.let { put("prefix", "Prefix too long: ${it.message}") }
     }
 
     /** Default units as (name, symbol, decimal places). */

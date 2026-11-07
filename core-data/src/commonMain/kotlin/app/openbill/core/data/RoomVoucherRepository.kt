@@ -708,19 +708,16 @@ class RoomVoucherRepository(
         val documentType = type.documentTypeCode()
         val atMillis = at.toEpochMillis()
         val existing = sequences.get(voucher.firmId, documentType, voucher.financialYearId)
-        // A synced device numbers in its own series (docs/10-server.md 6.5): "INV" becomes "INV-B", "INV/" becomes "INV/B".
-        val series = database.syncDao().state()?.series
-        val base = prefixFor(type, settings.findByFirm(voucher.firmId)?.invoicePrefix).trimEnd()
+        // A synced device numbers in its own series (docs/10-server.md 6.5); standalone keeps the bare prefix.
         val sequence = existing ?: VoucherNumberSequenceEntity(
             firmId = voucher.firmId,
             documentType = documentType,
             financialYearId = voucher.financialYearId,
             nextNumber = 1L,
-            prefix = when {
-                series == null -> base
-                base.lastOrNull()?.isLetterOrDigit() == true -> "$base-$series"
-                else -> base + series
-            },
+            prefix = VoucherNumbering.seriesPrefix(
+                prefixFor(type, settings.findByFirm(voucher.firmId)?.invoicePrefix),
+                database.syncDao().state()?.series,
+            ),
             padding = DEFAULT_PADDING,
             createdAt = atMillis,
             updatedAt = atMillis,
