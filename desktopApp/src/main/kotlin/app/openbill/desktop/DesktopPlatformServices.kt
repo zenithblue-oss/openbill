@@ -330,6 +330,7 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
     override suspend fun attachments(ownerId: String): List<String> = withContext(Dispatchers.IO) { attachmentStore.list(ownerId) }
     override suspend fun deleteAttachment(ownerId: String, name: String) = withContext(Dispatchers.IO) { attachmentStore.delete(ownerId, name) }
     override suspend fun deleteAllAttachments(ownerId: String) = withContext(Dispatchers.IO) { attachmentStore.deleteAll(ownerId) }
+    override suspend fun attachmentBytes(ownerId: String, name: String): ByteArray? = withContext(Dispatchers.IO) { runCatching { attachmentStore.file(ownerId, name).readBytes() }.getOrNull() }
 
     override suspend fun addAttachment(ownerId: String): String? = withContext(Dispatchers.IO) {
         val file = chooseOpenFile("Attach an image or PDF", "png", "jpg", "jpeg", "webp", "pdf") ?: return@withContext null

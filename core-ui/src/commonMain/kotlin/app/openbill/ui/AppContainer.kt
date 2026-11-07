@@ -144,6 +144,7 @@ interface PlatformServices {
     suspend fun attachments(ownerId: String): List<String> = emptyList()
     suspend fun addAttachment(ownerId: String): String? = null
     suspend fun openAttachment(ownerId: String, name: String): String? = null
+    suspend fun attachmentBytes(ownerId: String, name: String): ByteArray? = null
     suspend fun deleteAttachment(ownerId: String, name: String) {}
     suspend fun deleteAllAttachments(ownerId: String) {}
 

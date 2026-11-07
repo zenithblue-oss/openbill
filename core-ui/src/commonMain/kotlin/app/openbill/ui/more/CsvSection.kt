@@ -57,6 +57,29 @@ private suspend fun postOpenings(container: AppContainer, firmId: String, items:
     )
 }
 
+private const val MAX_EXPORT = 150L * 1024 * 1024
+
+/** A record that can hold attachments (a voucher or a party), as the attachment export lists it. */
+internal data class AttachmentOwner(val id: String, val kind: String, val number: String?, val date: String?, val status: String?, val party: String?)
+
+/**
+ * ZIP entries for the attachment export: one folder per owner ("kind_number_id") holding its
+ * files, plus index.csv listing each file with its record. [files] maps owner id to (name, bytes).
+ */
+internal fun attachmentExport(owners: List<AttachmentOwner>, files: Map<String, List<Pair<String, ByteArray>>>): List<Pair<String, ByteArray>> {
+    val safe = { s: String -> s.replace(Regex("[^A-Za-z0-9._-]"), "_") }
+    val rows = mutableListOf(app.openbill.core.domain.csv.Csv.row(listOf("file", "record", "number", "date", "status", "party", "bytes")))
+    val entries = owners.flatMap { o ->
+        val folder = listOfNotNull(o.kind, o.number, o.id).joinToString("_") { safe(it) }
+        files[o.id].orEmpty().map { (name, bytes) ->
+            val path = "$folder/$name"
+            rows += app.openbill.core.domain.csv.Csv.row(listOf(path, o.kind, o.number, o.date, o.status, o.party, bytes.size.toString()))
+            path to bytes
+        }
+    }
+    return listOf("index.csv" to (rows.joinToString("\r\n") + "\r\n").encodeToByteArray()) + entries
+}
+
 /** CSV import of parties and items (dry-run preview first, all rows or none), CSV export, and the recycle bin. */
 @Composable
 fun CsvSection(container: AppContainer, session: Session, listColors: ListItemColors) {
@@ -146,6 +169,36 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
                     container.platform.saveTextFile("items.csv", MasterCsv.itemsCsv(items) { units[it] }),
                     container.platform.saveTextFile("invoices.csv", MasterCsv.invoicesCsv(invoices) { names[it] }),
                 ).filterNotNull().joinToString("; ").ifEmpty { null }
+            }
+        },
+    )
+    if (canExport && container.platform.supportsAttachments) ListItem(
+        headlineContent = { Text("Export attachments") },
+        supportingContent = { Text("Every file attached to this business's documents and parties as one ZIP, with an index.csv of what each file belongs to") },
+        leadingContent = { Icon(Icons.Outlined.Share, contentDescription = null) },
+        colors = listColors,
+        modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
+            run {
+                progress = Progress("Collecting attachments")
+                val parties = repos.parties.observeParties(firmId).first()
+                val names = parties.associate { it.id to it.name }
+                val owners = repos.vouchers.observeVouchers(firmId, LocalDate(2000, 1, 1), LocalDate(2099, 12, 31)).first()
+                    .sortedWith(compareBy({ it.date }, { it.number ?: "" }))
+                    .map { AttachmentOwner(it.id, docLabels(it.type).title, it.number ?: "draft", it.date.toString(), it.status.name.lowercase(), it.partyId?.let(names::get)) } +
+                    parties.sortedBy { it.name.lowercase() }.map { AttachmentOwner(it.id, "Party", null, null, null, it.name) }
+                // ponytail: the ZIP is built in memory, so the export stops at MAX_EXPORT bytes; stream to the file if that is too small.
+                var total = 0L
+                val files = owners.associate { o ->
+                    o.id to container.platform.attachments(o.id).mapNotNull { name ->
+                        container.platform.attachmentBytes(o.id, name)?.also {
+                            total += it.size
+                            if (total > MAX_EXPORT) error("Attachments are over ${MAX_EXPORT / (1024 * 1024)} MB, too much for one ZIP; a backup carries them all")
+                        }?.let { name to it }
+                    }
+                }.filterValues { it.isNotEmpty() }
+                if (files.isEmpty()) return@run "No attachments in ${session.firm.name}"
+                val zip = withContext(Dispatchers.Default) { app.openbill.core.domain.report.ZipWriter.write(attachmentExport(owners, files)) }
+                container.platform.saveFile("attachments-${container.today()}.zip", zip)
             }
         },
     )
