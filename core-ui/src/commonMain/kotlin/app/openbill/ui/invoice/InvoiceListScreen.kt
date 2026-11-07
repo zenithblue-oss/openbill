@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -133,6 +135,8 @@ fun InvoiceListScreen(
     onPos: (() -> Unit)? = null,
     /** Opens the notifications inbox (dashboard only). */
     onInbox: (() -> Unit)? = null,
+    /** Opens a getting-started step (dashboard only). */
+    onGuide: ((app.openbill.ui.nav.Route) -> Unit)? = null,
 ) {
     val types = when {
         docType != null -> setOf(docType)
@@ -205,17 +209,24 @@ fun InvoiceListScreen(
                 return@CenteredContent
             }
             if (total == 0) {
-                EmptyState(
-                    Icons.Outlined.Create,
-                    "No invoices yet",
-                    if (anyParty.isEmpty()) {
-                        "Add the customer you bill first, then create your first GST invoice."
-                    } else {
-                        "Create your first GST invoice. Pick items from your list or type a custom line."
-                    },
-                    Modifier.align(Alignment.Center),
+                // The checklist scrolls above the empty state so neither covers the other on a phone.
+                androidx.compose.foundation.layout.Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    if (anyParty.isEmpty() && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.EDIT_PARTIES)) OutlinedButton(onClick = onAddParty) { Text("Add a party") }
+                    if (onGuide != null) app.openbill.ui.onboarding.GuidedSetupCard(container, session, onGuide)
+                    EmptyState(
+                        Icons.Outlined.Create,
+                        "No invoices yet",
+                        if (anyParty.isEmpty()) {
+                            "Add the customer you bill first, then create your first GST invoice."
+                        } else {
+                            "Create your first GST invoice. Pick items from your list or type a custom line."
+                        },
+                        Modifier.fillMaxWidth(),
+                    ) {
+                        if (anyParty.isEmpty() && app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.EDIT_PARTIES)) OutlinedButton(onClick = onAddParty) { Text("Add a party") }
+                    }
                 }
                 return@CenteredContent
             }
@@ -223,6 +234,8 @@ fun InvoiceListScreen(
             // Header rows scroll with the list so the list stays usable in landscape and at large font sizes.
             LazyColumn(state = listState, contentPadding = PaddingValues(bottom = Spacing.fabClearance)) {
                 if (!secondary) item(key = "summary") { SummaryCard(container, session) }
+                // Below the always-present summary: it loads after the list, and above it the list would stay scrolled past it.
+                if (onGuide != null) item(key = "guide") { app.openbill.ui.onboarding.GuidedSetupCard(container, session, onGuide) }
                 if (onMoney != null) item(key = "money") { app.openbill.ui.money.MoneyDashboardCard(container, session, onMoney) }
                 if (onStock != null) item(key = "stock") { app.openbill.ui.inventory.StockDashboardCard(container, session, onStock) }
                 item(key = "search") { AppSearchBar(query, { query = it; limit.intValue = PAGE_SIZE }, "Search number or party") }

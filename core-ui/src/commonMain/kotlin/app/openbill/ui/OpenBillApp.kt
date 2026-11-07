@@ -562,6 +562,7 @@ private fun RouteContent(
                 onMoney = { c -> if (c == MoneyCard.CASH_BANK) nav.selectTab(Tab.MONEY) else nav.push(moneyCardRoute(c)) },
                 onPos = { nav.push(Route.Pos()) },
                 onInbox = { nav.push(Route.Inbox) },
+                onGuide = { r -> if (r is Route.Home) nav.selectTab(r.tab) else nav.push(r) },
             )
             Tab.MONEY -> MoneyScreen(
                 container, s,

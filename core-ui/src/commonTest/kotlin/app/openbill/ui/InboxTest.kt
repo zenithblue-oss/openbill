@@ -25,6 +25,16 @@ class InboxTest {
     }
 
     @Test
+    fun setupChecklist() {
+        val at = Instant.fromEpochMilliseconds(0)
+        val bare = app.openbill.core.domain.model.Firm(id = "f", name = "F", stateCode = "27", addressLine1 = "1 Road", city = "Pune", createdAt = at, updatedAt = at)
+        val steps = app.openbill.ui.onboarding.setupSteps(bare, hasItem = true, hasParty = false, hasInvoice = false, backedUp = false)
+        assertEquals(listOf(false, true, false, false, false), steps.map { it.done })
+        assertTrue(app.openbill.ui.onboarding.setupSteps(bare.copy(phone = "98"), true, true, true, true).all { it.done })
+        assertEquals(Route.BusinessEdit, steps[0].route)
+    }
+
+    @Test
     fun eventsReadStateAndPreferences() {
         val inbox = InboxController(InMemorySettingsStore())
         val at = Instant.fromEpochMilliseconds(1_790_000_000_000L)
