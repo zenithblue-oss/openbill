@@ -54,6 +54,33 @@ class OpenBillBackupTest {
     }
 
     @Test
+    fun restoredDatabaseDropsTheSourceDeviceSyncIdentityAndUnsentOps() {
+        val a = location(File(root, "a"), "Alpha", version = 19)
+        BundledSQLiteDriver().open(a.databaseFile.path).apply {
+            execSQL("CREATE TABLE sync_state (id INTEGER PRIMARY KEY, deviceId TEXT NOT NULL, enabled INTEGER NOT NULL)")
+            execSQL("CREATE TABLE sync_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT)")
+            execSQL("INSERT INTO sync_state VALUES (1, 'device-a', 1)")
+            execSQL("INSERT INTO sync_outbox (payload) VALUES ('{}')")
+            close()
+        }
+        val zip = File(root, "out/a.openbill.zip")
+        OpenBillBackup.create(a, zip, "1.0")
+        val b = location(File(root, "b"), "Beta", version = 19)
+        OpenBillBackup.restore(zip, b, 19)
+        assertEquals("Alpha", firmName(b.databaseFile))
+        BundledSQLiteDriver().open(b.databaseFile.path).let { c ->
+            assertEquals(0L, c.longQuery("SELECT COUNT(*) FROM sync_state"))
+            assertEquals(0L, c.longQuery("SELECT COUNT(*) FROM sync_outbox"))
+            c.close()
+        }
+        // Pre-sync backups have no sync tables and restore as before.
+        val old = File(root, "out/old.openbill.zip")
+        OpenBillBackup.create(location(File(root, "c"), "Gamma"), old, "1.0")
+        OpenBillBackup.restore(old, b, 19)
+        assertEquals("Gamma", firmName(b.databaseFile))
+    }
+
+    @Test
     fun encryptedArchiveNeedsItsPasswordToVerifyAndRestore() {
         val a = location(File(root, "a"), "Alpha")
         val zip = File(root, "out/a.openbill.zip")

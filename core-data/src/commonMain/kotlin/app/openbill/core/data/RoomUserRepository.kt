@@ -1,5 +1,6 @@
 package app.openbill.core.data
 
+import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.database.UserEntity
 import app.openbill.core.domain.model.Access
@@ -11,7 +12,10 @@ import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class RoomUserRepository(private val database: OpenBillDatabase) : UserRepository {
+class RoomUserRepository(
+    private val database: OpenBillDatabase,
+    private val transactions: DatabaseTransactionRunner = DatabaseTransactionRunner(database),
+) : UserRepository {
     /** The owner row is seeded on open; listed even before that so callers can rely on it. */
     override fun observeUsers(): Flow<List<AppUser>> = database.userDao().observeAll().map { rows ->
         val users = rows.map { it.toDomain() }
@@ -22,9 +26,11 @@ class RoomUserRepository(private val database: OpenBillDatabase) : UserRepositor
         Access.require(Permission.MANAGE_USERS)
         user.requireValid()
         val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-        database.userDao().upsert(
-            UserEntity(user.id, user.name.trim(), user.role.name.lowercase(), user.active, user.pinHash, user.createdAt.toEpochMilliseconds(), now),
-        )
+        transactions.write("user.save") {
+            database.userDao().upsert(
+                UserEntity(user.id, user.name.trim(), user.role.name.lowercase(), user.active, user.pinHash, user.createdAt.toEpochMilliseconds(), now),
+            )
+        }
     }
 }
 

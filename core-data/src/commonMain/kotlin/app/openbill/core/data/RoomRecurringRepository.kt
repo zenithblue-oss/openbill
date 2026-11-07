@@ -25,7 +25,7 @@ class RoomRecurringRepository(
     override suspend fun findSchedule(id: String): RecurringSchedule? = dao.findById(id)?.toDomain()
 
     /** Counters never move back, so saving a stale copy (pause, error note) cannot re-bill a claimed period. */
-    override suspend fun saveSchedule(schedule: RecurringSchedule) = transactions.write {
+    override suspend fun saveSchedule(schedule: RecurringSchedule) = transactions.write("recurring.save") {
         val stored = dao.findById(schedule.id)
         val merged = if (stored == null) schedule else schedule.copy(
             nextIndex = maxOf(schedule.nextIndex, stored.nextIndex),
@@ -37,10 +37,10 @@ class RoomRecurringRepository(
     }
 
     override suspend fun deleteSchedule(id: String) {
-        transactions.write { dao.deleteById(id) }
+        transactions.write("recurring.delete") { dao.deleteById(id) }
     }
 
-    override suspend fun claimOccurrence(scheduleId: String, index: Int, draft: Voucher?): Boolean = transactions.write {
+    override suspend fun claimOccurrence(scheduleId: String, index: Int, draft: Voucher?): Boolean = transactions.write("recurring.claim") {
         app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)
         if (draft != null) require(draft.status == VoucherStatus.DRAFT && draft.number == null) { "Recurring invoices start as drafts" }
         val claimed = dao.advance(scheduleId, index, if (draft != null) 1 else 0, draft?.createdAt?.toEpochMillis() ?: 0L, draft?.id) == 1

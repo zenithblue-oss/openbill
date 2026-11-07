@@ -23,7 +23,7 @@ import app.openbill.core.database.dao.StockMovementDao
 import app.openbill.core.database.dao.VoucherDao
 import app.openbill.core.database.dao.VoucherNumberSequenceDao
 
-const val OPENBILL_DATABASE_VERSION = 18
+const val OPENBILL_DATABASE_VERSION = 19
 
 @Database(
     entities = [
@@ -53,6 +53,8 @@ const val OPENBILL_DATABASE_VERSION = 18
         RecurringScheduleEntity::class,
         UserEntity::class,
         PartyItemPriceEntity::class,
+        SyncStateEntity::class,
+        SyncOutboxEntity::class,
     ],
     version = OPENBILL_DATABASE_VERSION,
     exportSchema = true,
@@ -93,12 +95,20 @@ abstract class OpenBillDatabase : RoomDatabase() {
     abstract fun recurringDao(): RecurringDao
 
     abstract fun userDao(): app.openbill.core.database.dao.UserDao
+
+    abstract fun syncDao(): app.openbill.core.database.dao.SyncDao
 }
 
 private object AuditTriggerCallback : RoomDatabase.Callback() {
     override fun onOpen(connection: SQLiteConnection) {
         AuditTriggers.install(connection)
         connection.execSQL(Users.SEED_OWNER)
+        // A new install, or a restored backup (whose sync identity was wiped), gets a fresh device id.
+        connection.prepare("INSERT OR IGNORE INTO sync_state (id, deviceId, enabled, hlc) VALUES (1, ?, 0, 0)").use {
+            it.bindText(1, app.openbill.core.model.Ulid.create(kotlin.time.Clock.System.now().toEpochMilliseconds()).toString())
+            it.step()
+        }
+        SyncTriggers.install(connection)
     }
 }
 

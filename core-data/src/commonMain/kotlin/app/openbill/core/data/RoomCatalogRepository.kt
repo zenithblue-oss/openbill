@@ -46,12 +46,12 @@ class RoomCatalogRepository(
 
     override suspend fun saveItem(item: Item) {
         Access.require(Permission.MANAGE_MASTERS)
-        transactions.write { write(item, bulk = false) }
+        transactions.write("item.save") { write(item, bulk = false) }
     }
 
     override suspend fun saveItems(items: List<Item>) {
         Access.require(Permission.MANAGE_MASTERS)
-        transactions.write { items.forEach { write(it, bulk = true) } }
+        transactions.write("item.saveAll") { items.forEach { write(it, bulk = true) } }
     }
 
     private suspend fun write(item: Item, bulk: Boolean) {
@@ -90,7 +90,7 @@ class RoomCatalogRepository(
 
     override suspend fun archiveItem(id: String, at: Instant) {
         Access.require(Permission.CANCEL_DELETE)
-        transactions.write {
+        transactions.write("item.archive") {
             val firmId = items.findById(id)?.firmId
             items.softDelete(
                 id = id,
@@ -118,7 +118,7 @@ class RoomCatalogRepository(
 
     override suspend fun saveCategory(category: ItemCategory) {
         Access.require(Permission.MANAGE_MASTERS)
-        transactions.write {
+        transactions.write("category.save") {
             val existing = catalog.findCategoryById(category.id)
             val entity = category.toEntity(existing)
             if (existing == null) {
@@ -131,7 +131,7 @@ class RoomCatalogRepository(
 
     override suspend fun archiveCategory(id: String, at: Instant) {
         Access.require(Permission.CANCEL_DELETE)
-        transactions.write {
+        transactions.write("category.archive") {
             catalog.softDeleteCategory(
                 id = id,
                 deletedAt = at.toEpochMillis(),
@@ -147,7 +147,7 @@ class RoomCatalogRepository(
         catalog.findUnitById(id)?.toDomain()
 
     override suspend fun saveUnit(unit: UnitOfMeasure) {
-        transactions.write {
+        transactions.write("unit.save") {
             val existing = catalog.findUnitById(unit.id)
             val entity = unit.toEntity(existing)
             if (existing == null) {
@@ -166,7 +166,7 @@ class RoomCatalogRepository(
 
     override suspend fun saveGodown(godown: Godown) {
         Access.require(Permission.MANAGE_MASTERS)
-        transactions.write {
+        transactions.write("godown.save") {
             val existing = catalog.findGodownById(godown.id)
             val entity = godown.toEntity(existing)
             if (existing == null) {

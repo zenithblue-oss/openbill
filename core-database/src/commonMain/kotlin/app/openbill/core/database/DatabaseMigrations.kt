@@ -286,7 +286,40 @@ object DatabaseMigrations {
         }
     }
 
-    val all: List<Migration> = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+    /**
+     * Sync outbox and device identity (docs/10-server.md section 6.2). Existing rows keep their
+     * ULID ids and get no backfilled ops: a device that pairs later seeds the server with a
+     * snapshot. The device row is seeded on open, like a new install.
+     */
+    private val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL(
+                "CREATE TABLE IF NOT EXISTS `sync_state` (`id` INTEGER NOT NULL, `deviceId` TEXT NOT NULL, `enabled` INTEGER NOT NULL, " +
+                    "`hlc` INTEGER NOT NULL, `txId` TEXT, `txAction` TEXT, `txUser` TEXT, PRIMARY KEY(`id`))",
+            )
+            connection.execSQL(
+                "CREATE TABLE IF NOT EXISTS `sync_outbox` (`seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `opId` TEXT NOT NULL, `firmId` TEXT, " +
+                    "`deviceId` TEXT NOT NULL, `userId` TEXT, `hlc` INTEGER NOT NULL, `groupId` TEXT, `entity` TEXT NOT NULL, `entityId` TEXT NOT NULL, " +
+                    "`kind` TEXT NOT NULL, `action` TEXT, `baseRevision` INTEGER, `payload` TEXT NOT NULL, `schemaVersion` INTEGER NOT NULL)",
+            )
+            connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_outbox_opId` ON `sync_outbox` (`opId`)")
+            connection.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_outbox_firmId` ON `sync_outbox` (`firmId`)")
+        }
+    }
+
+    /** Each step first drops the sync triggers (recreated on open), so a step may drop or rename columns. */
+    val all: List<Migration> = listOf(
+        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
+        MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
+        MIGRATION_18_19,
+    ).map { step ->
+        object : Migration(step.startVersion, step.endVersion) {
+            override fun migrate(connection: SQLiteConnection) {
+                SyncTriggers.drop(connection)
+                step.migrate(connection)
+            }
+        }
+    }
 
     fun migrationsFor(
         startVersion: Int,

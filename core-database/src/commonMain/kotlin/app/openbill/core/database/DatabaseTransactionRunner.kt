@@ -20,13 +20,16 @@ import kotlinx.coroutines.withContext
  */
 class DatabaseTransactionRunner(
     private val database: OpenBillDatabase,
+    /** Signed-in user stamped on the write's sync ops. */
+    private val actor: () -> String? = { null },
 ) {
     private val writeMutex = Mutex()
 
-    suspend fun <T> write(block: suspend () -> T): T = writeWith { block() }
+    /** [action] names the domain operation (e.g. `voucher.post`) on the sync ops this write records. */
+    suspend fun <T> write(action: String? = null, block: suspend () -> T): T = writeWith(action) { block() }
 
     /** [write] that hands [block] the transaction's connection, for raw SQL such as DDL. */
-    suspend fun <T> writeWith(block: suspend (Transactor) -> T): T {
+    suspend fun <T> writeWith(action: String? = null, block: suspend (Transactor) -> T): T {
         check(currentCoroutineContext()[TransactionMarker.Key] == null) {
             "Nested DatabaseTransactionRunner.write calls are not allowed"
         }
@@ -37,7 +40,11 @@ class DatabaseTransactionRunner(
             withContext(TransactionMarker) {
                 database.useWriterConnection { transactor ->
                     transactor.withTransaction(Transactor.SQLiteTransactionType.IMMEDIATE) {
-                        block(transactor)
+                        val sync = database.syncDao()
+                        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                        val group = app.openbill.core.model.Ulid.create(now).toString()
+                        sync.begin(group, action, actor(), now)
+                        block(transactor).also { sync.end(group) }
                     }
                 }
             }

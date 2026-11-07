@@ -37,7 +37,7 @@ class RoomLedgerRepository(
     override suspend fun ensureSystemAccounts(
         firmId: String,
         at: Instant,
-    ): FirmLedgerAccounts = transactions.write {
+    ): FirmLedgerAccounts = transactions.write("account.ensureSystem") {
         ensureSystemAccountsLocked(firmId, at)
     }
 
@@ -96,7 +96,7 @@ class RoomLedgerRepository(
 
     override suspend fun saveAccount(account: Account) {
         app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
-        transactions.write {
+        transactions.write("account.save") {
             val existing = accounts.findAccountById(account.id)
             val entity = account.toEntity(existing)
             if (existing == null) {
@@ -108,7 +108,7 @@ class RoomLedgerRepository(
     }
 
     override suspend fun createSystemAccount(account: Account) {
-        transactions.write {
+        transactions.write("account.createSystem") {
             require(accounts.findAccountById(account.id) == null) { "Account ${account.id} already exists" }
             accounts.insertAccount(account.toEntity(null))
         }
@@ -235,8 +235,10 @@ class RoomLedgerRepository(
 
     override suspend fun setCleared(entryId: String, clearedOn: LocalDate?) {
         app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
-        val changed = accounts.setCleared(entryId, clearedOn?.toString())
-        require(changed == 1) { "Unknown journal entry: $entryId" }
+        transactions.write("journal.setCleared") {
+            val changed = accounts.setCleared(entryId, clearedOn?.toString())
+            require(changed == 1) { "Unknown journal entry: $entryId" }
+        }
     }
 
     private fun signedOpening(party: app.openbill.core.database.PartyEntity): Money {

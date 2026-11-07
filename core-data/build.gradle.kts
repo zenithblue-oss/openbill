@@ -32,6 +32,7 @@ kotlin {
         val desktopTest by getting {
             dependencies {
                 implementation(libs.androidx.sqlite.bundled)
+                implementation(project(":core-sync"))
             }
         }
     }

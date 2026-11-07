@@ -48,7 +48,8 @@ class DatabaseSchemaTest {
 
     @Test
     fun exportedSchemaHasEveryEntityTable() {
-        assertEquals(18, OPENBILL_DATABASE_VERSION)
+        assertEquals(19, OPENBILL_DATABASE_VERSION)
+        assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/19.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/18.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/17.json").exists())
         assertTrue(Path.of("schemas/app.openbill.core.database.OpenBillDatabase/16.json").exists())
@@ -327,7 +328,7 @@ class DatabaseSchemaTest {
     @Test
     fun migrationChainHasNoGaps() {
         val migrations = DatabaseMigrations.migrationsFor(1)
-        assertEquals(17, migrations.size)
+        assertEquals(18, migrations.size)
         assertEquals(1, migrations[0].startVersion)
         assertEquals(2, migrations[0].endVersion)
         assertEquals(2, migrations[1].startVersion)
@@ -349,7 +350,40 @@ class DatabaseSchemaTest {
         assertEquals(16, migrations[14].endVersion)
         assertEquals(17, migrations[15].endVersion)
         assertEquals(18, migrations[16].endVersion)
-        assertTrue(DatabaseMigrations.migrationsFor(18).isEmpty())
+        assertEquals(19, migrations[17].endVersion)
+        assertTrue(DatabaseMigrations.migrationsFor(19).isEmpty())
+    }
+
+    @Test
+    fun schemaV18MigratesToV19KeepingRowsAndAddingADeviceButNoOps() = runBlocking {
+        helper.createDatabase(18).use { connection ->
+            connection.execSQL(
+                "INSERT INTO firms (id, name, stateCode, addressLine1, city, createdAt, updatedAt, revision) VALUES ('firm-1', 'Old Firm', '27', 'a', 'Pune', 1, 1, 1)",
+            )
+            connection.execSQL(
+                "INSERT INTO parties (id, firmId, name, type, openingBalance, openingBalanceType, createdAt, updatedAt, revision) " +
+                    "VALUES ('01HZZZPARTY0000000000000000', 'firm-1', 'Old Party', 'customer', 0, 'debit', 1, 1, 1)",
+            )
+        }
+        helper.runMigrationsAndValidate(19, DatabaseMigrations.migrationsFor(18)).close()
+        val db = openBillDatabase(Room.databaseBuilder<OpenBillDatabase>(databasePath.toString()))
+        val deviceId = try {
+            assertEquals("Old Firm", db.firmDao().findById("firm-1")?.name)
+            assertEquals("01HZZZPARTY0000000000000000", db.partyDao().findById("01HZZZPARTY0000000000000000")?.id)
+            val state = db.syncDao().state()!!
+            assertEquals(26, state.deviceId.length, "a ULID device id is seeded on first open")
+            assertEquals(false, state.enabled)
+            assertEquals(0L, db.syncDao().pendingCount(), "existing rows are not backfilled as ops")
+            state.deviceId
+        } finally {
+            db.close()
+        }
+        val again = openBillDatabase(Room.databaseBuilder<OpenBillDatabase>(databasePath.toString()))
+        try {
+            assertEquals(deviceId, again.syncDao().state()!!.deviceId, "reopening keeps the device identity")
+        } finally {
+            again.close()
+        }
     }
 
     @Test

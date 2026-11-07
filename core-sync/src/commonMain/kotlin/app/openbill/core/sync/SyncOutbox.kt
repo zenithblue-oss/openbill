@@ -1,0 +1,36 @@
+package app.openbill.core.sync
+
+import app.openbill.core.database.DatabaseTransactionRunner
+import app.openbill.core.database.OpenBillDatabase
+
+/**
+ * This device's unsent operations (docs/10-server.md section 6.2). The sync triggers fill it in
+ * the same transaction as each change, but only while enabled: a standalone install records
+ * nothing, so the outbox cannot grow for users who never pair. Pairing (S1) enables it in the same
+ * transaction as the snapshot it uploads; history before that travels in the snapshot.
+ */
+class SyncOutbox(private val database: OpenBillDatabase) {
+    private val dao = database.syncDao()
+
+    suspend fun deviceId(): String = checkNotNull(dao.state()) { "Sync state is seeded when the database opens" }.deviceId
+
+    suspend fun isEnabled(): Boolean = dao.state()?.enabled == true
+
+    suspend fun enable() = DatabaseTransactionRunner(database).write("sync.enable") { dao.setEnabled(true) }
+
+    /** Unpairing: stop recording and drop unsent ops; re-pairing starts from a fresh snapshot (section 6.6). */
+    suspend fun disable() = DatabaseTransactionRunner(database).write("sync.disable") {
+        dao.setEnabled(false)
+        dao.clear()
+    }
+
+    /** Oldest first, in authoring order: the order they must be pushed in. */
+    suspend fun pending(limit: Int = 500): List<SyncOperation> = dao.pending(limit).map(SyncOperation::from)
+
+    suspend fun size(): Long = dao.pendingCount()
+
+    /** Drops ops up to and including [seq] once the server has accepted them. */
+    suspend fun acknowledge(seq: Long) {
+        dao.acknowledge(seq)
+    }
+}

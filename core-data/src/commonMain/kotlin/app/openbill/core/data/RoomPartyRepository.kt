@@ -45,7 +45,7 @@ class RoomPartyRepository(
 
     override suspend fun saveParty(party: Party) {
         Access.require(Permission.EDIT_PARTIES)
-        transactions.write {
+        transactions.write("party.save") {
             val existing = parties.findById(party.id)
             // Credit terms are a control, not contact details: only roles that manage masters set them.
             val creditChanged = party.creditLimit?.paise != existing?.creditLimit || party.creditDays != existing?.creditDays
@@ -80,7 +80,7 @@ class RoomPartyRepository(
 
     override suspend fun archiveParty(id: String, at: Instant) {
         Access.require(Permission.CANCEL_DELETE)
-        transactions.write {
+        transactions.write("party.archive") {
             val firmId = parties.findById(id)?.firmId
             parties.softDelete(
                 id = id,
@@ -101,7 +101,7 @@ class RoomPartyRepository(
 
     override suspend fun savePrice(firmId: String, price: PartyItemPrice) {
         Access.require(Permission.MANAGE_MASTERS)
-        transactions.write {
+        transactions.write("partyPrice.save") {
             val party = parties.findById(price.partyId)
             require(party != null && party.firmId == firmId) { "Unknown party" }
             val item = database.itemDao().findById(price.itemId)
@@ -124,7 +124,7 @@ class RoomPartyRepository(
 
     override suspend fun deletePrice(partyId: String, itemId: String) {
         Access.require(Permission.MANAGE_MASTERS)
-        transactions.write {
+        transactions.write("partyPrice.delete") {
             val party = parties.findById(partyId) ?: return@write
             if (parties.deletePrice(partyId, itemId) > 0) {
                 database.audit(party.firmId, "party", partyId, "party.price_removed", AuditDetails.json("itemId" to itemId))

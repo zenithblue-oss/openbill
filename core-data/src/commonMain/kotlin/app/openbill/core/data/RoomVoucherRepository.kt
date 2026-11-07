@@ -138,7 +138,7 @@ class RoomVoucherRepository(
         if (voucher.type == VoucherType.STOCK_ADJUSTMENT || voucher.type == VoucherType.STOCK_TRANSFER) Access.require(Permission.MANAGE_MASTERS)
         require(voucher.status == VoucherStatus.DRAFT) { "Only drafts can be saved here" }
         require(voucher.number == null) { "Draft voucher must not have a number" }
-        transactions.write {
+        transactions.write("voucher.saveDraft") {
             requireListPrices(voucher)
             val existing = vouchers.findById(voucher.id)
             if (existing != null) {
@@ -214,7 +214,7 @@ class RoomVoucherRepository(
 
     override suspend fun deleteDraft(id: String) {
         Access.require(Permission.CREATE_VOUCHERS)
-        transactions.write {
+        transactions.write("voucher.deleteDraft") {
             val entity = vouchers.findById(id)
                 ?: throw IllegalArgumentException("Unknown voucher: $id")
             require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {
@@ -235,7 +235,7 @@ class RoomVoucherRepository(
         }
     }
 
-    override suspend fun post(voucherId: String, at: Instant): Voucher = transactions.write {
+    override suspend fun post(voucherId: String, at: Instant): Voucher = transactions.write("voucher.post") {
         Access.require(Permission.CREATE_VOUCHERS)
         val entity = vouchers.findById(voucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
@@ -304,7 +304,7 @@ class RoomVoucherRepository(
         if (code != order.fulfilment) vouchers.setFulfilment(order.id, code)
     }
 
-    override suspend fun shortCloseOrder(orderId: String, note: String?, at: Instant): Voucher = transactions.write {
+    override suspend fun shortCloseOrder(orderId: String, note: String?, at: Instant): Voucher = transactions.write("order.shortClose") {
         Access.require(Permission.CANCEL_DELETE)
         val entity = vouchers.findById(orderId) ?: throw IllegalArgumentException("Unknown voucher: $orderId")
         val order = entity.toDomain(vouchers.linesFor(orderId), emptyList())
@@ -331,7 +331,7 @@ class RoomVoucherRepository(
         voucherId: String,
         reason: String,
         at: Instant,
-    ): Voucher = transactions.write {
+    ): Voucher = transactions.write("voucher.cancel") {
         Access.require(Permission.CANCEL_DELETE)
         val entity = vouchers.findById(voucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
@@ -379,7 +379,7 @@ class RoomVoucherRepository(
         cancellationReason: String,
         restoreReason: String,
         at: Instant,
-    ): Voucher = transactions.write {
+    ): Voucher = transactions.write("voucher.restore") {
         Access.require(Permission.CANCEL_DELETE)
         val entity = vouchers.findById(voucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $voucherId")
@@ -441,7 +441,7 @@ class RoomVoucherRepository(
         updated.toDomain(lines, charges)
     }
 
-    override suspend fun softDeleteDraft(id: String, at: Instant): Voucher = transactions.write {
+    override suspend fun softDeleteDraft(id: String, at: Instant): Voucher = transactions.write("voucher.trashDraft") {
         Access.require(Permission.CREATE_VOUCHERS)
         val entity = vouchers.findById(id)
             ?: throw IllegalArgumentException("Unknown voucher: $id")
@@ -465,7 +465,7 @@ class RoomVoucherRepository(
         updated.toDomain(vouchers.linesFor(id), vouchers.chargesFor(id), vouchers.portionsFor(id))
     }
 
-    override suspend fun restoreDraft(id: String, at: Instant): Voucher = transactions.write {
+    override suspend fun restoreDraft(id: String, at: Instant): Voucher = transactions.write("voucher.untrashDraft") {
         Access.require(Permission.CREATE_VOUCHERS)
         val entity = vouchers.findById(id)
             ?: throw IllegalArgumentException("Unknown voucher: $id")
@@ -484,7 +484,7 @@ class RoomVoucherRepository(
 
     override suspend fun purgeDraft(id: String) {
         Access.require(Permission.CANCEL_DELETE)
-        transactions.write {
+        transactions.write("voucher.purgeDraft") {
             val entity = vouchers.findById(id)
                 ?: throw IllegalArgumentException("Unknown voucher: $id")
             require(decodeEnum<VoucherStatus>(entity.status, "voucher status") == VoucherStatus.DRAFT) {

@@ -258,6 +258,7 @@ object OpenBillBackup {
      * on any failure every move is undone. [prepared] must be on the same file system.
      */
     fun commit(prepared: PreparedRestore, target: DataLocation, now: Instant = Instant.now()): File {
+        resetSync(prepared.databaseFile)
         val db = target.databaseFile.absoluteFile
         val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(now)
         val safety = File(db.parentFile, "restore-safety-$stamp").let { base ->
@@ -320,6 +321,23 @@ object OpenBillBackup {
         out.setLastModified(now.toEpochMilli())
         autos().drop(keep).forEach { it.delete() }
         return out
+    }
+
+    /**
+     * A restored database is standalone (docs/10-server.md section 6.6): it drops the source's
+     * device id, pairing and unsent ops, so two installs never share a sync identity. The app
+     * seeds a fresh device id on open. Backups from before sync (schema < 19) have nothing to drop.
+     */
+    internal fun resetSync(db: File) {
+        val c = driver.open(db.path)
+        try {
+            if (c.longQuery("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'") > 0) {
+                c.prepare("DELETE FROM sync_outbox").use { it.step() }
+                c.prepare("DELETE FROM sync_state").use { it.step() }
+            }
+        } finally {
+            c.close()
+        }
     }
 
     /** Consistent copy of a live database. */

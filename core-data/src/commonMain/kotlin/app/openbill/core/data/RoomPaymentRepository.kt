@@ -38,7 +38,7 @@ class RoomPaymentRepository(
 
     override suspend fun savePaymentDetails(details: PaymentDetails) {
         Access.require(Permission.CREATE_VOUCHERS)
-        transactions.write {
+        transactions.write("payment.saveDetails") {
             val voucher = loadVoucher(details.voucherId)
                 ?: throw IllegalArgumentException("Unknown voucher: ${details.voucherId}")
             require(voucher.firmId == details.firmId) {
@@ -78,7 +78,7 @@ class RoomPaymentRepository(
 
     override suspend fun deletePaymentDetails(voucherId: String) {
         Access.require(Permission.CREATE_VOUCHERS)
-        transactions.write {
+        transactions.write("payment.deleteDetails") {
             details.deleteForDraftVoucher(voucherId)
         }
     }
@@ -87,7 +87,7 @@ class RoomPaymentRepository(
         paymentVoucherId: String,
         requests: List<AllocationRequest>,
         at: Instant,
-    ): List<PaymentAllocation> = transactions.write {
+    ): List<PaymentAllocation> = transactions.write("allocation.add") {
         Access.require(Permission.CREATE_VOUCHERS)
         val payment = loadVoucher(paymentVoucherId)
             ?: throw IllegalArgumentException("Unknown voucher: $paymentVoucherId")

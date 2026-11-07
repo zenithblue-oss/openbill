@@ -1,6 +1,7 @@
 package app.openbill.core.data
 
 import app.openbill.core.database.AuditEventEntity
+import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.domain.model.Access
 import app.openbill.core.domain.model.AuditEvent
@@ -31,7 +32,10 @@ internal suspend fun OpenBillDatabase.audit(
     ),
 )
 
-class RoomAuditRepository(private val database: OpenBillDatabase) : AuditRepository {
+class RoomAuditRepository(
+    private val database: OpenBillDatabase,
+    private val transactions: DatabaseTransactionRunner = DatabaseTransactionRunner(database),
+) : AuditRepository {
     override fun observeRecent(firmId: String, limit: Int): Flow<List<AuditEvent>> =
         database.auditDao().observeRecent(firmId, limit).map { rows ->
             rows.map {
@@ -43,11 +47,13 @@ class RoomAuditRepository(private val database: OpenBillDatabase) : AuditReposit
         database.auditDao().postedBy(firmId).associate { it.voucherId to it.actor }
 
     override suspend fun record(event: AuditEvent) {
-        database.auditDao().insert(
-            AuditEventEntity(
-                event.id, event.firmId, event.entityType, event.entityId, event.voucherId,
-                event.action, event.detailsJson, event.actor ?: Access.actorId, event.createdAt.toEpochMilliseconds(),
-            ),
-        )
+        transactions.write("audit.record") {
+            database.auditDao().insert(
+                AuditEventEntity(
+                    event.id, event.firmId, event.entityType, event.entityId, event.voucherId,
+                    event.action, event.detailsJson, event.actor ?: Access.actorId, event.createdAt.toEpochMilliseconds(),
+                ),
+            )
+        }
     }
 }

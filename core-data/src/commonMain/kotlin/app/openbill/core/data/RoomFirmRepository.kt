@@ -29,7 +29,7 @@ class RoomFirmRepository(
 
     override suspend fun saveFirm(firm: Firm) {
         Access.require(Permission.SETTINGS)
-        transactions.write {
+        transactions.write("firm.save") {
             val existing = firms.findById(firm.id)
             // Adding a business stays with the owner even when managers may change settings.
             if (existing == null) Access.require(Permission.OWNER_CONTROLS)
@@ -45,7 +45,7 @@ class RoomFirmRepository(
 
     override suspend fun archiveFirm(id: String, at: Instant) {
         Access.require(Permission.OWNER_CONTROLS)
-        transactions.write {
+        transactions.write("firm.archive") {
             firms.softDelete(
                 id = id,
                 deletedAt = at.toEpochMillis(),
@@ -72,8 +72,10 @@ class RoomFirmRepository(
             listOf("items", "item_categories", "units", "godowns").map { "DELETE FROM $it WHERE firmId = ?" } +
             "DELETE FROM party_addresses WHERE partyId IN (SELECT id FROM parties WHERE firmId = ?)" +
             listOf("parties", "accounts", "financial_years", "firm_settings").map { "DELETE FROM $it WHERE firmId = ?" } +
-            "DELETE FROM firms WHERE id = ?"
-        return transactions.writeWith { c ->
+            "DELETE FROM firms WHERE id = ?" +
+            // Erasure is local and total: no copy of the firm's rows stays in unsent sync ops.
+            "DELETE FROM sync_outbox WHERE firmId = ?"
+        return transactions.writeWith("firm.erase") { c ->
             val owners = c.usePrepared("SELECT id FROM vouchers WHERE firmId = ?1 UNION SELECT id FROM parties WHERE firmId = ?1") { s ->
                 s.bindText(1, id)
                 buildList { while (s.step()) add(s.getText(0)) }
@@ -93,7 +95,7 @@ class RoomFirmRepository(
 
     override suspend fun saveSettings(settings: FirmSettings) {
         Access.require(Permission.SETTINGS)
-        transactions.write {
+        transactions.write("settings.save") {
             val existing = this@RoomFirmRepository.settings.findByFirm(settings.firmId)
             val now = Clock.System.now()
             // Who may change settings is the owner's call, even for a manager allowed to change the rest.
@@ -120,7 +122,7 @@ class RoomFirmRepository(
         financialYears.findById(id)?.toDomain()
 
     override suspend fun saveFinancialYear(financialYear: FinancialYear) {
-        transactions.write {
+        transactions.write("financialYear.save") {
             val existing = financialYears.findById(financialYear.id)
             val now = Clock.System.now()
             val entity = financialYear.toEntity(existing, now)
