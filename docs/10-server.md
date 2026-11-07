@@ -153,6 +153,26 @@ Operations are recorded locally in the same transaction as the change they descr
 Existing 1.0 databases are bootstrapped with a snapshot (section 6.6) instead of backfilled
 history.
 
+#### 6.2.1 Local operation log (S0a, schema 19)
+
+Implemented in `core-database` (tables, triggers, migration) and `core-sync`
+(`SyncOperation` envelope, `SyncOutbox`). Decisions:
+
+| Concern | Decision |
+| --- | --- |
+| Entity ids | Already globally unique: every synced row has a client-generated ULID text key (composite keys for `voucher_number_sequences`, `payment_details` and `firm_settings` are made of such ids). No new id column and no backfill. `entityId` is the primary key, composite keys joined with `\|`. |
+| Hook point | One SQLite `AFTER INSERT/UPDATE/DELETE` trigger per synced table, generated on every open from the live columns (`SyncTriggers`). No write path (repositories, CLI import, raw SQL, cascades) can skip it, a rollback removes the op with the change, and new columns are picked up without code. Every migration step first drops the triggers so a step may drop or rename columns. |
+| Op content | `upsert` carries the full row as a JSON object with keys in name order; `delete` carries the key only. `type` is `upsert` or `delete`; `action` names the domain operation (`voucher.post`, `voucher.cancel`, `allocation.add`, `party.save`, ...) from the repository write that made it, so lifecycle transitions stay explicit. `baseRevision` is the row's previous `revision` where the table has one. |
+| Groups | `DatabaseTransactionRunner` stamps one `groupId` per write; a `Repositories.transaction` block (a payment with its details, post and allocations; POS checkout) shares one group across its writes. The server accepts or rejects a group as a unit (section 6.3). |
+| Device and user | `sync_state` holds one row: a ULID `deviceId` seeded on open, the `enabled` flag, and the HLC. Each op stores `deviceId`, the signed-in user (`Access.actorId`), and `hlc` (wall millis, never decreasing on the device); the device `seq` (AUTOINCREMENT, never reused) orders a device's ops and breaks HLC ties with `deviceId`. S1 raises the HLC to the newest pulled op. |
+| `opId` | 128-bit random hex from SQLite `randomblob`, the idempotency key only. Order comes from the device `seq` and the server `seq`, so it need not be a ULID. |
+| Firm | Tables with `firmId` use it; `firms` uses its id; children (`party_addresses`, `batches`, `serial_numbers`, `voucher_lines`, `voucher_charges`, `voucher_charge_portions`) look up their parent. A child whose parent is already gone (foreign-key cascade) records nothing: the parent's delete cascades the same way on every replica. `users` ops have no firm (workspace-wide). |
+| Synced tables | Every table except `sync_state`, `sync_outbox`, `room_master_table` (and SQLite internals). A new table syncs by default; one without a firm fails loudly at open until it is mapped. Device preferences (theme, printer, last firm) are not in the database. Drafts and held bills are vouchers and are recorded; whether they sync in S1 stays open (section 18). |
+| Never in ops | `users.pinHash`: a 4-digit PIN hash is brute-forced offline in seconds, so PINs stay per device (server accounts use their own passwords, section 7.1). Local file paths (`logoPath`, `signaturePath`, `storagePath`) are recorded but must be remapped by attachment sync in S1. |
+| Activation and growth | Off by default: a standalone install records nothing, so the outbox cannot grow for users who never pair. Pairing (S1c) sets `enabled` in the same transaction that takes the bootstrap snapshot, so the snapshot plus the outbox is complete. Accepted ops are deleted (`acknowledge(seq)`). Unpairing (`disable`) stops recording and drops unsent ops; re-pairing starts from a new snapshot (section 6.6). |
+| Backups | Backups are byte copies and contain the sync tables, but restore wipes `sync_state` and `sync_outbox` in the staged copy before the swap: a restored database is standalone with a fresh device id on open, so two installs never share an identity and old unsent ops are not replayed. Pre-19 backups restore unchanged and migrate. |
+| Firm erasure | Deletes the firm's ops from the outbox in the same transaction: erasure is local and leaves no copy of the firm's rows. |
+
 ### 6.3 Exchange
 
 | Step | Endpoint | Behavior |
@@ -470,7 +490,7 @@ A thin web client is a later milestone, not part of the first server releases.
 
 | Milestone | Deliverable | Depends on |
 | --- | --- | --- |
-| S0 | Sync protocol spec, `core-sync` with outbox and in-memory server, simulation suite green | 1.0 |
+| S0 | Sync protocol spec, `core-sync` with outbox and in-memory server, simulation suite green. S0a done: local operation log, device identity, schema 19 (section 6.2.1) | 1.0 |
 | S1 | Single-user multi-device sync: Ktor server, SQLite, local accounts, QR pairing, push/pull, snapshots, per-device series, scheduled backups | S0 |
 | S2 | Multi-user: memberships, roles, CA seat, device management, review tasks, hash-chained audit | S1 |
 | S3 | REST API v1 with OpenAPI, API tokens, CLI remote mode ([11-cli.md](11-cli.md)) | S2 |

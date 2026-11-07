@@ -95,7 +95,7 @@ lookup, e-invoice and e-way bill) or are app UI translation (invoices already pr
 | POS | Counter billing: scan or search items, Cash sale default, held bills, split tender with change, keyboard shortcuts, tablet layout, thermal receipt | 100% (5 / 5) |
 | Desktop apps | Windows and Linux builds run the shared UI | Stable |
 | CLI | Direct mode: masters, invoices and PDF, orders, recurring, payments, stock, import/export, attachments, reports, GST, Tally, audit, staff sign-in with roles | C0-C3 complete |
-| Server | Not started (post-1.0) | 0% |
+| Server | S0a done: local operation log (outbox) and device identity in the app, off until a server is paired; no network yet | S0a of S0-S3 |
 
 ## What's left
 
@@ -297,7 +297,7 @@ openbill/
   core-search/              Query parsing, ranking, highlights (planned)
   core-reporting/           Report models and exports (planned)
   core-api-contract/        DTOs and OpenAPI source for API, CLI, sync (planned)
-  core-sync/                Operation log, outbox, sync client (planned, post-1.0)
+  core-sync/                Operation log envelope and outbox (S0a); sync client planned
   platform/                 expect/actual boundaries (planned)
   platform-android/  platform-desktop/  platform-jvm/   (planned)
   server/                   OpenBill Server (planned, post-1.0)

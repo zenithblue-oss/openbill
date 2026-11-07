@@ -403,7 +403,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Done (export/SEZ invoices in a foreign currency with an exchange rate, schema v15; GST, ledger and returns in rupees; both currencies printed) |
 | GSTR-3B and GSTR-2 working reports, CA report pack | Paid tiers | Phase 7 | A W L C | Done: GSTR-3B summary, GSTR-2 working, CA pack ZIP (app and `report ca-pack`) |
 | POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Done (item-first counter screen, held bills persisted in schema v14, cash/UPI/card/bank split with change, F-key shortcuts, tablet layout, thermal receipt) |
-| Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | Planned |
+| Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | In progress (S0a: local operation log) |
 | E-invoice and e-way bill, bulk generation | Paid tiers | Phase 7 (provider interface), Phase 9 (bulk, alerts) | A W L S C | Planned |
 | POS and retail hardware (cash drawer, scale, label sheets) | Top paid tier | Phase 9 | W L A | Label-printer roll stock done (PDF through the driver); cash drawer and scale planned |
 | Restaurant tables and kitchen slips | Add-on module | Phase 9 | A W L | Planned |
@@ -544,7 +544,7 @@ gives CI a scriptable driver for backup, posting, and large-fixture tests. Detai
 
 | Milestone | Deliverable | Depends on |
 | --- | --- | --- |
-| S0 | Sync protocol, `core-sync`, simulation suite | 1.0 |
+| S0 | Sync protocol, `core-sync`, simulation suite. S0a done: operation log recorded by database triggers in the same transaction, device id, schema 19 ([docs/10-server.md](docs/10-server.md) section 6.2.1) | 1.0 |
 | S1 | Single-user multi-device sync, QR pairing, SQLite, scheduled backups | S0 |
 | S2 | Users, roles, CA seat, device management, audit chain | S1 |
 | S3 | REST API v1, OpenAPI, API tokens | S2 |
