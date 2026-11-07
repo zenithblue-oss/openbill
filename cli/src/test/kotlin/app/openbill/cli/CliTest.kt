@@ -9,6 +9,8 @@ import app.openbill.core.domain.model.Godown
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyType
+import app.openbill.core.domain.model.RecurrenceFrequency
+import app.openbill.core.domain.model.RecurringSchedule
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.model.Money
 import app.openbill.core.model.Rate
@@ -280,6 +282,39 @@ class CliTest {
         assertTrue("\"type\": \"purchase\"" in bill && "\"PO no.\": \"$po\"" in bill, bill)
         assertTrue(ok("order", "list", "--type", "purchase").out.contains(po))
         ok("--yes", "order", "cancel", po, "--reason", "Supplier out of stock")
+    }
+
+    @Test
+    fun recurringRunIsIdempotentAndHeldBills() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        val template = ok("invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "SVC:1@500.00").out.trim()
+        val held = ok("invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:1").out.trim()
+        val db = openBillDatabase(File(dataDir, "openbill.db").absolutePath)
+        val at = Instant.fromEpochMilliseconds(1_780_000_000_000L)
+        runBlocking {
+            val r = db.roomRepositories()
+            r.recurring.saveSchedule(RecurringSchedule("R1", "F1", template, "Monthly service", RecurrenceFrequency.MONTHLY, startDate = LocalDate(2026, 10, 1), autoPost = true, createdAt = at, updatedAt = at))
+            r.vouchers.saveDraft(r.vouchers.findVoucher(held)!!.copy(heldAt = at))
+        }
+        db.close()
+        assertTrue(ok("recurring", "list").out.contains("Monthly service"))
+        val first = ok("--json", "recurring", "run", "--today", "2026-12-15").out
+        assertTrue("\"made\": 3" in first, first)
+        assertTrue("\"made\": 0" in ok("--json", "recurring", "run", "--today", "2026-12-15").out)
+        assertEquals(3, ok("-q", "invoice", "list", "--status", "posted").out.lines().count { it.isNotBlank() })
+        ok("recurring", "pause", "Monthly service")
+        assertEquals(5, run("recurring", "pause", "R1").code)
+        assertTrue("\"made\": 0" in ok("--json", "recurring", "run", "--today", "2027-02-15").out)
+        ok("recurring", "resume", "R1") // as of the fixed clock: no back-billing of paused months
+        assertEquals(2, run("recurring", "delete", "R1").code) // needs --yes
+        ok("--yes", "recurring", "delete", "R1")
+        assertEquals(4, run("recurring", "show", "R1").code)
+
+        assertTrue(ok("-q", "pos", "held", "list").out.contains(held))
+        ok("--yes", "pos", "held", "discard", held)
+        assertTrue(ok("-q", "pos", "held", "list").out.isBlank())
+        assertTrue(ok("-q", "invoice", "recycle-bin").out.contains(held))
     }
 
     @Test
