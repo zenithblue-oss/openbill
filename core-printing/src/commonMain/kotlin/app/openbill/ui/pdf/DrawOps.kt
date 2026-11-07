@@ -9,11 +9,17 @@ package app.openbill.ui.pdf
  * positioned (x is always the left edge of the run), so every painter only has to draw.
  */
 
-/** Font weights used by templates. Every platform maps them to the bundled Noto Sans files. */
-enum class FontRole(val assetPath: String) {
-    REGULAR("fonts/NotoSans-Regular.ttf"),
-    BOLD("fonts/NotoSans-Bold.ttf"),
+/**
+ * Font weights used by templates. Every platform maps them to the bundled Noto Sans files, with
+ * Noto Sans Devanagari ([devanagariAsset]) for Hindi labels and names.
+ */
+enum class FontRole(val assetPath: String, val devanagariAsset: String) {
+    REGULAR("fonts/NotoSans-Regular.ttf", "fonts/NotoSansDevanagari-Regular.ttf"),
+    BOLD("fonts/NotoSans-Bold.ttf", "fonts/NotoSansDevanagari-Bold.ttf"),
 }
+
+/** Devanagari block, extended block and the joiners used inside Devanagari words. */
+fun isDevanagari(cp: Int): Boolean = cp in 0x0900..0x097F || cp in 0xA8E0..0xA8FF || cp == 0x200C || cp == 0x200D
 
 /**
  * Text measurement supplied by the platform, using the same font files the painter draws with,

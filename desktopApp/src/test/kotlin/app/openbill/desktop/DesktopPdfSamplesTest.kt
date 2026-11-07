@@ -93,8 +93,30 @@ class DesktopPdfSamplesTest {
     }
 
     @Test
-    fun unsupportedGlyphsBecomeQuestionMarks() {
-        assertEquals("Ram ????", PdfFonts.sanitize("Ram राम्", app.openbill.ui.pdf.FontRole.REGULAR).let { it.substring(0, 4) + it.substring(4).replace(Regex("\\?+"), "????") })
+    fun devanagariUsesItsFontAndUnsupportedGlyphsBecomeQuestionMarks() {
+        val r = app.openbill.ui.pdf.FontRole.REGULAR
+        assertEquals("Ram राम् ?", PdfFonts.sanitize("Ram राम् 中", r))
+        assertEquals(listOf(PdfFonts.Run("Ram ", false), PdfFonts.Run("राम्", true)), PdfFonts.runs("Ram राम्", r))
+        assertEquals(listOf(PdfFonts.Run("Total ₹1,000.00", false)), PdfFonts.runs("Total ₹1,000.00", r))
         assertTrue(PdfFonts.metrics.width("₹1,000.00", app.openbill.ui.pdf.FontRole.BOLD, 10f) > 30f)
+        // Shaping: the conjunct क्ष is narrower than its three code points side by side.
+        val parts = listOf("क", "्", "ष").sumOf { PdfFonts.metrics.width(it, r, 10f).toDouble() }
+        assertTrue(PdfFonts.metrics.width("क्ष", r, 10f) < parts, "GSUB applied when measuring")
+    }
+
+    @Test
+    fun hindiLabelsRenderInEveryTemplate() {
+        val out = System.getProperty("openbill.pdfSamples")?.let { File(it).apply { mkdirs() } }
+        val options = PrintOptions(upiId = "shop@upi", language = app.openbill.ui.pdf.InvoiceLanguage.HINDI)
+        InvoiceTemplate.entries.forEach { t ->
+            val doc = SampleInvoice.document()
+            val layout = InvoiceLayoutEngine.layout(LayoutInput(doc, InvoiceStyle(t, Accent.PEACOCK, options), PdfFonts.metrics, null, null, null))
+            val words = layout.pages.flatMap { p -> p.ops.filterIsInstance<app.openbill.ui.pdf.DrawOp.Text>().map { it.text } }
+            if (t.paper.thermal) assertTrue(words.none { s -> s.any { app.openbill.ui.pdf.isDevanagari(it.code) } }, "${t.id}: receipts stay English")
+            else assertTrue(words.any { "कुल" in it } && words.any { "कर बीजक" in it || "बीजक" in it }, "${t.id}: Hindi labels")
+            val bytes = PdfBoxPainter.toPdf(layout)
+            Loader.loadPDF(bytes).use { assertEquals(layout.pages.size, it.numberOfPages) }
+            out?.let { File(it, "${t.id}-hi.pdf").writeBytes(bytes); ImageIO.write(PdfBoxPainter.preview(layout, 0, 1200), "png", File(it, "${t.id}-hi.png")) }
+        }
     }
 }

@@ -93,6 +93,7 @@ fun InvoiceTemplatesScreen(container: AppContainer, session: Session, onBack: ()
     val imageVersion by container.invoiceStyles.imageVersion.collectAsState()
     var previewOpen by remember { mutableStateOf(false) }
     var copyPicker by remember { mutableStateOf(false) }
+    var languagePicker by remember { mutableStateOf(false) }
     val sample = remember(session.firm) { runCatching { SampleInvoice.document(session.firm, settings = session.settings) }.getOrNull() }
     fun update(t: (InvoiceStyle) -> InvoiceStyle) = container.invoiceStyles.update(firmId, t)
     fun options(t: (PrintOptions) -> PrintOptions) = update { it.copy(options = t(it.options)) }
@@ -180,6 +181,8 @@ fun InvoiceTemplatesScreen(container: AppContainer, session: Session, onBack: ()
                 Spacer(Modifier.height(Spacing.sm))
                 PickerField("Copy label", o.copies.label, onClick = { copyPicker = true })
                 Spacer(Modifier.height(Spacing.sm))
+                PickerField("Label language", o.language.label, onClick = { languagePicker = true })
+                Spacer(Modifier.height(Spacing.sm))
                 var upi by remember(firmId) { mutableStateOf(o.upiId) }
                 FormField(
                     "UPI ID",
@@ -215,6 +218,20 @@ fun InvoiceTemplatesScreen(container: AppContainer, session: Session, onBack: ()
             selected = { it == style.options.copies },
             onSelect = { c -> options { it.copy(copies = c) }; copyPicker = false },
             onDismiss = { copyPicker = false },
+            searchable = false,
+        )
+    }
+    if (languagePicker) {
+        PickerSheet(
+            title = "Label language",
+            options = app.openbill.ui.pdf.InvoiceLanguage.entries.toList(),
+            label = { it.label },
+            supporting = {
+                if (it == app.openbill.ui.pdf.InvoiceLanguage.HINDI) "Headings, column titles and copy labels in Hindi; names, items and amount in words print as entered. Thermal receipts stay English." else null
+            },
+            selected = { it == style.options.language },
+            onSelect = { l -> options { it.copy(language = l) }; languagePicker = false },
+            onDismiss = { languagePicker = false },
             searchable = false,
         )
     }

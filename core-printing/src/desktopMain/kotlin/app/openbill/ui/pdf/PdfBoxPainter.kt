@@ -5,6 +5,7 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import org.apache.fontbox.ttf.TTFParser
 import org.apache.fontbox.ttf.TrueTypeFont
+import org.apache.fontbox.ttf.gsub.GsubWorkerFactory
 import org.apache.pdfbox.io.RandomAccessReadBuffer
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
@@ -16,48 +17,74 @@ import org.apache.pdfbox.rendering.ImageType
 import org.apache.pdfbox.rendering.PDFRenderer
 
 /**
- * The bundled Noto Sans files (OFL) read from the classpath (core-printing pdf-assets), with
- * glyph-advance metrics that match what PDFBox draws (PDFBox applies no kerning).
+ * The bundled Noto Sans and Noto Sans Devanagari files (OFL) read from the classpath
+ * (core-printing pdf-assets), with glyph-advance metrics that match what PDFBox draws: no
+ * kerning, and Devanagari measured after the same GSUB shaping PDFBox applies when it shows text.
  */
 object PdfFonts {
-    private val bytes = FontRole.entries.associateWith { role ->
-        (PdfFonts::class.java.classLoader.getResourceAsStream(role.assetPath)
-            ?: error("Missing font resource ${role.assetPath}")).use { it.readBytes() }
-    }
+    private fun resource(path: String) = (PdfFonts::class.java.classLoader.getResourceAsStream(path)
+        ?: error("Missing font resource $path")).use { it.readBytes() }
+
+    private val bytes = FontRole.entries.associateWith { resource(it.assetPath) }
+    private val devaBytes = FontRole.entries.associateWith { resource(it.devanagariAsset) }
 
     private val ttf: Map<FontRole, TrueTypeFont> = bytes.mapValues { (_, b) -> TTFParser().parse(RandomAccessReadBuffer(b)) }
+    private val devaTtf: Map<FontRole, TrueTypeFont> = devaBytes.mapValues { (_, b) -> TTFParser().parse(RandomAccessReadBuffer(b)) }
+    private val devaGsub = devaTtf.mapValues { (_, f) -> GsubWorkerFactory().getGsubWorker(f.getUnicodeCmapLookup(), f.getGsubData()) }
     private val lock = Any()
 
     fun fontBytes(role: FontRole): ByteArray = bytes.getValue(role)
+    fun devanagariBytes(role: FontRole): ByteArray = devaBytes.getValue(role)
 
-    private fun glyph(role: FontRole, cp: Int): Int = ttf.getValue(role).getUnicodeCmapLookup().getGlyphId(cp)
+    private fun glyph(font: TrueTypeFont, cp: Int): Int = font.getUnicodeCmapLookup().getGlyphId(cp)
 
-    /** Replaces characters the font cannot draw (e.g. Devanagari) with '?', so nothing is blank or throws. */
-    fun sanitize(text: String, role: FontRole): String = synchronized(lock) {
-        val sb = StringBuilder(text.length)
+    /** A run of [text] drawn with one font: the Devanagari font when [devanagari]. */
+    data class Run(val text: String, val devanagari: Boolean)
+
+    /**
+     * [text] split into Latin and Devanagari runs; characters neither font can draw become '?',
+     * so nothing is blank or throws. Spaces and punctuation stay with the run they sit in.
+     */
+    fun runs(text: String, role: FontRole): List<Run> = synchronized(lock) {
+        val latin = ttf.getValue(role)
+        val deva = devaTtf.getValue(role)
+        val out = mutableListOf<Run>()
+        val sb = StringBuilder()
+        var current: Boolean? = null
         var i = 0
         while (i < text.length) {
-            val cp = text.codePointAt(i)
-            val n = Character.charCount(cp)
-            if (cp == '\n'.code || cp == '\t'.code) sb.append(' ') else if (glyph(role, cp) != 0) sb.appendCodePoint(cp) else sb.append('?')
-            i += n
+            var cp = text.codePointAt(i)
+            i += Character.charCount(cp)
+            if (cp == '\n'.code || cp == '\t'.code) cp = ' '.code
+            val inDeva = glyph(deva, cp) != 0
+            val inLatin = glyph(latin, cp) != 0
+            val useDeva = when {
+                isDevanagari(cp) && inDeva -> true
+                inLatin && inDeva && current == true && !cp.toChar().isLetter() -> true // keep spaces and danda-like marks in a Hindi run
+                inLatin -> false
+                inDeva -> true
+                else -> { cp = '?'.code; current ?: false }
+            }
+            if (current != null && useDeva != current) { out += Run(sb.toString(), current); sb.clear() }
+            current = useDeva
+            sb.appendCodePoint(cp)
         }
-        sb.toString()
+        if (current != null) out += Run(sb.toString(), current)
+        out
     }
 
+    /** The text as it will be drawn, unsupported characters as '?'. */
+    fun sanitize(text: String, role: FontRole): String = runs(text, role).joinToString("") { it.text }
+
     val metrics = FontMetrics { text, role, size ->
-        val clean = sanitize(text, role)
+        val parts = runs(text, role)
         synchronized(lock) {
-            val font = ttf.getValue(role)
-            val upem = font.unitsPerEm.toFloat()
-            var w = 0f
-            var i = 0
-            while (i < clean.length) {
-                val cp = clean.codePointAt(i)
-                w += font.getAdvanceWidth(glyph(role, cp))
-                i += Character.charCount(cp)
-            }
-            w * size / upem
+            parts.sumOf { run ->
+                val font = if (run.devanagari) devaTtf.getValue(role) else ttf.getValue(role)
+                var ids = run.text.codePoints().toArray().map { glyph(font, it) }
+                if (run.devanagari) ids = devaGsub.getValue(role).applyTransforms(ids)
+                (ids.sumOf { font.getAdvanceWidth(it).toDouble() } * size / font.unitsPerEm).toDouble()
+            }.toFloat()
         }
     }
 }
@@ -82,6 +109,8 @@ object PdfBoxPainter {
         doc.documentInformation.creator = "OpenBill"
         doc.documentInformation.producer = "OpenBill (Apache PDFBox)"
         val fonts = FontRole.entries.associateWith { PDType0Font.load(doc, PdfFonts.fontBytes(it).inputStream(), subsetFonts) }
+        // Loaded only when a page has Hindi text, so English invoices stay as small as before.
+        val deva = mutableMapOf<FontRole, PDType0Font>()
         val images = layout.images.mapValues { (kind, img) -> PDImageXObject.createFromByteArray(doc, img.bytes, kind.name.lowercase()) }
         layout.pages.forEach { p ->
             val page = PDPage(PDRectangle(p.width, p.height))
@@ -99,13 +128,19 @@ object PdfBoxPainter {
                             cs.stroke()
                         }
                         is DrawOp.Text -> {
-                            val text = PdfFonts.sanitize(op.text, op.role)
-                            if (text.isNotEmpty()) {
+                            val runs = PdfFonts.runs(op.text, op.role)
+                            if (runs.isNotEmpty()) {
                                 cs.beginText()
-                                cs.setFont(fonts.getValue(op.role), op.size)
                                 cs.setNonStrokingColor(Color(op.color, true))
                                 cs.newLineAtOffset(op.x, h - op.y)
-                                cs.showText(text)
+                                // Each showText advances the text position, so runs follow each other.
+                                runs.forEach { run ->
+                                    val font = if (run.devanagari) {
+                                        deva.getOrPut(op.role) { PDType0Font.load(doc, PdfFonts.devanagariBytes(op.role).inputStream(), subsetFonts) }
+                                    } else fonts.getValue(op.role)
+                                    cs.setFont(font, op.size)
+                                    cs.showText(run.text)
+                                }
                                 cs.endText()
                             }
                         }

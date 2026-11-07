@@ -17,13 +17,14 @@ class LayoutInput(
 object InvoiceLayoutEngine {
     fun layout(input: LayoutInput): InvoiceLayout {
         val o = input.style.options
+        val lang = if (input.style.template.paper.thermal) InvoiceLanguage.ENGLISH else o.language
         val effective = LayoutInput(
-            input.doc, input.style, input.metrics,
+            input.doc.copy(title = lang.t(input.doc.title)), input.style, input.metrics,
             logo = input.logo.takeIf { o.showLogo },
             signature = input.signature.takeIf { o.showSignature },
             qr = input.qr.takeIf { o.showUpiQr && o.upiId.isNotBlank() },
         )
-        val pages = o.copies.labels.flatMap { label -> create(effective, label).build() }
+        val pages = o.copies.labels.flatMap { label -> create(effective, label?.let(lang::t)).build() }
         val images = buildMap {
             effective.logo?.let { put(ImageKind.LOGO, it) }
             effective.signature?.let { put(ImageKind.SIGNATURE, it) }
@@ -129,12 +130,14 @@ class Table<T>(
     val look: TableLook,
     sample: List<T>,
     extraRows: List<List<String>> = emptyList(),
+    /** Printed form of a column title (the label language); [Column.title] stays the English key. */
+    private val label: (String) -> String = { it },
 ) {
     init {
         val fixed = columns.filterNot { it.flex }
         fixed.forEachIndexed { _, c ->
             val idx = columns.indexOf(c)
-            val headW = c.title.split(' ').maxOf { measure.width(it, look.head) }
+            val headW = label(c.title).split(' ').maxOf { measure.width(it, look.head) }
             // Bold is the wider weight; total rows print figures in bold too.
             val bodyW = sample.maxOfOrNull { measure.width(c.value(it), look.body.bold()) } ?: 0f
             val extraW = extraRows.maxOfOrNull { r -> r.getOrNull(idx)?.let { measure.width(it, look.body.bold()) } ?: 0f } ?: 0f
@@ -158,7 +161,7 @@ class Table<T>(
         }
     }
 
-    private fun headLines(c: Column<T>) = measure.wrap(c.title, look.head, c.width - 2 * look.padH, 2, breakWords = false)
+    private fun headLines(c: Column<T>) = measure.wrap(label(c.title), look.head, c.width - 2 * look.padH, 2, breakWords = false)
 
     val headerHeight: Float = (columns.maxOf { headLines(it).size }) * look.head.lineHeight + 2 * look.headPadV
 
@@ -256,6 +259,14 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
     val opt: PrintOptions get() = input.style.options
     val accent: Argb get() = input.style.accent.argb
 
+    /** Label language; thermal receipts stay English. */
+    val language: InvoiceLanguage get() = if (paper.thermal) InvoiceLanguage.ENGLISH else opt.language
+
+    /** A printed label in [language]. */
+    fun t(english: String): String = language.t(english)
+
+    fun pageOf(pageNo: Int, count: Int) = if (language == InvoiceLanguage.HINDI) "पृष्ठ $pageNo / $count" else "Page $pageNo of $count"
+
     /** Type scale: A5 shrinks everything so the same design fits half the area. */
     open val k: Float get() = if (paper == Paper.A5) 0.8f else 1f
     open val margin: Float get() = if (paper == Paper.A5) 22f else 36f
@@ -296,7 +307,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         val name = ts(10f, FontRole.BOLD, Ink.BLACK)
         val meta = ts(8f, color = Ink.MUTED)
         pen.text(doc.seller.name, left, y + name.ascent, name, maxWidth = cw * 0.6f)
-        pen.text("${doc.title} ${doc.number} (continued)", right, y + name.ascent, meta, Align.RIGHT, cw * 0.4f)
+        pen.text("${doc.title} ${doc.number} (${t("continued")})", right, y + name.ascent, meta, Align.RIGHT, cw * 0.4f)
         y += name.lineHeight + 4f * k
         pen.hline(left, y, cw, Ink.RULE, 0.6f)
         y += 8f * k
@@ -307,13 +318,13 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         val base = footerBaseline
         pen.hline(left, base - st.size - 6f * k, cw, Ink.HAIRLINE, 0.5f)
         pen.text("${doc.title} ${doc.number}", left, base, st, maxWidth = cw / 3f)
-        pen.text("Page $pageNo of $count", pageW / 2f, base, st, Align.CENTER)
-        pen.text("Computer-generated invoice", right, base, st, Align.RIGHT, cw / 3f)
+        pen.text(pageOf(pageNo, count), pageW / 2f, base, st, Align.CENTER)
+        pen.text(t("Computer-generated invoice"), right, base, st, Align.RIGHT, cw / 3f)
     }
 
     open fun continuedNote() {
         val st = ts(7.5f, color = Ink.MUTED)
-        pen.text("Continued on next page", right, y + 4f * k + st.ascent, st, Align.RIGHT)
+        pen.text(t("Continued on next page"), right, y + 4f * k + st.ascent, st, Align.RIGHT)
     }
 
     private fun startContinuationPage() {
@@ -371,16 +382,16 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         }
         if (opt.showDueDate) doc.dueDate?.let { add("Due date" to it) }
         add("Place of supply" to doc.placeOfSupply)
-        add("Supply type" to if (doc.isIntraState) "Intra-state" else "Inter-state")
-        add("Reverse charge" to if (doc.reverseCharge) "Yes" else "No")
+        add("Supply type" to t(if (doc.isIntraState) "Intra-state" else "Inter-state"))
+        add("Reverse charge" to t(if (doc.reverseCharge) "Yes" else "No"))
     }
 
     fun partyLines(p: InvoiceDocument.PartyBlock, includeName: Boolean = false): List<Pair<String, Boolean>> = buildList {
         if (includeName) add(p.name to true)
         p.addressLines.forEach { add(it to false) }
-        p.state?.let { add("State: $it" to false) }
+        p.state?.let { add("${t("State")}: $it" to false) }
         p.gstin?.let { add("GSTIN: $it" to true) }
-        listOfNotNull(p.phone?.let { "Phone: $it" }, p.email).joinToString("  ·  ").takeIf { it.isNotEmpty() }?.let { add(it to false) }
+        listOfNotNull(p.phone?.let { "${t("Phone")}: $it" }, p.email).joinToString("  ·  ").takeIf { it.isNotEmpty() }?.let { add(it to false) }
     }
 
     /** Wrapped party details as a block (name in bold, then address and tax ids). */
@@ -393,7 +404,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         emptyText: String = "Cash sale (no party)",
     ): Block {
         if (p == null) {
-            val lines = m.wrap(emptyText, nameStyle, width)
+            val lines = m.wrap(t(emptyText), nameStyle, width)
             return Block(lines.size * nameStyle.lineHeight) { pen, x, top -> pen.paragraph(lines, ax(x, width, align), top, nameStyle, align) }
         }
         val name = m.wrap(p.name, nameStyle, width, 2)
@@ -431,7 +442,8 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         val h = rows.size * lh + (rows.size - 1) * rowGap
         return Block(h) { pen, x, top ->
             var t = top
-            rows.forEach { (kk, v) ->
+            rows.forEach { (key, v) ->
+                val kk = t(key)
                 if (valueX == null) {
                     val vw = pen.text(v, x + width, t + value.ascent, value, Align.RIGHT, width * 0.62f, shrink = true)
                     pen.text(kk, x, t + label.ascent, label, maxWidth = width - vw - 6f)
@@ -448,7 +460,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
     fun noteBlock(title: String, text: String, width: Float, titleStyle: TextStyle, body: TextStyle, maxLines: Int = 12): Block {
         val lines = m.wrap(text, body, width, maxLines)
         return Block(titleStyle.lineHeight + 1f * k + lines.size * body.lineHeight) { pen, x, top ->
-            pen.text(title, x, top + titleStyle.ascent, titleStyle, maxWidth = width)
+            pen.text(t(title), x, top + titleStyle.ascent, titleStyle, maxWidth = width)
             pen.paragraph(lines, x, top + titleStyle.lineHeight + 1f * k, body)
         }
     }
@@ -472,8 +484,8 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
 
     /** Reverse charge statement plus transport, export, PO and custom fields, or null when there are none. */
     fun detailsText(): String? =
-        (listOfNotNull(("Tax payable on reverse charge" to "Yes").takeIf { doc.reverseCharge }) + doc.details)
-            .takeIf { it.isNotEmpty() }?.joinToString("  ·  ") { (k, v) -> "$k: $v" }
+        (listOfNotNull(("Tax payable on reverse charge" to t("Yes")).takeIf { doc.reverseCharge }) + doc.details)
+            .takeIf { it.isNotEmpty() }?.joinToString("  ·  ") { (k, v) -> "${t(k)}: $v" }
 
     val upiId: String? get() = opt.upiId.trim().takeIf { it.isNotEmpty() && (opt.showBank || opt.showUpiQr) }
 
@@ -488,12 +500,12 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         val textH = titleStyle.lineHeight + 2f * k + kv.height
         val h = maxOf(textH, if (qr != null) qrSize + label.lineHeight else 0f)
         return Block(h) { pen, x, top ->
-            pen.text(title, x, top + titleStyle.ascent, titleStyle)
+            pen.text(t(title), x, top + titleStyle.ascent, titleStyle)
             kv.draw(pen, x, top + titleStyle.lineHeight + 2f * k)
             if (qr != null) {
                 val qx = x + width - qrSize
                 pen.qr(qr, qx, top, qrSize)
-                pen.text("Scan to pay with UPI", qx + qrSize / 2f, top + qrSize + label.ascent, label.sized(label.size * 0.9f), Align.CENTER, qrSize, shrink = true)
+                pen.text(t("Scan to pay with UPI"), qx + qrSize / 2f, top + qrSize + label.ascent, label.sized(label.size * 0.9f), Align.CENTER, qrSize, shrink = true)
             }
         }
     }
@@ -501,7 +513,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
     /** "For <firm>", optional signature image, then the signatory line. */
     fun signatureBlock(width: Float, nameStyle: TextStyle, label: TextStyle, rule: Argb = Ink.RULE, align: Align = Align.RIGHT): Block {
         val sigH = 32f * k
-        val name = m.wrap("For ${doc.seller.name}", nameStyle, width, 2)
+        val name = m.wrap(if (language == InvoiceLanguage.HINDI) "कृते ${doc.seller.name}" else "For ${doc.seller.name}", nameStyle, width, 2)
         val h = name.size * nameStyle.lineHeight + sigH + 4f * k + label.lineHeight
         return Block(h) { pen, x, top ->
             val anchorX = ax(x, width, align)
@@ -515,7 +527,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
             val lw = minOf(width, 140f * k)
             val lx = when (align) { Align.RIGHT -> x + width - lw; Align.CENTER -> x + (width - lw) / 2f; Align.LEFT -> x }
             pen.hline(lx, t, lw, rule, 0.6f)
-            pen.text("Authorised signatory", anchorX, t + 4f * k + label.ascent, label, align)
+            pen.text(t("Authorised signatory"), anchorX, t + 4f * k + label.ascent, label, align)
         }
     }
 
@@ -539,7 +551,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
     }
 
     fun lineTable(columns: List<Column<InvoiceDocument.Line>>, look: TableLook, extra: List<List<String>> = emptyList()) =
-        Table(m, columns, cw, look, doc.lines, extra)
+        Table(m, columns, cw, look, doc.lines, extra, ::t)
 
     /** Rate-wise (or HSN-wise) GST summary table. */
     fun taxSummaryTable(rows: List<InvoiceDocument.TaxRow>, width: Float, look: TableLook, firstTitle: String, hsn: Boolean = false): Table<InvoiceDocument.TaxRow> {
@@ -557,11 +569,11 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
             if (doc.hasCess) add(Column("Cess", Align.RIGHT, minWidth = mw) { it.cess })
             add(Column("Total tax", Align.RIGHT, bold = true, minWidth = mw) { it.totalTax })
         }
-        return Table(m, cols, width, look, rows + listOfNotNull(doc.taxTotal))
+        return Table(m, cols, width, look, rows + listOfNotNull(doc.taxTotal), label = ::t)
     }
 
     fun taxTotalValues(table: Table<InvoiceDocument.TaxRow>): List<String> =
-        doc.taxTotal?.let { t -> table.columns.mapIndexed { i, c -> if (i == 0) "Total" else if (c.title == "Rate") "" else c.value(t) } } ?: emptyList()
+        doc.taxTotal?.let { t -> table.columns.mapIndexed { i, c -> if (i == 0) t("Total") else if (c.title == "Rate") "" else c.value(t) } } ?: emptyList()
 
     /** Title + table of the GST summary, or empty when switched off. */
     fun taxSummaryBlock(
@@ -578,7 +590,7 @@ abstract class BaseLayout(val input: LayoutInput, val paper: Paper, val copyLabe
         val table = taxSummaryTable(rows, width, look, if (hsn) "HSN/SAC" else "GST rate", hsn)
         val body = table.block(rows, if (rows.size > 1) table.totalRow(taxTotalValues(table), totalFill, totalTopRule) else null)
         val title = Block(titleStyle.lineHeight + 2f * k) { pen, x, top ->
-            pen.text(if (hsn) "HSN/SAC summary" else "GST summary", x, top + titleStyle.ascent, titleStyle)
+            pen.text(t(if (hsn) "HSN/SAC summary" else "GST summary"), x, top + titleStyle.ascent, titleStyle)
         }
         return Block.stack(listOf(title, body))
     }

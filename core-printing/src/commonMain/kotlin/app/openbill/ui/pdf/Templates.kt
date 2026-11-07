@@ -44,7 +44,7 @@ fun boxedPair(
 }
 
 fun BaseLayout.label(text: String, style: TextStyle, after: Float = 2f * k): Block =
-    Block(style.lineHeight + after) { pen, x, top -> pen.text(text, x, top + style.ascent, style) }
+    Block(style.lineHeight + after) { pen, x, top -> pen.text(t(text), x, top + style.ascent, style) }
 
 // ---------------------------------------------------------------------------------------------
 // GST Detailed: a fully bordered grid that puts every statutory field in its own cell.
@@ -88,7 +88,7 @@ class GstDetailedLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseL
         val body = ts(7.8f)
         val bill = Block.stack(listOf(label(doc.partyLabel ?: "BILL TO", labelSt), partyBlock(doc.buyer, half - 2 * pad, name, body)))
         val shipContent = doc.shipTo?.let { partyBlock(it, half - 2 * pad, name, body) }
-            ?: noteBlock("", if (doc.buyer == null) "-" else "Same as billing address", half - 2 * pad, ts(1f), body)
+            ?: noteBlock("", if (doc.buyer == null) "-" else t("Same as billing address"), half - 2 * pad, ts(1f), body)
         val ship = Block.stack(listOf(label("SHIP TO", labelSt), shipContent))
         val parties = boxedPair(bill, half, ship, half, pad, g)
         parties.draw(pen, left, y)
@@ -126,7 +126,7 @@ class GstDetailedLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseL
         val grand = Block(totalSt.lineHeight + 8f * k) { pen, x, top ->
             val bh = totalSt.lineHeight + 6f * k
             pen.rect(x - pad, top + 2f * k, rightW, bh, fill = accent)
-            pen.text("Total", x, top + 5f * k + totalSt.ascent, totalSt)
+            pen.text(t("Total"), x, top + 5f * k + totalSt.ascent, totalSt)
             pen.text(doc.grandTotal, x + rightW - 2 * pad, top + 5f * k + totalSt.ascent, totalSt, Align.RIGHT, rightW * 0.7f, shrink = true)
         }
         val sumLook = look().copy(body = ts(7f, color = Ink.BLACK), head = ts(6.6f, FontRole.BOLD, dark), padV = 2.2f * k, headPadV = 2.6f * k, padH = 3f * k)
@@ -172,9 +172,9 @@ class LedgerLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         copyLabel?.let { ry += 9f * k; pen.text(it.uppercase(), right, ry, ts(6.5f, FontRole.BOLD, Ink.MUTED), Align.RIGHT) }
         val meta = ts(8.2f, color = Ink.BLACK)
         ry += 13f * k
-        pen.text("No.  ${doc.number}", right, ry, meta.bold(), Align.RIGHT)
+        pen.text("${t("No.")}  ${doc.number}", right, ry, meta.bold(), Align.RIGHT)
         ry += 11f * k
-        pen.text("Date  ${doc.date}", right, ry, meta, Align.RIGHT)
+        pen.text("${t("Date")}  ${doc.date}", right, ry, meta, Align.RIGHT)
         statusText()?.let { ry += 11f * k; pen.text(it, right, ry, ts(8f, FontRole.BOLD, Ink.ERROR), Align.RIGHT, cw * 0.4f) }
         y = maxOf(y + seller.height, ry + 4f * k, y + if (logo != null) logoH else 0f) + 6f * k
         pen.hline(left, y, cw, dark, 1.2f)
@@ -188,7 +188,7 @@ class LedgerLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val ship = Block.stack(
             listOf(
                 label("SHIPPED TO", labelSt),
-                doc.shipTo?.let { partyBlock(it, colW, name, body) } ?: noteBlock("", "Same as billing address", colW, ts(1f), body),
+                doc.shipTo?.let { partyBlock(it, colW, name, body) } ?: noteBlock("", t("Same as billing address"), colW, ts(1f), body),
             ),
         )
         val details = Block.stack(listOf(label("SUPPLY DETAILS", labelSt), kvBlock(metaRows(false), colW, ts(7.6f, color = Ink.MUTED), ts(7.6f, FontRole.BOLD, Ink.BLACK))))
@@ -230,7 +230,7 @@ class LedgerLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val t = doc.lineTotals ?: return emptyList()
         return cols.map { c ->
             when (c.title) {
-                "Particulars" -> "Total"
+                "Particulars" -> t("Total")
                 "Qty" -> doc.totalQuantity
                 "#", "HSN/SAC", "Rate", "GST" -> ""
                 else -> c.value(t)
@@ -261,7 +261,7 @@ class LedgerLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val totalSt = ts(11f, FontRole.BOLD, Ink.BLACK)
         val grand = Block(totalSt.lineHeight + 10f * k) { pen, x, top ->
             pen.hline(x, top + 2f * k, rightW, Ink.BLACK, 0.6f)
-            pen.text("Invoice total", x, top + 5f * k + totalSt.ascent, totalSt)
+            pen.text(t("Invoice total"), x, top + 5f * k + totalSt.ascent, totalSt)
             pen.text(doc.grandTotal, x + rightW, top + 5f * k + totalSt.ascent, totalSt.color(dark), Align.RIGHT, rightW * 0.6f, shrink = true)
             val b = top + totalSt.lineHeight + 7f * k
             pen.hline(x, b, rightW, Ink.BLACK, 0.6f)
@@ -322,7 +322,7 @@ class SimpleLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
             listOf(
                 label("SUPPLY", labelSt, 4f * k),
                 kvBlock(
-                    listOf("Place" to doc.placeOfSupply, "Type" to if (doc.isIntraState) "Intra-state" else "Inter-state", "Reverse charge" to if (doc.reverseCharge) "Yes" else "No"),
+                    listOf("Place" to doc.placeOfSupply, "Type" to t(if (doc.isIntraState) "Intra-state" else "Inter-state"), "Reverse charge" to t(if (doc.reverseCharge) "Yes" else "No")),
                     colW, ts(7.6f, color = Ink.MUTED), ts(7.6f, color = Ink.BLACK), valueX = 68f * k,
                 ),
             ),
@@ -360,7 +360,7 @@ class SimpleLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val totalSt = ts(13f, FontRole.BOLD, Ink.BLACK)
         val grand = Block(totalSt.lineHeight + 12f * k) { pen, x, top ->
             pen.hline(x, top + 3f * k, rightW, Ink.BLACK, 0.5f)
-            pen.text("Total", x, top + 8f * k + totalSt.ascent, ts(9f, FontRole.BOLD, Ink.BLACK))
+            pen.text(t("Total"), x, top + 8f * k + totalSt.ascent, ts(9f, FontRole.BOLD, Ink.BLACK))
             pen.text(doc.grandTotal, x + rightW, top + 8f * k + totalSt.ascent, totalSt, Align.RIGHT, rightW * 0.7f, shrink = true)
         }
         val right = Block.stack(listOf(totals, grand), gap = 2f * k)
@@ -416,7 +416,7 @@ class ModernLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         pen.text(doc.title, right, top + titleSt.ascent, titleSt, Align.RIGHT)
         var ry = top + titleSt.lineHeight + 4f * k
         val metaSt = ts(8.4f, color = Ink.WHITE)
-        pen.text("No. ${doc.number}", right, ry + metaSt.ascent, metaSt.bold(), Align.RIGHT)
+        pen.text("${t("No.")} ${doc.number}", right, ry + metaSt.ascent, metaSt.bold(), Align.RIGHT)
         ry += metaSt.lineHeight
         pen.text(doc.date, right, ry + metaSt.ascent, metaSt.color(onBand), Align.RIGHT)
         ry += metaSt.lineHeight + 4f * k
@@ -468,7 +468,7 @@ class ModernLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val base = footerBaseline
         pen.rect(left, base - st.size - 1f, 16f * k, 3f * k, fill = accent, radius = 1.5f * k)
         pen.text("${doc.title} ${doc.number}", left + 22f * k, base - st.size * 0.1f, st, maxWidth = cw / 2f)
-        pen.text("Page $pageNo of $count", right, base - st.size * 0.1f, st, Align.RIGHT)
+        pen.text(pageOf(pageNo, count), right, base - st.size * 0.1f, st, Align.RIGHT)
     }
 
     override fun summaryBlocks(): List<Block> {
@@ -481,7 +481,7 @@ class ModernLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayout
         val grand = Block(pill + 6f * k) { pen, x, top ->
             pen.rect(x - pad + 4f * k, top + 6f * k, rightW - 8f * k, pill, fill = accent, radius = 8f * k)
             val base = top + 6f * k + (pill - totalSt.lineHeight) / 2f + totalSt.ascent
-            pen.text("Total", x + 6f * k, base, ts(9f, FontRole.BOLD, Ink.WHITE))
+            pen.text(t("Total"), x + 6f * k, base, ts(9f, FontRole.BOLD, Ink.WHITE))
             pen.text(doc.grandTotal, x + rightW - 2 * pad - 6f * k, base, totalSt, Align.RIGHT, rightW * 0.66f, shrink = true)
         }
         val card = boxed(Block.stack(listOf(totals, grand)), rightW, pad, fill = soft, radius = 10f * k)
@@ -543,7 +543,8 @@ class ElegantLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
         doubleRule(pen, left, y, cw)
         y += 16f * k
         val titleSt = ts(10f, FontRole.BOLD, accent)
-        val title = doc.title.uppercase().toCharArray().joinToString(" ")
+        // Letter-spacing only for Latin titles: spacing Devanagari would break its conjuncts.
+        val title = if (doc.title.all { it.code < 128 }) doc.title.uppercase().toCharArray().joinToString(" ") else doc.title
         val tw = m.width(title, titleSt)
         pen.text(title, cx, y + titleSt.ascent * 0.7f, titleSt, Align.CENTER)
         ornament(pen, cx - tw / 2f - 46f * k, y + titleSt.size * 0.32f, 30f * k)
@@ -585,7 +586,7 @@ class ElegantLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
     override fun footer(pen: Pen, pageNo: Int, count: Int) {
         val st = ts(7f, color = Ink.MUTED)
         val base = footerBaseline
-        val text = "${doc.number}   ·   Page $pageNo of $count"
+        val text = "${doc.number}   ·   ${pageOf(pageNo, count)}"
         val w = m.width(text, st)
         pen.text(text, pageW / 2f, base, st, Align.CENTER)
         pen.hline(pageW / 2f - w / 2f - 40f * k, base - st.size * 0.35f, 30f * k, Ink.RULE, 0.5f)
@@ -600,7 +601,7 @@ class ElegantLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
         val grand = Block(totalSt.lineHeight + 16f * k) { pen, x, top ->
             doubleRule(pen, x, top + 4f * k, rightW)
             val base = top + 10f * k + totalSt.ascent
-            pen.text("Total", x, base, ts(9f, FontRole.BOLD, dark))
+            pen.text(t("Total"), x, base, ts(9f, FontRole.BOLD, dark))
             pen.text(doc.grandTotal, x + rightW, base, totalSt, Align.RIGHT, rightW * 0.7f, shrink = true)
             doubleRule(pen, x, top + totalSt.lineHeight + 12f * k, rightW)
         }
@@ -656,7 +657,7 @@ class CounterLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
         val v = ts(7.4f, FontRole.BOLD, Ink.BLACK)
         val half = cw / 2f
         val buyer = doc.buyer
-        val partyRows = if (buyer == null) listOf("Party" to "Cash sale") else buildList {
+        val partyRows = if (buyer == null) listOf("Party" to t("Cash sale")) else buildList {
             add("Party" to buyer.name)
             if (buyer.addressLines.isNotEmpty()) add("Address" to buyer.addressLines.joinToString(", "))
             buyer.gstin?.let { add("GSTIN" to it) }
@@ -705,7 +706,7 @@ class CounterLayout(input: LayoutInput, paper: Paper, copy: String?) : BaseLayou
         val totalSt = ts(11f, FontRole.BOLD, Ink.BLACK)
         val grand = Block(totalSt.lineHeight + 8f * k) { pen, x, top ->
             pen.rect(x - pad, top + 2f * k, rightW, totalSt.lineHeight + 6f * k, fill = Ink.tint(accent, 0.88f))
-            pen.text("TOTAL", x, top + 5f * k + totalSt.ascent, totalSt)
+            pen.text(t("TOTAL"), x, top + 5f * k + totalSt.ascent, totalSt)
             pen.text(doc.grandTotal, x + rightW - 2 * pad, top + 5f * k + totalSt.ascent, totalSt, Align.RIGHT, rightW * 0.7f, shrink = true)
         }
         val first = boxedPair(leftContent, leftW, Block.stack(listOf(totals, grand), gap = 2f * k), rightW, pad, g)

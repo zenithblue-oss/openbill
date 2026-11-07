@@ -90,6 +90,8 @@ data class PrintOptions(
     /** UPI VPA such as name@bank; printed with a locally generated payment QR. */
     val upiId: String = "",
     val terms: String = "",
+    /** Label language of A4/A5 templates; thermal receipts stay English (most receipt printers lack Devanagari). */
+    val language: InvoiceLanguage = InvoiceLanguage.ENGLISH,
 )
 
 /** Everything that decides how a firm's invoices look. */
@@ -124,6 +126,7 @@ data class InvoiceStyle(
                     copies = s("copies")?.let { v -> CopyMode.entries.firstOrNull { it.name == v } } ?: d.copies,
                     upiId = s("upiId") ?: "",
                     terms = s("termsText") ?: "",
+                    language = InvoiceLanguage.fromName(s("language")),
                 ),
             )
         }
@@ -148,6 +151,7 @@ data class InvoiceStyle(
             put("copies", o.copies.name)
             put("upiId", o.upiId)
             put("termsText", o.terms)
+            put("language", o.language.name)
         }
     }
 }

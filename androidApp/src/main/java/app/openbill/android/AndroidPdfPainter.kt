@@ -22,8 +22,19 @@ import java.io.OutputStream
  * Noto Sans files in assets/fonts (the same files desktop embeds).
  */
 class AndroidPdfPainter(context: Context) {
+    // Android shapes Devanagari itself; API 29+ uses the bundled Noto Sans Devanagari as the first
+    // fallback (same file as desktop), older versions fall back to the system's Devanagari font.
     private val typefaces: Map<FontRole, Typeface> = FontRole.entries.associateWith { role ->
-        runCatching { Typeface.createFromAsset(context.assets, role.assetPath) }.getOrElse {
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val font = { path: String -> android.graphics.fonts.Font.Builder(context.assets, path).build() }
+                Typeface.CustomFallbackBuilder(android.graphics.fonts.FontFamily.Builder(font(role.assetPath)).build())
+                    .addCustomFallback(android.graphics.fonts.FontFamily.Builder(font(role.devanagariAsset)).build())
+                    .setSystemFallback("sans-serif")
+                    .setStyle(android.graphics.fonts.FontStyle(if (role == FontRole.BOLD) 700 else 400, android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT))
+                    .build()
+            } else Typeface.createFromAsset(context.assets, role.assetPath)
+        }.getOrElse {
             if (role == FontRole.BOLD) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
     }
