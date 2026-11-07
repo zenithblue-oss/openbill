@@ -72,6 +72,48 @@ object MasterCsv {
     /** Optional item import columns: opening stock posted as one adjustment (not exported). */
     val OPENING_COLUMNS = listOf("opening_qty", "opening_cost", "godown", "batch", "expiry")
 
+    /** Optional party import columns: opening balance (positive = they owe you, or with balance_type dr/cr) and credit days. */
+    val PARTY_OPENING_COLUMNS = listOf("opening_balance", "balance_type", "credit_days")
+
+    /**
+     * Column names used by spreadsheets and other billing software's exports, mapped to ours
+     * (compared lowercased with punctuation as spaces). Our own names always win over an alias.
+     */
+    private val ALIASES: Map<String, String> = mapOf(
+        "name" to listOf("party name", "customer name", "supplier name", "vendor name", "ledger name", "account name", "item name", "product name", "name of item", "item", "product", "particulars"),
+        "type" to listOf("party type", "ledger type", "customer type", "group", "under"),
+        "phone" to listOf("mobile", "mobile no", "mobile number", "phone no", "phone number", "contact", "contact no", "contact number", "whatsapp"),
+        "email" to listOf("email id", "e mail", "email address", "mail"),
+        "gstin" to listOf("gst no", "gst number", "gstin no", "gstin uin", "gst in", "gstin number", "gst registration no"),
+        "state_code" to listOf("state code", "pos", "place of supply code"),
+        "sku" to listOf("item code", "product code", "code", "sku code", "part no", "part number"),
+        "unit" to listOf("uom", "unit of measure", "units", "primary unit", "base unit"),
+        "hsn_sac" to listOf("hsn", "hsn code", "sac", "sac code", "hsn sac", "hsn sac code"),
+        "gst_rate" to listOf("gst rate", "gst percent", "gst %", "tax rate", "tax", "tax percent", "igst rate", "gst rate percent"),
+        "sale_price" to listOf("selling price", "sales price", "sale rate", "selling rate", "rate", "price", "mrp", "unit price"),
+        "purchase_price" to listOf("purchase rate", "cost price", "cost", "buying price", "purchase cost"),
+        "is_service" to listOf("service", "item type service"),
+        "opening_qty" to listOf("opening stock", "opening quantity", "opening qty", "stock", "quantity", "qty", "current stock"),
+        "opening_cost" to listOf("opening rate", "stock rate", "opening value rate"),
+        "opening_balance" to listOf("opening balance", "op balance", "balance", "outstanding", "closing balance"),
+        "balance_type" to listOf("dr cr", "balance type", "type of balance"),
+        "credit_days" to listOf("credit period", "credit days", "payment terms days"),
+    ).flatMap { (canonical, list) -> list.map { normalize(it) to canonical } }.toMap()
+
+    private fun normalize(header: String) = header.lowercase().replace('%', ' ').map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("").trim().replace(Regex(" +"), " ")
+
+    /** The header in our column names: exact names (with _ or spaces) kept, known aliases translated. */
+    internal fun canonicalHeader(raw: List<String>): List<String> {
+        val ours = (PARTY_COLUMNS + ITEM_COLUMNS + OPENING_COLUMNS + PARTY_OPENING_COLUMNS).toSet()
+        val direct = raw.map { normalize(it).replace(' ', '_') }
+        return direct.mapIndexed { i, d ->
+            when {
+                d in ours -> d
+                else -> ALIASES[normalize(raw[i])]?.takeIf { it !in direct } ?: d
+            }
+        }
+    }
+
     private val GSTIN = Regex("^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]Z[0-9A-Z]$")
 
     fun validateParty(p: Party) {
@@ -82,18 +124,61 @@ object MasterCsv {
     /** Percent text ("18", "0.25") to a [Rate]; same 4-decimal scale as [Quantity]. */
     fun parseRate(text: String): Rate = Rate.ofBasisPointsHundredths(Quantity.parse(text.trim().removeSuffix("%")).scaledUnits)
 
-    fun parseMoney(text: String): Money = runCatching { Money.parse(text.trim()) }
+    /** Amount text; spreadsheet forms such as "₹1,500.00" or "Rs. 1500" are accepted. */
+    fun parseMoney(text: String): Money = runCatching { Money.parse(text.trim().removePrefix("₹").removePrefix("Rs.").removePrefix("Rs").replace(",", "").trim()) }
         .getOrElse { throw IllegalArgumentException("Invalid amount '$text' (use a decimal like 1500.00)") }
 
     fun parties(text: String, firmId: String, newId: () -> String, now: Instant): CsvImport<Party> =
         rows(text) { col ->
+            // Signed balance, or an amount with balance_type: positive / Dr = they owe you.
+            val balance = col("opening_balance")?.let { b ->
+                val t = b.trim()
+                val suffix = t.takeLast(2).lowercase().takeIf { it == "dr" || it == "cr" }
+                parseMoney(if (suffix != null) t.dropLast(2) else t).let { m -> if (suffix == "cr") -m else m }
+            } ?: Money.ZERO
+            val credit = when (col("balance_type")?.lowercase()?.trim()) {
+                null, "dr", "debit", "receivable", "to receive" -> false
+                "cr", "credit", "payable", "to pay" -> true
+                else -> throw IllegalArgumentException("balance_type must be dr or cr")
+            }
+            val signed = if (credit) -balance else balance
             Party(
                 id = newId(), firmId = firmId, name = col("name") ?: throw IllegalArgumentException("name is required"),
-                type = col("type")?.let { t -> PartyType.entries.firstOrNull { it.name.equals(t, true) } ?: throw IllegalArgumentException("type must be customer, supplier, or both") } ?: PartyType.CUSTOMER,
-                phone = col("phone"), email = col("email"), gstin = col("gstin")?.uppercase(),
-                stateCode = col("state_code") ?: col("gstin")?.take(2), createdAt = now, updatedAt = now,
+                type = col("type")?.let(::partyType) ?: PartyType.CUSTOMER,
+                phone = col("phone"), email = col("email"), gstin = col("gstin")?.uppercase()?.replace(" ", ""),
+                stateCode = col("state_code")?.padStart(2, '0') ?: col("gstin")?.take(2),
+                openingBalance = if (signed < Money.ZERO) -signed else signed,
+                openingBalanceType = if (signed < Money.ZERO) app.openbill.core.domain.model.OpeningBalanceType.CREDIT else app.openbill.core.domain.model.OpeningBalanceType.DEBIT,
+                creditDays = col("credit_days")?.let { d -> d.removeSuffix("days").trim().toIntOrNull()?.takeIf { it in 0..3650 } ?: throw IllegalArgumentException("credit_days must be 0 to 3650") },
+                createdAt = now, updatedAt = now,
             ).also(::validateParty)
         }
+
+    /** Our type names, plus the ledger groups other software exports (Sundry Debtors / Creditors). */
+    private fun partyType(text: String): PartyType {
+        val t = normalize(text)
+        return PartyType.entries.firstOrNull { it.name.equals(t, true) } ?: when {
+            "debtor" in t || t == "buyer" || t == "client" -> PartyType.CUSTOMER
+            "creditor" in t || t == "vendor" || t == "seller" -> PartyType.SUPPLIER
+            t == "customer and supplier" || t == "customer supplier" -> PartyType.BOTH
+            else -> throw IllegalArgumentException("type must be customer, supplier, or both")
+        }
+    }
+
+    /** Header and one example row for each import, to fill in a spreadsheet. */
+    fun partiesTemplate(): String = table(
+        listOf(
+            PARTY_COLUMNS + PARTY_OPENING_COLUMNS,
+            listOf("Sharma Stores", "customer", "9876543210", "sharma@example.com", "27AAPFU0939F1ZV", "27", "1500.00", "dr", "30"),
+        ),
+    )
+
+    fun itemsTemplate(): String = table(
+        listOf(
+            ITEM_COLUMNS + OPENING_COLUMNS,
+            listOf("Basmati rice 5 kg", "RICE5", "pcs", "1006", "5", "650.00", "560.00", "false", "20", "560.00", "", "", ""),
+        ),
+    )
 
     /**
      * Address-book contacts (vCard) as new customers. A contact whose phone, or name when it has
@@ -182,7 +267,7 @@ object MasterCsv {
     private fun <T> rows(text: String, build: (col: (String) -> String?) -> T): CsvImport<T> {
         val rows = Csv.parse(text)
         require(rows.isNotEmpty()) { "The file is empty" }
-        val header = rows.first().map { it.trim().lowercase() }
+        val header = canonicalHeader(rows.first().map { it.trim().removePrefix("﻿") })
         require("name" in header) { "Missing column(s): name" }
         val valid = ArrayList<T>()
         val errors = ArrayList<Pair<Int, String>>()

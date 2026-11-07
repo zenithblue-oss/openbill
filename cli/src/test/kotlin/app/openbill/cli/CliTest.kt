@@ -150,7 +150,7 @@ class CliTest {
     fun importDryRunAndAllOrNothing() {
         seed()
         val csv = File(root, "parties.csv").apply {
-            writeText("name,type,phone,gstin\r\n\"Gupta, Sons\",customer,99,\r\nBad Co,vendor,,\r\nNo Gst,both,,27XX\r\n")
+            writeText("name,type,phone,gstin\r\n\"Gupta, Sons\",customer,99,\r\nBad Co,dealer,,\r\nNo Gst,both,,27XX\r\n")
         }
         assertGolden("import-parties-errors", run("import", "parties", csv.path, "--dry-run"))
         csv.writeText("name,type\nNew One,customer\n\"Gupta, Sons\",both\n")

@@ -105,8 +105,8 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
             supportingContent = {
                 Text(
                     if (entity == "contacts") "A .vcf file exported from your phone or address book; new contacts become customers, ones already here are skipped"
-                    else if (entity == "parties") "Header: ${MasterCsv.PARTY_COLUMNS.joinToString(", ")}"
-                    else "Header: ${MasterCsv.ITEM_COLUMNS.joinToString(", ")}; optional opening stock: ${MasterCsv.OPENING_COLUMNS.joinToString(", ")} (expiry as YYYY-MM-DD)",
+                    else if (entity == "parties") "Header: ${MasterCsv.PARTY_COLUMNS.joinToString(", ")}; optional ${MasterCsv.PARTY_OPENING_COLUMNS.joinToString(", ")}. Exports from other billing software or Excel (saved as CSV) are matched by column name"
+                    else "Header: ${MasterCsv.ITEM_COLUMNS.joinToString(", ")}; optional opening stock: ${MasterCsv.OPENING_COLUMNS.joinToString(", ")} (expiry as YYYY-MM-DD). Other software's column names such as Item Name, HSN Code, GST % are recognised",
                 )
             },
             leadingContent = { Icon(Icons.Outlined.AddCircle, contentDescription = null) },
@@ -114,6 +114,20 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
             modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { import(entity) },
         )
     }
+    if (imports.any { it != "contacts" }) ListItem(
+        headlineContent = { Text("Save CSV templates") },
+        supportingContent = { Text("Empty party and item sheets with every column and an example row, to fill in a spreadsheet and import") },
+        leadingContent = { Icon(Icons.Outlined.Share, contentDescription = null) },
+        colors = listColors,
+        modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
+            run {
+                listOfNotNull(
+                    if ("parties" in imports) container.platform.saveTextFile("parties-template.csv", MasterCsv.partiesTemplate()) else null,
+                    if ("items" in imports) container.platform.saveTextFile("items-template.csv", MasterCsv.itemsTemplate()) else null,
+                ).joinToString("; ").ifEmpty { null }
+            }
+        },
+    )
     if (canExport) ListItem(
         headlineContent = { Text("Export CSV") },
         supportingContent = { Text("Parties, items and sales invoices, for your accountant or another app") },

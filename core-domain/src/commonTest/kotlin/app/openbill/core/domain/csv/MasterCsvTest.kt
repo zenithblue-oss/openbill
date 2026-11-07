@@ -15,9 +15,46 @@ class MasterCsvTest {
 
     @Test
     fun partiesDryRunReportsRowNumbers() {
-        val r = MasterCsv.parties("name,type,gstin\r\n\"Gupta, Sons\",customer,\r\nBad,vendor,\r\nX,both,27XX\r\n", "F1", id, at)
+        val r = MasterCsv.parties("name,type,gstin\r\n\"Gupta, Sons\",customer,\r\nBad,dealer,\r\nX,both,27XX\r\n", "F1", id, at)
         assertEquals(listOf("Gupta, Sons"), r.valid.map { it.name })
         assertEquals(listOf(3, 4), r.errors.map { it.first })
+    }
+
+    @Test
+    fun otherSoftwareExportsMapByColumnName() {
+        // A typical spreadsheet export: aliases, BOM, Dr/Cr balances, ledger groups, rupee amounts.
+        val p = MasterCsv.parties(
+            "﻿Party Name,Group,Mobile No.,GSTIN/UIN,Opening Balance,Dr/Cr,Credit Period\n" +
+                "Asha Stores,Sundry Debtors,98765,27AAPFU0939F1ZV,\"₹1,500.00\",Dr,30\n" +
+                "Kiran Traders,Sundry Creditors,,,2500 Cr,,\n" +
+                "Bad,Sundry Debtors,,,10,xx,\n",
+            "F1", id, at,
+        )
+        assertEquals(listOf("Asha Stores", "Kiran Traders"), p.valid.map { it.name })
+        assertEquals(listOf(4), p.errors.map { it.first })
+        val (asha, kiran) = p.valid
+        assertEquals(app.openbill.core.domain.model.PartyType.CUSTOMER, asha.type)
+        assertEquals("98765", asha.phone)
+        assertEquals("27", asha.stateCode)
+        assertEquals(Money.parse("1500"), asha.openingBalance)
+        assertEquals(app.openbill.core.domain.model.OpeningBalanceType.DEBIT, asha.openingBalanceType)
+        assertEquals(30, asha.creditDays)
+        assertEquals(app.openbill.core.domain.model.PartyType.SUPPLIER, kiran.type)
+        assertEquals(Money.parse("2500"), kiran.openingBalance)
+        assertEquals(app.openbill.core.domain.model.OpeningBalanceType.CREDIT, kiran.openingBalanceType)
+
+        val i = MasterCsv.items("Item Name,Item Code,UOM,HSN Code,GST %,Selling Price,Purchase Rate,Opening Stock\nRice,R1,PCS,1006,5%,\"1,050.00\",900,4\n", "F1", units, emptyList(), id, at)
+        assertEquals(emptyList(), i.errors)
+        val rice = i.valid.single()
+        assertEquals("R1", rice.sku)
+        assertEquals("1006", rice.hsnSac)
+        assertEquals(Money.parse("1050"), rice.salePrice)
+        assertEquals(app.openbill.core.model.Quantity.of(4), i.openings[rice.id]?.quantity)
+        // Our own column wins over an alias for the same field.
+        assertEquals(listOf("name", "item_name"), MasterCsv.canonicalHeader(listOf("name", "Item Name")))
+        // Templates read back.
+        assertEquals(1, MasterCsv.parties(MasterCsv.partiesTemplate(), "F1", id, at).valid.size)
+        assertEquals(1, MasterCsv.items(MasterCsv.itemsTemplate(), "F1", units, emptyList(), id, at).valid.size)
     }
 
     @Test
