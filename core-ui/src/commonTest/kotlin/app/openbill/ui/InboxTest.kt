@@ -63,6 +63,18 @@ class InboxTest {
     }
 
     @Test
+    fun modulesSwitchPerBusinessAndPersist() {
+        val store = InMemorySettingsStore()
+        val m = app.openbill.ui.settings.ModulesController(store)
+        assertTrue(m.isOn("f1", app.openbill.ui.settings.Module.POS))
+        m.setEnabled("f1", app.openbill.ui.settings.Module.POS, false)
+        m.setEnabled("f1", app.openbill.ui.settings.Module.RECURRING, false)
+        m.setEnabled("f1", app.openbill.ui.settings.Module.RECURRING, true)
+        assertEquals(setOf(app.openbill.ui.settings.Module.POS), app.openbill.ui.settings.ModulesController(store).disabled("f1").value)
+        assertTrue(app.openbill.ui.settings.ModulesController(store).isOn("f2", app.openbill.ui.settings.Module.POS))
+    }
+
+    @Test
     fun setupChecklist() {
         val at = Instant.fromEpochMilliseconds(0)
         val bare = app.openbill.core.domain.model.Firm(id = "f", name = "F", stateCode = "27", addressLine1 = "1 Road", city = "Pune", createdAt = at, updatedAt = at)

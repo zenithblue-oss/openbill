@@ -108,6 +108,7 @@ fun MoneyScreen(
 ) {
     val firmId = session.firm.id
     val repos = container.repositories
+    val modulesOff by container.modules.disabled(firmId).collectAsState()
     // SQL totals and pages only: this tab is one click from home.
     val overview by rememberMoneyTotals(container, firmId)
     val accounts by remember(firmId) { repos.ledger.observeAccounts(firmId) }.collectAsState(initial = emptyList())
@@ -195,15 +196,19 @@ fun MoneyScreen(
                         modifier = Modifier.clickable(onClick = onReports),
                     )
                 }
-                item(key = "docs-h") { SectionHeader("Documents", Modifier.padding(horizontal = pageGutter)) }
-                items(DOC_LIST_TITLES.keys.toList(), key = { "doc-" + it.name }) { t ->
+                val docsOn = app.openbill.ui.settings.Module.DOCUMENTS !in modulesOff
+                val recurringOn = app.openbill.ui.settings.Module.RECURRING !in modulesOff
+                if (docsOn || recurringOn && can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) {
+                    item(key = "docs-h") { SectionHeader("Documents", Modifier.padding(horizontal = pageGutter)) }
+                }
+                if (docsOn) items(DOC_LIST_TITLES.keys.toList(), key = { "doc-" + it.name }) { t ->
                     ListItem(
                         headlineContent = { Text(DOC_LIST_TITLES.getValue(t)) },
                         supportingContent = { val n = docCounts[t] ?: 0; Text("$n document${if (n == 1) "" else "s"}") },
                         modifier = Modifier.clickable { onDocuments(t) },
                     )
                 }
-                if (can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) item(key = "recurring") {
+                if (recurringOn && can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)) item(key = "recurring") {
                     ListItem(
                         headlineContent = { Text("Recurring invoices") },
                         supportingContent = { Text("Invoices made on a schedule; pause, resume or delete") },

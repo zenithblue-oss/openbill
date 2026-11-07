@@ -33,9 +33,20 @@ import androidx.compose.ui.window.Dialog
 import app.openbill.core.domain.model.VoucherType
 
 /** Actions and screens offered by the desktop command palette (Ctrl/Cmd+K). */
-fun paletteCommands(nav: Navigator, focusSearch: () -> Unit): List<Pair<String, () -> Unit>> = buildList {
-    // Only screens the signed-in user may open.
+fun paletteCommands(
+    nav: Navigator,
+    modulesOff: Set<app.openbill.ui.settings.Module> = emptySet(),
+    focusSearch: () -> Unit,
+):List<Pair<String, () -> Unit>> = buildList {
+    // Only screens the signed-in user may open, and not those of modules switched off.
     fun go(label: String, route: Route) {
+        val hidden = when (route) {
+            is Route.Pos -> app.openbill.ui.settings.Module.POS
+            is Route.Documents -> app.openbill.ui.settings.Module.DOCUMENTS
+            Route.Recurring -> app.openbill.ui.settings.Module.RECURRING
+            else -> null
+        }
+        if (hidden in modulesOff) return
         if (route.permission?.let(app.openbill.core.domain.model.Access::can) != false) add(label to { nav.push(route) })
     }
     go("New invoice", Route.InvoiceEditor(null))

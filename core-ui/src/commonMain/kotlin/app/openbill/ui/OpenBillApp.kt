@@ -318,7 +318,7 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
             nav.selectTab(Tab.INVOICES)
         }
     }
-    if (palette) CommandPalette(paletteCommands(nav) { focusSearch() }) { palette = false }
+    if (palette) CommandPalette(paletteCommands(nav, container.modules.disabled(firm.id).value) { focusSearch() }) { palette = false }
     val rootFocus = remember { FocusRequester() }
     var rootHasFocus by remember { mutableStateOf(false) }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
@@ -549,6 +549,7 @@ private fun RouteContent(
             return
         }
     }
+    val modulesOff by container.modules.disabled(s.firm.id).collectAsState()
     when (route) {
         is Route.Home -> when (route.tab) {
             Tab.INVOICES -> InvoiceListScreen(
@@ -560,7 +561,7 @@ private fun RouteContent(
                 onAddParty = { nav.push(Route.PartyEdit(null)) },
                 onStock = { low -> nav.push(Route.StockSummary(low)) },
                 onMoney = { c -> if (c == MoneyCard.CASH_BANK) nav.selectTab(Tab.MONEY) else nav.push(moneyCardRoute(c)) },
-                onPos = { nav.push(Route.Pos()) },
+                onPos = if (app.openbill.ui.settings.Module.POS in modulesOff) null else ({ nav.push(Route.Pos()) }),
                 onInbox = { nav.push(Route.Inbox) },
                 onGuide = { r -> if (r is Route.Home) nav.selectTab(r.tab) else nav.push(r) },
             )

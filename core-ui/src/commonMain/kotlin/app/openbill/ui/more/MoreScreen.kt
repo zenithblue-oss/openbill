@@ -161,7 +161,8 @@ fun MoreScreen(
                 }
 
                 if (can(Permission.CREATE_VOUCHERS) || can(Permission.SETTINGS)) SectionHeader("Sales and invoices")
-                if (can(Permission.CREATE_VOUCHERS)) ListItem(
+                val modulesOff by container.modules.disabled(firm.id).collectAsState()
+                if (can(Permission.CREATE_VOUCHERS) && app.openbill.ui.settings.Module.POS !in modulesOff) ListItem(
                     headlineContent = { Text("POS billing") },
                     supportingContent = { Text("Fast counter sales: scan items, split payment, hold bills") },
                     trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
@@ -325,6 +326,11 @@ fun MoreScreen(
 
                 SectionHeader("Notifications")
                 app.openbill.ui.notify.NotificationPreferences(container, listColors)
+
+                if (can(Permission.SETTINGS)) {
+                    SectionHeader("Modules")
+                    app.openbill.ui.settings.ModuleSwitches(container.modules, firm.id, listColors)
+                }
 
                 if (container.platform.isDebugBuild && can(Permission.SETTINGS)) {
                     SectionHeader("Developer")

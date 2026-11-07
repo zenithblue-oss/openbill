@@ -16,4 +16,11 @@ class CommandPaletteTest {
         hits.single().second()
         assertEquals(Route.StockSummary(lowOnly = true), nav.current)
     }
+
+    @Test
+    fun modulesSwitchedOffLeaveThePalette() {
+        val off = setOf(app.openbill.ui.settings.Module.POS, app.openbill.ui.settings.Module.DOCUMENTS)
+        val labels = paletteCommands(Navigator(), off) {}.map { it.first }
+        assertEquals(listOf("Recurring invoices"), labels.filter { it.startsWith("POS") || it == "Quotations" || it == "Recurring invoices" })
+    }
 }

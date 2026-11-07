@@ -181,6 +181,7 @@ class AppContainer(
     val onboarding: OnboardingController by lazy { OnboardingController(platform.settingsStore) }
 
     /** Optional PIN lock shown before any data (device setting). */
+    val modules by lazy { app.openbill.ui.settings.ModulesController(platform.settingsStore) }
     val appLock by lazy { app.openbill.ui.settings.AppLockController(platform.settingsStore) }
 
 
