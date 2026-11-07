@@ -50,6 +50,12 @@ flat naming in `settings.gradle.kts`: `:server`, `:core-api-contract`, `:core-sy
 - CLI changes need golden-output tests. Run `./gradlew :cli:test`
   and, to regenerate goldens for review, `./gradlew :cli:test -PupdateGoldens`. Goldens
   must pass on Linux and Windows.
+- When you try the CLI by hand, use a scratch `--data-dir`, never your real app data.
+  The owner PIN is read from the desktop app's Java preferences. To keep yours untouched,
+  isolate them with `JAVA_OPTS="-Djava.util.prefs.userRoot=/tmp/prefs"`.
+- Logic that the app and the CLI both need belongs in a shared module, such as
+  `core-domain` or `core-printing`. Do not copy it into `cli`. Examples are the invoice
+  math, the document field rules and the attachment export.
 - Sync and server changes need a simulation-suite or API contract test, and an updated
   OpenAPI document with a reviewed diff. Conflict rules are fixed in docs/10 before any
   code that depends on them; propose rule changes in an issue first.

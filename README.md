@@ -94,7 +94,7 @@ lookup, e-invoice and e-way bill) or are app UI translation (invoices already pr
 | Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, local staff users with roles (owner, manager, cashier, accountant) and a per-user activity log, business erasure, CSV, Tally, GSTR-1; P1: attachment ZIP export, import from other software, notifications inbox, deep links, get-started checklist, modules screen, offline help, diagnostics | 100% (10 / 10) |
 | POS | Counter billing: scan or search items, Cash sale default, held bills, split tender with change, keyboard shortcuts, tablet layout, thermal receipt | 100% (5 / 5) |
 | Desktop apps | Windows and Linux builds run the shared UI | Stable |
-| CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 (a few commands pending; see What's left) |
+| CLI | Direct mode: masters, invoices and PDF, orders, recurring, payments, stock, import/export, attachments, reports, GST, Tally, audit, staff sign-in with roles | C0-C3 complete |
 | Server | Not started (post-1.0) | 0% |
 
 ## What's left
@@ -107,8 +107,7 @@ Still open for the 1.0 release (outside the P0 feature count):
   print service or /dev/usb/lp*).
 - Data: backup schedule and retention settings (fixed at daily, keep 7).
 - Release: code signing for Windows and Linux artifacts (only `SHA256SUMS` today).
-- CLI: release packages (it runs from source today; see [CONTRIBUTING.md](CONTRIBUTING.md))
-  and the `db info`, `backup inspect`, `search`, and `voucher restore` commands.
+- CLI: signing its packages. Release tags build an unsigned tar.gz, zip and DEB.
 - Optional server after 1.0.
 
 OpenBill is a clean-room project. It is not affiliated with, endorsed by, or derived from
@@ -142,7 +141,7 @@ more than shipping every competitor feature in the first release.
 | iOS | Phone and tablet | Not planned for 1.0 | - |
 | Web | Browser | Not planned; optional later | - |
 | [Server](docs/10-server.md) | Self-hosted, optional | Planned, after 1.0 | OCI image, JAR |
-| [CLI](docs/11-cli.md) | Terminal, scripting and reports | Direct mode works (C0-C3); run from source with Gradle | Not packaged yet; archives, DEB, MSI component planned |
+| [CLI](docs/11-cli.md) | Terminal, scripting and reports | Direct mode works (C0-C3) | tar.gz, zip, DEB from the next release (needs Java 17+; unsigned) |
 
 Windows and Linux are first-class targets, not afterthoughts. The domain, database, tax,
 search, reporting, and import/export layers are shared through Kotlin Multiplatform. The
@@ -206,9 +205,10 @@ The repository is `zenithblue-oss/openbill` (https://github.com/zenithblue-oss/o
 ### Command line
 
 - `openbill` CLI in direct mode on a local database or a backup file: `db`, `backup`,
-  masters, invoices, stock, payments, CSV import/export, reports, GSTR-1, HSN, Tally
-  export, and audit commands, with stable `--json` output and exit codes (milestones C0-C3;
-  `search` is pending).
+  masters, invoices, orders, recurring schedules, stock, payments, search, CSV and
+  attachment export, reports, GSTR-1, HSN, Tally export, users and audit commands, with
+  stable `--json` output and exit codes (milestones C0-C3). Staff users sign in with their
+  PIN, and the app's roles apply.
 - Remote mode and server administration follow the optional server, after 1.0.
 
 See [docs/11-cli.md](docs/11-cli.md).

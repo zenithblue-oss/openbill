@@ -254,8 +254,17 @@ Exit criteria:
 
 Status at 1.0.1: the signed Android APK/AAB, Windows EXE/MSI/portable ZIP, and Linux
 DEB/tar.gz ship on GitHub Releases with `SHA256SUMS`. Still pending: code signing for the
-Windows and Linux artifacts, CLI packages (the CLI runs from source), and the CLI
-commands `db info`, `backup inspect`, `search`, and `voucher restore`.
+Windows and Linux artifacts. After 1.0.1 the CLI finished C0-C3, including `db info`,
+`backup inspect`, `search` and `invoice restore`. It also gained the app's newer features:
+
+- orders and recurring schedules
+- held bills
+- staff sign-in with roles
+- payment discount and exchange difference
+- the new invoice, party and item fields
+- attachment export
+
+Release tags build unsigned CLI tar.gz, zip and DEB packages, and signing is pending.
 
 ## Phase 7 - Post-1.0 growth and parity
 
@@ -388,7 +397,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | Multi-godown, batch and serial, barcode labels, low-stock alerts | Paid tiers | Phases 4 and 6 (1.0) | A W L C | Done (FEFO batch picker on sale lines; alternate units with conversion; batch or serial per item, not both) |
 | Windows and Linux desktop app | Top paid tier | Phase 3 (1.0) | W L | Stable; EXE, MSI, portable ZIP, DEB, and tar.gz packages ship; code signing pending |
 | Silent print, bulk print, bulk PDF/ZIP export, export notification | Top paid tier (desktop) | Phase 3 (1.0) | W L | Done (silent print setting, tray notification, portable mode, Ctrl+K palette; ESC/POS thermal printing on all surfaces) |
-| Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Done in the apps (orders with partial conversion and status); CLI order commands planned |
+| Purchase orders, sales orders, delivery challans, reverse charge | Paid tiers | Phase 7 | A W L C | Done (orders with partial conversion and status; CLI `order` commands) |
 | Recurring invoices (unlimited) and automated reminders | Paid tiers with schedule limits | Phase 7 | A W L | Recurring invoices done (unlimited; made on app open, no OS background job); editable reminder message done; automated reminders planned |
 | Staff users, roles, CA seat, activity log | Paid tiers | Phase 7 | A W L S C | Done locally (users with PINs, schema v16; Owner/Manager/Cashier/Accountant roles enforced in shared code; deactivation; activity log and sales/day book by user); server accounts planned |
 | Multi-currency and export billing | Paid tiers | Phase 7 | A W L | Done (export/SEZ invoices in a foreign currency with an exchange rate, schema v15; GST, ledger and returns in rupees; both currencies printed) |

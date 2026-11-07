@@ -116,6 +116,35 @@ server host.
 | `db migrate [--dry-run]` | Takes an automatic backup, then migrates to the current schema. |
 | `audit verify` | Checks audit append-only guarantees locally, or the server hash chain in remote mode. |
 
+### 3.2 Commands for app features added since 1.0.1
+
+| Command | Behavior |
+| --- | --- |
+| `db info`, `backup inspect FILE` | Path, size, schema and firms; an archive's manifest, encryption, record counts and whether it needs migration. |
+| `search QUERY [--type invoices\|parties\|items\|payments\|...]` | The app's list searches in one go. |
+| `invoice restore REF [--reason]`, `invoice delete`, `invoice recycle-bin [--purge]` | Restore a cancelled invoice (reason required) or a deleted draft. |
+| `invoice create ... --reverse-charge --export wpay\|wopay\|sezwp\|sezwop --currency USD --exchange-rate 83.50 --transporter ... --po-number ... --eway-bill ... --field LABEL=VALUE --line SKU:QTY@RATE+FREE` | The app's document fields; totals use the app's invoice math. Party special rates and credit terms apply. |
+| `order list\|show\|create\|post\|convert [--qty LINE=QTY]\|short-close\|cancel --type sales\|purchase` | Sales and purchase orders; converting bills the pending quantity. |
+| `recurring list\|show\|pause\|resume\|delete\|run [--today]` | Recurring invoice schedules; `run` catches up missed periods and is safe to repeat (cron). |
+| `pos held list\|discard` | Bills on hold at the counter. |
+| `payment in\|out ... --discount AMOUNT`, `--settle-exchange INVOICE` | Settlement discount; exchange gain or loss on a foreign-currency invoice. |
+| `party update REF --credit-limit --credit-days --group --currency`, `party price list\|set\|remove` | Credit terms (owner or manager), group, default currency, special rates. `none` clears a value. |
+| `item update REF --low-stock --reorder-qty --category --field LABEL=VALUE`, `item category list\|add` | Stock levels, categories (created when missing) and the custom item fields set up in the app. |
+| `export attachments --out FILE.zip` | Every attachment, one folder per record, plus `index.csv`; the same as the app's export. |
+| `users list\|add\|activate\|deactivate\|role`, `audit list --user NAME` | Staff users (owner PIN required), and the activity log for one user. |
+
+Sign-in: when the data has staff users, every command needs `--user NAME` (or
+`OPENBILL_USER`) and that user's PIN. The owner's PIN is the desktop app-lock PIN. The CLI
+reads the PIN from `OPENBILL_PIN`, from the first stdin line with `--pin-stdin`, or from a
+hidden prompt on a terminal. It never accepts the PIN as an argument. The CLI uses the
+app's wrong-PIN back-off and enforces the app's roles:
+
+- A cashier gets exit 8 on reports, exports, recurring, users and the activity log.
+- Writes are checked by the same repository rules as the app.
+
+`users add` reads the new PIN from `--new-pin-stdin`, `OPENBILL_NEW_PIN`, or a hidden
+prompt, which asks twice.
+
 Dates are `YYYY-MM-DD`; periods are `YYYY-MM`. Amounts on the command line are decimal
 strings with up to two places; the CLI never parses money as floating point.
 
@@ -236,8 +265,18 @@ and `shared:platform-jvm`. It must not depend on `core-ui` or any `feature-*` mo
 
 ## 8. Packaging
 
-Planned. Releases up to 1.0.1 do not include CLI artifacts; see the status note in
-section 10.
+Built today by the `cli` job in `.github/workflows/release.yml` on every release tag, after
+`:cli:test` passes. The job builds one portable JVM build, which needs Java 17 or later on
+the machine; the bundled SQLite jar carries the Linux, Windows and macOS natives. It
+publishes three artifacts, all listed in `SHA256SUMS`:
+
+- `openbill-cli-<tag>-linux.tar.gz`
+- `openbill-cli-<tag>-windows.zip`, which includes `bin\openbill.bat`
+- `openbill-cli_<version>_all.deb`, which installs to `/usr/lib/openbill-cli` and links
+  `/usr/bin/openbill`. It depends on a Java 17 runtime.
+
+These artifacts are not signed yet. Signing, `jlink` runtimes and the rest of the plan below
+are pending.
 
 | Platform | Artifact | Notes |
 | --- | --- | --- |
@@ -279,9 +318,13 @@ plus generated shell completions and a man page.
 | C4 | Remote mode, contexts, `server` admin commands | Server S3 |
 | C5 | Native image binaries, if the spike passes | Post-1.0 |
 
-Status at 1.0.1: C0-C3 commands work in direct mode, with these gaps. Vouchers are
-handled by `invoice` (`list`, `show`, `create`, `post`, `cancel`, `pdf`); there is no
-generic `voucher` group, so `voucher restore` is still pending. `db info`,
-`backup inspect`, and `search` are also pending. No CLI packages are published yet: run
-the CLI from source with `./gradlew :cli:run --args="..."` or
-`./gradlew :cli:installDist` (`cli/build/install/openbill/bin/openbill`).
+Status after 1.0.1: C0-C3 are complete in direct mode. Vouchers are handled by `invoice`
+(`list`, `show`, `create`, `post`, `cancel`, `restore`, `delete`, `recycle-bin`, `pdf`)
+rather than a generic `voucher` group. The CLI also covers the app features added since
+1.0.1 (section 3.2). Release tags build unsigned CLI packages (section 8); to run from
+source, use `./gradlew :cli:installDist` (`cli/build/install/openbill/bin/openbill`).
+
+Not in the CLI, because they are app-screen features: POS checkout, the invoice editor's
+live preview, themes and appearance, the diagnostics screen (use `version`, `db info` and
+`db check`), notifications and the inbox, barcode scanning, and app-lock set-up. Contexts,
+`--idempotency-key`, `--ndjson`, completions and remote mode remain planned (C4).
