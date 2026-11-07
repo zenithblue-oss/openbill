@@ -247,7 +247,7 @@ fun ItemListScreen(
                         }
                     }
                 }
-                item(key = "search") { AppSearchBar(query, { query = it; limit.intValue = PAGE_SIZE }, "Search name, HSN/SAC or barcode") }
+                item(key = "search") { AppSearchBar(query, { query = it; limit.intValue = PAGE_SIZE }, if (session.settings.itemFieldLabels.isEmpty()) "Search name, HSN/SAC or barcode" else "Search name, HSN/SAC, barcode or details") }
                 item(key = "filters") {
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = pageGutter),
@@ -352,6 +352,8 @@ data class ItemForm(
     /** Opening stock, recorded as a posted adjustment when a new tracked item is saved. */
     val openingQty: String = "",
     val openingCost: String = "",
+    /** The business's custom item fields (label to value), plus any label this item still has that was removed since. */
+    val custom: List<Pair<String, String>> = emptyList(),
     val errors: Map<String, String> = emptyMap(),
     val saving: Boolean = false,
     val failure: String? = null,
@@ -394,6 +396,7 @@ class ItemEditorModel(
     private val firmId: String,
     private val itemId: String?,
     private val scope: CoroutineScope,
+    private val fieldLabels: List<String> = emptyList(),
 ) {
     private val _state = MutableStateFlow(ItemForm())
     val state: StateFlow<ItemForm> = _state
@@ -408,7 +411,7 @@ class ItemEditorModel(
             val units = container.repositories.catalog.observeUnits(firmId).first()
             val defaultUnit = units.firstOrNull { it.symbol == "NOS" }?.id ?: units.firstOrNull()?.id
             if (itemId == null) {
-                _state.value = ItemForm(loaded = true, unitId = defaultUnit)
+                _state.value = ItemForm(loaded = true, unitId = defaultUnit, custom = fieldLabels.map { it to "" })
             } else {
                 val item = container.repositories.catalog.findItem(itemId)
                 existing = item
@@ -433,6 +436,9 @@ class ItemEditorModel(
                         barcode = item.barcode.orEmpty(),
                         altUnitId = item.alternateUnitId,
                         altFactor = item.alternateUnitFactor?.format().orEmpty(),
+                        custom = item.customFields.associate { it.label to it.value }.let { values ->
+                            (fieldLabels + values.keys).distinct().map { it to values[it].orEmpty() }
+                        },
                     )
                 }
             }
@@ -494,6 +500,9 @@ class ItemEditorModel(
                     barcode = form.barcode.trim().ifBlank { null },
                     alternateUnitId = form.altUnitId,
                     alternateUnitFactor = form.altUnitId?.let { Parse.quantity(form.altFactor) },
+                    customFields = form.custom.mapNotNull { (label, value) ->
+                        app.openbill.ui.invoice.DocFieldRules.clean(value).takeIf { it.isNotEmpty() }?.let { app.openbill.core.domain.model.DocumentField(label, it) }
+                    },
                     updatedAt = now,
                 )
                 container.repositories.catalog.saveItem(item)
@@ -541,7 +550,7 @@ fun ItemEditScreen(
     onOpenStock: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    val model = remember(itemId) { ItemEditorModel(container, session.firm.id, itemId, scope) }
+    val model = remember(itemId) { ItemEditorModel(container, session.firm.id, itemId, scope, session.settings.itemFieldLabels) }
     val form by model.state.collectAsState()
     var confirmRemove by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -725,6 +734,16 @@ fun ItemEditScreen(
                                 )
                             }
                         }
+                    }
+                }
+                if (form.custom.isNotEmpty()) {
+                    SectionHeader("More details")
+                    form.custom.forEachIndexed { i, (label, value) ->
+                        FormField(
+                            label, value,
+                            { v -> model.edit { f -> f.copy(custom = f.custom.toMutableList().also { it[i] = label to v.take(app.openbill.ui.invoice.DocFieldRules.MAX) }) } },
+                            supporting = if (label in session.settings.itemFieldLabels) null else "No longer a field of this business; clear it to remove",
+                        )
                     }
                 }
                 FormField(

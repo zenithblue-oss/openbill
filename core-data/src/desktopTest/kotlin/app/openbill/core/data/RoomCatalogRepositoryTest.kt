@@ -36,7 +36,11 @@ class RoomCatalogRepositoryTest {
         val unit = testUnit()
         val category = testCategory()
         val godown = testGodown()
-        val item = testItem().copy(alternateUnitId = "unit-box", alternateUnitFactor = app.openbill.core.model.Quantity.of(12))
+        val item = testItem().copy(
+            alternateUnitId = "unit-box",
+            alternateUnitFactor = app.openbill.core.model.Quantity.of(12),
+            customFields = listOf(app.openbill.core.domain.model.DocumentField("Brand", "Tata"), app.openbill.core.domain.model.DocumentField("Part no", "PX-9")),
+        )
 
         repository.saveUnit(unit)
         repository.saveCategory(category)
@@ -55,6 +59,10 @@ class RoomCatalogRepositoryTest {
         assertEquals(listOf(item), repository.searchItems(item.firmId, "WID-001"))
         assertEquals(listOf(item), repository.searchItems(item.firmId, "7326"))
         assertTrue(repository.searchItems(item.firmId, "  ").isEmpty())
+        // Custom field values are searchable in both search paths.
+        assertEquals(listOf(item), repository.searchItems(item.firmId, "px-9"))
+        assertEquals(listOf(item), repository.observeItemPage(item.firmId, null, "Tata", 10).first())
+        assertTrue(repository.observeItemPage(item.firmId, null, "Nike", 10).first().isEmpty())
     }
 
     @Test

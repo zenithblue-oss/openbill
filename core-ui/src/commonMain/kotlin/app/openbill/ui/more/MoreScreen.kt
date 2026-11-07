@@ -254,6 +254,18 @@ fun MoreScreen(
                             scope.launch { container.repositories.firms.saveSettings(session.settings.copy(nearExpiryDays = next)) }
                         },
                     )
+                    var editFields by remember { mutableStateOf(false) }
+                    val labels = session.settings.itemFieldLabels
+                    ListItem(
+                        headlineContent = { Text("Custom item fields") },
+                        supportingContent = {
+                            Text(if (labels.isEmpty()) "Extra details on items, such as brand or part number" else labels.joinToString(", ") + if (session.settings.printItemFields) " · printed on documents" else "")
+                        },
+                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                        colors = listColors,
+                        modifier = Modifier.clickable(role = Role.Button) { editFields = true },
+                    )
+                    if (editFields) ItemFieldsDialog(container, session) { editFields = false }
                 }
 
                 SectionHeader("Appearance")
@@ -376,6 +388,51 @@ fun MoreScreen(
             }
         }
     }
+}
+
+/** Owner/manager editor for the business's custom item field labels and whether they print. */
+@Composable
+private fun ItemFieldsDialog(container: AppContainer, session: Session, onDone: () -> Unit) {
+    val max = app.openbill.core.domain.model.FirmSettings.MAX_ITEM_FIELDS
+    val labels = remember { androidx.compose.runtime.mutableStateListOf(*Array(max) { session.settings.itemFieldLabels.getOrElse(it) { "" } }) }
+    var print by remember { mutableStateOf(session.settings.printItemFields) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val messages = LocalAppMessages.current
+    val trimmed = labels.map { it.trim() }
+    val errors = trimmed.mapIndexed { i, l ->
+        when {
+            l.isEmpty() -> null
+            l.length > 30 -> "At most 30 characters"
+            trimmed.subList(0, i).any { it.equals(l, ignoreCase = true) } -> "Already used"
+            else -> null
+        }
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { if (!busy) onDone() },
+        title = { Text("Custom item fields") },
+        text = {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                Text("Up to $max extra details per item, such as brand or part number. Item search also matches their values. Renaming a field leaves old values on items until cleared.", style = MaterialTheme.typography.bodySmall)
+                labels.indices.forEach { i ->
+                    app.openbill.ui.components.FormField("Field ${i + 1}", labels[i], { labels[i] = it.replace("\t", "").replace("\n", "") }, Modifier.fillMaxWidth(), error = errors[i])
+                }
+                app.openbill.ui.inventory.SwitchRow("Print on documents", "Show the values under each line on invoices and other documents", print, { print = it })
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = !busy && errors.all { it == null }, onClick = {
+                busy = true
+                scope.launch {
+                    runCatching {
+                        container.repositories.firms.saveSettings(session.settings.copy(itemFieldLabels = trimmed.filter { it.isNotEmpty() }, printItemFields = print))
+                    }.onSuccess { onDone() }.onFailure { messages?.show(it.message ?: "Could not save the fields") }
+                    busy = false
+                }
+            }) { Text("Save") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(enabled = !busy, onClick = onDone) { Text("Cancel") } },
+    )
 }
 
 @Composable

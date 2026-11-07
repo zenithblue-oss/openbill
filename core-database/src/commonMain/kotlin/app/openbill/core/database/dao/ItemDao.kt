@@ -35,7 +35,8 @@ interface ItemDao {
             "AND (name LIKE '%' || :query || '%' " +
             "OR sku LIKE '%' || :query || '%' " +
             "OR hsnSac LIKE '%' || :query || '%' " +
-            "OR barcode LIKE '%' || :query || '%') " +
+            "OR barcode LIKE '%' || :query || '%' " +
+            "OR customFields LIKE '%' || :query || '%') " +
             "ORDER BY name COLLATE NOCASE, id",
     )
     suspend fun search(firmId: String, query: String): List<ItemEntity>
@@ -48,7 +49,8 @@ interface ItemDao {
             "AND (:query = '' OR name LIKE '%' || :query || '%' " +
             "OR sku LIKE '%' || :query || '%' " +
             "OR hsnSac LIKE '%' || :query || '%' " +
-            "OR barcode LIKE '%' || :query || '%') " +
+            "OR barcode LIKE '%' || :query || '%' " +
+            "OR customFields LIKE '%' || :query || '%') " +
             "ORDER BY name COLLATE NOCASE, id LIMIT :limit",
     )
     fun observePage(firmId: String, services: Boolean?, query: String, limit: Int, categoryId: String?): Flow<List<ItemEntity>>

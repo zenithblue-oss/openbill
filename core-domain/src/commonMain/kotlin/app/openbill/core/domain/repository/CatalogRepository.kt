@@ -20,7 +20,7 @@ interface CatalogRepository {
             val q = query.trim()
             all.filter {
                 it.deletedAt == null && (services == null || it.isService == services) && (categoryId == null || it.categoryId == categoryId) &&
-                    (q.isEmpty() || it.name.contains(q, true) || it.sku?.contains(q, true) == true || it.hsnSac?.contains(q) == true || it.barcode?.contains(q, true) == true)
+                    (q.isEmpty() || it.name.contains(q, true) || it.sku?.contains(q, true) == true || it.hsnSac?.contains(q) == true || it.barcode?.contains(q, true) == true || it.customFields.any { f -> f.value.contains(q, true) })
             }.take(limit)
         }
 

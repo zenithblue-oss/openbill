@@ -96,7 +96,15 @@ suspend fun buildInvoiceDocument(container: AppContainer, session: Session, vouc
     val repos = container.repositories
     val party = voucher.partyId?.let { repos.parties.findParty(it) }
     val firm = repos.firms.findFirm(session.firm.id) ?: session.firm
-    val built = InvoiceDocument.build(voucher, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
+    // Custom item fields print after the line description when the business turns it on.
+    val printed = if (!session.settings.printItemFields) voucher else voucher.copy(
+        lines = voucher.lines.map { line ->
+            val fields = line.itemId?.let { repos.catalog.findItem(it) }?.customFields.orEmpty()
+                .filter { it.label in session.settings.itemFieldLabels && it.value.isNotBlank() }
+            if (fields.isEmpty()) line else line.copy(description = line.description + " (" + fields.joinToString("; ") { "${it.label}: ${it.value}" } + ")")
+        },
+    )
+    val built = InvoiceDocument.build(printed, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
     // A short-closed order prints when and what was closed, and why.
     val doc = voucher.shortClosedAt?.let { at ->
         val closed = Orders.shortClosed(voucher, repos.vouchers.observeConversions(voucher.id).first())
