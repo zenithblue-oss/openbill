@@ -270,7 +270,7 @@ fun ItemListScreen(
                     val isPicked = item.id in picked
                     ListItem(
                         leadingContent = {
-                            if (selecting) androidx.compose.material3.Checkbox(checked = isPicked, onCheckedChange = null) else Monogram(item.name)
+                            if (selecting) androidx.compose.material3.Checkbox(checked = isPicked, onCheckedChange = null) else ItemThumbnail(container, item.id, item.name)
                         },
                         headlineContent = { Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                         supportingContent = {
@@ -562,17 +562,26 @@ fun ItemEditScreen(
     var pickRate by remember { mutableStateOf(false) }
     val slabs = remember { gstSlabsOn(container.today()) }
     val messages = LocalAppMessages.current
-    val dirty = ItemRules.hasChanges(model.baseline, form) && !form.saving
+    // The photo is held here and written to app storage once the item itself is saved.
+    var photo by remember { mutableStateOf<app.openbill.ui.pdf.LogoImage?>(null) }
+    var photoChanged by remember { mutableStateOf(false) }
+    LaunchedEffect(itemId) { if (itemId != null) photo = runCatching { container.platform.loadItemImage(itemId) }.getOrNull() }
+    val dirty = (ItemRules.hasChanges(model.baseline, form) || photoChanged) && !form.saving
     val requestClose = { if (dirty) confirmDiscard = true else onDone() }
     backHandler(dirty) { confirmDiscard = true }
     val save = {
         model.save { saved ->
-            messages?.show(if (itemId == null) "Added ${saved.name}" else "Saved ${saved.name}")
-            onDone()
+            scope.launch {
+                val stored = !photoChanged || runCatching { container.platform.saveItemImage(saved.id, photo) }.isSuccess
+                if (photoChanged) container.invoiceStyles.imageVersion.value++
+                messages?.show((if (itemId == null) "Added ${saved.name}" else "Saved ${saved.name}") + if (stored) "" else "; the photo could not be stored")
+                onDone()
+            }
         }
     }
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost() },
         topBar = {
             AppTopBar(if (itemId == null) "New item" else "Edit item", onBack = requestClose) {
                 if (itemId != null && form.trackInventory) {
@@ -597,6 +606,10 @@ fun ItemEditScreen(
                     SelectableChip("Goods", !form.isService, { model.edit { it.copy(isService = false) } })
                     SelectableChip("Service", form.isService, { model.edit { it.copy(isService = true) } })
                 }
+                app.openbill.ui.setup.PendingFirmImagePicker(
+                    container, photo, { photo = it; photoChanged = true }, "Photo",
+                    "Shown in the item list, POS and item search", maxEdgePx = ITEM_IMAGE_EDGE_PX, camera = true,
+                )
                 val categories by remember { container.repositories.catalog.observeCategories(session.firm.id) }.collectAsState(initial = emptyList())
                 var pickCategory by remember { mutableStateOf(false) }
                 PickerField(

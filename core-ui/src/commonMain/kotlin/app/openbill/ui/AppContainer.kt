@@ -60,6 +60,17 @@ interface PlatformServices {
     /** Stores [image] for the firm, or deletes it when null. */
     suspend fun saveFirmImage(firmId: String, kind: ImageKind, image: LogoImage?)
 
+    /**
+     * Item photos share the firm images' folder ("logos/item-<id>.png"), so backups and their
+     * checksums already carry them. Item ids are ULIDs, never clashing with a firm id.
+     */
+    suspend fun loadItemImage(itemId: String): LogoImage? = loadFirmImage("item-$itemId", ImageKind.LOGO)
+    suspend fun saveItemImage(itemId: String, image: LogoImage?) = saveFirmImage("item-$itemId", ImageKind.LOGO, image)
+
+    /** Camera capture (Android); [captureImage] returns a downscaled PNG like [pickImage], or null if cancelled. */
+    val supportsCamera: Boolean get() = false
+    suspend fun captureImage(maxEdgePx: Int = 600): LogoImage? = null
+
     val appVersion: String
 
     /**

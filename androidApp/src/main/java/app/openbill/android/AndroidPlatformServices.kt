@@ -58,6 +58,8 @@ class ActivityHooks(
     val openFile: suspend (mimeTypes: Array<String>) -> Uri?,
     /** Runtime permission prompt; true when granted. */
     val requestPermission: suspend (permission: String) -> Boolean,
+    /** Camera app preview capture (TakePicturePreview, no FileProvider); null if cancelled. */
+    val capturePhoto: suspend () -> android.graphics.Bitmap? = { null },
 )
 
 class AndroidPlatformServices(
@@ -354,15 +356,29 @@ class AndroidPlatformServices(
             val decoded = resolver.openInputStream(uri)?.use {
                 BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
             } ?: error("not a supported image")
-            val scale = minOf(1f, maxEdgePx.toFloat() / maxOf(decoded.width, decoded.height))
-            val scaled = if (scale < 1f) {
-                Bitmap.createScaledBitmap(decoded, maxOf(1, (decoded.width * scale).toInt()), maxOf(1, (decoded.height * scale).toInt()), true)
-            } else {
-                decoded
-            }
-            val bytes = ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
-            LogoImage(bytes, scaled.width, scaled.height)
+            toPng(decoded, maxEdgePx)
         }
+    }
+
+    private fun toPng(decoded: Bitmap, maxEdgePx: Int): LogoImage {
+        val scale = minOf(1f, maxEdgePx.toFloat() / maxOf(decoded.width, decoded.height))
+        val scaled = if (scale < 1f) {
+            Bitmap.createScaledBitmap(decoded, maxOf(1, (decoded.width * scale).toInt()), maxOf(1, (decoded.height * scale).toInt()), true)
+        } else {
+            decoded
+        }
+        val bytes = ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        return LogoImage(bytes, scaled.width, scaled.height)
+    }
+
+    override val supportsCamera: Boolean
+        get() = context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)
+
+    override suspend fun captureImage(maxEdgePx: Int): LogoImage? {
+        // The barcode scanner library declares CAMERA, so the camera app is only started once it is granted.
+        require(requireHooks().requestPermission(Manifest.permission.CAMERA)) { "camera access is off; allow it in Android settings to take a photo" }
+        val bitmap = requireHooks().capturePhoto() ?: return null
+        return withContext(Dispatchers.Default) { toPng(bitmap, maxEdgePx) }
     }
 
     private fun imageFile(firmId: String, kind: ImageKind): File {

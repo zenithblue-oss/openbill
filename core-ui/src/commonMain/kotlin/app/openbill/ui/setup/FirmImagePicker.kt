@@ -41,10 +41,28 @@ import kotlinx.coroutines.launch
 
 /** Same look as [FirmImagePicker] for first-run setup: the image is held in memory until the firm exists. */
 @Composable
-fun PendingFirmImagePicker(container: AppContainer, image: LogoImage?, onChange: (LogoImage?) -> Unit, title: String, hint: String) {
+fun PendingFirmImagePicker(
+    container: AppContainer,
+    image: LogoImage?,
+    onChange: (LogoImage?) -> Unit,
+    title: String,
+    hint: String,
+    maxEdgePx: Int = 600,
+    /** Offers "Take photo" where the platform has a camera (item photos). */
+    camera: Boolean = false,
+) {
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
     var busy by remember { mutableStateOf(false) }
+    fun use(source: suspend () -> LogoImage?) {
+        busy = true
+        scope.launch {
+            runCatching { source() }
+                .onSuccess { if (it != null) onChange(it) }
+                .onFailure { messages?.show("Could not use that image: ${it.message ?: "unsupported file"}") }
+            busy = false
+        }
+    }
     val bitmap = remember(image) { image?.let { runCatching { decodeImageBitmap(it.bytes) }.getOrNull() } }
     Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
         Box(
@@ -61,16 +79,11 @@ fun PendingFirmImagePicker(container: AppContainer, image: LogoImage?, onChange:
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedButton(onClick = {
-                    busy = true
-                    scope.launch {
-                        runCatching { container.platform.pickImage(600) }
-                            .onSuccess { if (it != null) onChange(it) }
-                            .onFailure { messages?.show("Could not use that image: ${it.message ?: "unsupported file"}") }
-                        busy = false
-                    }
-                }, enabled = !busy) { Text(if (image == null) "Choose image" else "Replace") }
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedButton(onClick = { use { container.platform.pickImage(maxEdgePx) } }, enabled = !busy) { Text(if (image == null) "Choose image" else "Replace") }
+                if (camera && container.platform.supportsCamera) {
+                    OutlinedButton(onClick = { use { container.platform.captureImage(maxEdgePx) } }, enabled = !busy) { Text("Take photo") }
+                }
                 if (image != null) TextButton(onClick = { onChange(null) }, enabled = !busy) { Text("Remove") }
             }
         }

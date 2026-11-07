@@ -98,6 +98,8 @@ fun <T> PickerSheet(
     searchable: Boolean = options.size > 8,
     emptyText: String = "Nothing to choose yet.",
     header: (@Composable () -> Unit)? = null,
+    /** Optional per-row leading content, such as an item photo. */
+    leading: (@Composable (T) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = searchable)
     var query by rememberSaveable { mutableStateOf("") }
@@ -160,6 +162,7 @@ fun <T> PickerSheet(
                 items(filtered, key = key) { option ->
                     val isSelected = selected(option)
                     ListItem(
+                        leadingContent = leading?.let { l -> { l(option) } },
                         headlineContent = { Text(label(option), maxLines = 2, overflow = TextOverflow.Ellipsis) },
                         supportingContent = supporting(option)?.let { s -> { Text(s, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
                         trailingContent = if (isSelected) {

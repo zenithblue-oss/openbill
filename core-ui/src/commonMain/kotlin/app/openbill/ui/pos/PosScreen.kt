@@ -287,7 +287,8 @@ fun PosScreen(
 
     val q = query.trim()
     val shown = if (q.isEmpty()) items else items.filter {
-        it.name.contains(q, true) || it.sku?.contains(q, true) == true || it.barcode?.equals(q, true) == true || it.hsnSac?.startsWith(q) == true
+        it.name.contains(q, true) || it.sku?.contains(q, true) == true || it.barcode?.equals(q, true) == true || it.hsnSac?.startsWith(q) == true ||
+            it.customFields.any { f -> f.value.contains(q, true) }
     }
 
     fun enter() {
@@ -437,6 +438,7 @@ fun PosScreen(
                                 },
                             ) {
                                 Column(Modifier.padding(Spacing.sm)) {
+                                    app.openbill.ui.items.ItemThumbnail(container, item.id, item.name, Modifier.padding(bottom = Spacing.xs), size = 56.dp, monogram = false)
                                     Text(item.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     Text(
                                         if (item.salePrice.paise == 0L) "Set price" else Fmt.inr(item.salePrice),

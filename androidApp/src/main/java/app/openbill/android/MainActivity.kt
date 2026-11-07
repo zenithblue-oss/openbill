@@ -31,6 +31,11 @@ class MainActivity : FragmentActivity() {
         pendingPick?.complete(uri)
         pendingPick = null
     }
+    private var pendingPhoto: CompletableDeferred<android.graphics.Bitmap?>? = null
+    private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        pendingPhoto?.complete(bitmap)
+        pendingPhoto = null
+    }
     private val createPdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         pendingCreate?.complete(uri)
         pendingCreate = null
@@ -121,6 +126,13 @@ class MainActivity : FragmentActivity() {
                         requestPermission.launch(permission)
                         d.await()
                     }
+                },
+                capturePhoto = {
+                    pendingPhoto?.complete(null)
+                    val d = CompletableDeferred<android.graphics.Bitmap?>().also { pendingPhoto = it }
+                    // No camera app at all: report it rather than hang.
+                    runCatching { takePhoto.launch(null) }.onFailure { pendingPhoto = null; d.complete(null); throw IllegalStateException("No camera app found") }
+                    d.await()
                 },
             ),
         )

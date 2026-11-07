@@ -486,6 +486,7 @@ fun InvoiceEditorScreen(
             key = { it.id },
             searchable = true,
             emptyText = "No items yet. Add them from the Items tab, or use a custom line.",
+            leading = { app.openbill.ui.items.ItemThumbnail(container, it.id, it.name) },
             onSelect = { item ->
                 pickItem = false
                 lineForm = itemForm(item)
