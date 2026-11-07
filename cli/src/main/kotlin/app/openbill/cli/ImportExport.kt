@@ -40,6 +40,8 @@ class ImportCsv(private val cli: CliState, private val entity: String) : CliktCo
             errors.forEach { (row, msg) -> cli.env.err.println("row $row: $msg") }
         }
         if (errors.isNotEmpty()) fail(Exit.VALIDATION, "${errors.size} invalid row(s); nothing imported")
+        // ponytail: CLI does not post opening stock; import those rows in the app or use `stock adjust`.
+        if (result.openings.isNotEmpty()) fail(Exit.VALIDATION, "Opening stock columns are imported in the app; remove them or post with `stock adjust`")
         if (dryRun) {
             if (!cli.json) cli.out.println("${result.valid.size} row(s) valid (dry run; nothing written)")
             return@withData

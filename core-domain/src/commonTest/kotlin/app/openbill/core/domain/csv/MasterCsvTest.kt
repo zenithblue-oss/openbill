@@ -30,4 +30,28 @@ class MasterCsvTest {
         val again = MasterCsv.items(MasterCsv.itemsCsv(r.valid) { "pcs" }, "F1", units, emptyList(), id, at)
         assertEquals(r.valid.map { it.copy(id = "x") }, again.valid.map { it.copy(id = "x") })
     }
+
+    @Test
+    fun itemOpeningStockColumnsAreValidatedPerRow() {
+        val godowns = listOf(app.openbill.core.domain.model.Godown(id = "G1", firmId = "F1", name = "Back store", createdAt = at, updatedAt = at))
+        val r = MasterCsv.items(
+            "name,purchase_price,opening_qty,opening_cost,godown,batch,expiry,is_service\n" +
+                "Oil,90,12,,back store,B1,2027-03-31,\n" + // 2: valid, cost from purchase price, batch tracked
+                "Nut,1,5,0.5,,,,\n" + // 3: valid, default godown
+                "Bolt,1,,,,B2,,\n" + // 4: opening columns without a quantity
+                "Fix,0,2,,,,,yes\n" + // 5: service
+                "Can,1,-1,,,,,\n" + // 6: bad quantity
+                "Jar,1,1,,Shed,,,\n" + // 7: unknown godown
+                "Tin,1,1,,,,2027-01-01,\n" + // 8: expiry without batch
+                "Box,1,1,,,X,31/03/2027,\n", // 9: bad date
+            "F1", units, emptyList(), id, at, godowns,
+        )
+        assertEquals(listOf("Oil", "Nut"), r.valid.map { it.name })
+        assertEquals(listOf(4, 5, 6, 7, 8, 9), r.errors.map { it.first })
+        val oil = r.valid[0]
+        assertEquals(true, oil.trackBatch)
+        assertEquals(OpeningStock(app.openbill.core.model.Quantity.of(12), Money.parse("90"), "G1", "B1", kotlinx.datetime.LocalDate(2027, 3, 31)), r.openings[oil.id])
+        assertEquals(OpeningStock(app.openbill.core.model.Quantity.of(5), Money.parse("0.5"), null, null, null), r.openings[r.valid[1].id])
+        assertEquals(false, r.valid[1].trackBatch)
+    }
 }

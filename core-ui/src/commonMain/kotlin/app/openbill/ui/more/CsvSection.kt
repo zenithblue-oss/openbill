@@ -44,6 +44,27 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 
+/** Imported items' opening stock as one posted "Opening stock" adjustment dated today (inside the import transaction). */
+private suspend fun postOpenings(container: AppContainer, firmId: String, items: List<Item>, openings: Map<String, app.openbill.core.domain.csv.OpeningStock>) {
+    val repos = container.repositories
+    val today = container.today()
+    val fy = repos.firms.observeFinancialYears(firmId).first().firstOrNull { today >= it.startDate && today <= it.endDate }
+        ?: error("No financial year covers today; add one before importing opening stock")
+    val firm = repos.firms.findFirm(firmId) ?: error("Unknown firm")
+    var defaultGodown: String? = null
+    val lines = items.mapNotNull { item ->
+        val o = openings[item.id] ?: return@mapNotNull null
+        app.openbill.core.domain.usecase.StockLineInput(
+            itemId = item.id, description = item.name, quantity = o.quantity, unitCost = o.unitCost,
+            godownId = o.godownId ?: defaultGodown ?: app.openbill.ui.inventory.Inventory.ensureDefaultGodown(container, firmId).also { defaultGodown = it },
+            batchNumber = o.batch, expiryDate = o.expiry,
+        )
+    }
+    val id = container.newId()
+    app.openbill.core.domain.usecase.StockVouchers(repos.vouchers, container.postVoucher)
+        .adjust(id, firmId, fy.id, firm.stateCode, today, "Opening stock", lines, { i -> "$id-$i" }, container.now())
+}
+
 /** CSV import of parties and items (dry-run preview first, all rows or none), CSV export, and the recycle bin. */
 @Composable
 fun CsvSection(container: AppContainer, session: Session, listColors: ListItemColors) {
@@ -70,7 +91,10 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
         progress = Progress("Checking rows")
         preview = entity to withContext(Dispatchers.Default) {
             if (entity == "parties") MasterCsv.parties(text, firmId, container::newId, container.now())
-            else MasterCsv.items(text, firmId, repos.catalog.observeUnits(firmId).first(), repos.catalog.observeItems(firmId).first().filter { it.deletedAt == null }, container::newId, container.now())
+            else MasterCsv.items(
+                text, firmId, repos.catalog.observeUnits(firmId).first(), repos.catalog.observeItems(firmId).first().filter { it.deletedAt == null },
+                container::newId, container.now(), repos.catalog.observeGodowns(firmId).first(),
+            )
         }
         null
     }
@@ -85,7 +109,12 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
     imports.forEach { entity ->
         ListItem(
             headlineContent = { Text("Import $entity from CSV") },
-            supportingContent = { Text("Header: ${(if (entity == "parties") MasterCsv.PARTY_COLUMNS else MasterCsv.ITEM_COLUMNS).joinToString(", ")}") },
+            supportingContent = {
+                Text(
+                    if (entity == "parties") "Header: ${MasterCsv.PARTY_COLUMNS.joinToString(", ")}"
+                    else "Header: ${MasterCsv.ITEM_COLUMNS.joinToString(", ")}; optional opening stock: ${MasterCsv.OPENING_COLUMNS.joinToString(", ")} (expiry as YYYY-MM-DD)",
+                )
+            },
             leadingContent = { Icon(Icons.Outlined.AddCircle, contentDescription = null) },
             colors = listColors,
             modifier = Modifier.clickable(enabled = !busy, role = Role.Button) { import(entity) },
@@ -153,6 +182,7 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
                 Text(
                     buildString {
                         append("${result.rows} rows checked: ${result.valid.size} valid, ${result.errors.size} with errors.")
+                        if (ok && result.openings.isNotEmpty()) append("\n${result.openings.size} with opening stock, posted as one stock adjustment dated today.")
                         result.errors.take(8).forEach { (row, msg) -> append("\nRow $row: $msg") }
                         if (result.errors.size > 8) append("\n…and ${result.errors.size - 8} more")
                         if (ok) {
@@ -178,6 +208,7 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
                                         if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item)
                                         if (i % 200 == 199 || i + 1L == total) progress = Progress("Importing $entity", i + 1L, total)
                                     }
+                                    if (result.openings.isNotEmpty()) postOpenings(container, firmId, result.valid.filterIsInstance<Item>(), result.openings)
                                 }
                             }
                             "Imported ${result.valid.size} $entity"
