@@ -1,0 +1,9 @@
+# HTTPS for OpenBill Server on a domain (docker compose --profile https). Caddy obtains and renews
+# the certificate; OpenBill listens on plain HTTP inside the Compose network only.
+{$OPENBILL_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 600MB
+	}
+	reverse_proxy openbill:8090
+}

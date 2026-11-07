@@ -1,0 +1,7 @@
+#!/bin/sh
+# OpenBill Server launcher (runtime tarball): the bundled Java runtime runs the server JAR.
+# JAVA_OPTS overrides the defaults sized for a Raspberry Pi or a 1 GB VPS (docs/10-server.md section 3).
+set -eu
+here=$(dirname "$(readlink -f "$0")")
+# shellcheck disable=SC2086 # JAVA_OPTS is a list of options
+exec "$here/../runtime/bin/java" ${JAVA_OPTS:--Xmx256m -XX:+UseSerialGC} -jar "$here/../lib/openbill-server.jar" "$@"

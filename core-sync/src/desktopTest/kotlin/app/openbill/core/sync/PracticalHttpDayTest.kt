@@ -9,6 +9,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -30,12 +31,20 @@ class PracticalHttpDayTest {
         val phase = System.getProperty("openbill.sim.phase") ?: "1"
         val client = HttpClient(OkHttp)
         try {
+            // Like a paired device: sign in once, keep the refresh token, work offline when the server is down.
+            val tokenFile = File(root, "refresh.token")
             val http = when (phase) {
                 "final" -> null
-                else -> HttpSyncTransport(url, HttpSyncTransport.login(client, url, System.getenv("OPENBILL_SIM_USER"), System.getenv("OPENBILL_SIM_PASSWORD")), client)
+                "1" -> {
+                    root.mkdirs()
+                    val refresh = HttpSyncTransport.login(client, url, System.getenv("OPENBILL_SIM_USER"), System.getenv("OPENBILL_SIM_PASSWORD"))
+                    tokenFile.writeText(refresh)
+                    HttpSyncTransport(url, refresh, client)
+                }
+                else -> HttpSyncTransport(url, tokenFile.readText(), client)
             }
             val unused = SyncServer(File(root, "unused"))
-            val devices = listOf("A", "B").mapIndexed { i, s -> SimDevice(s, File(root, "device-$s"), s, unused, 2026L + i, http ?: unused) }
+            val devices = listOf("A", "B").mapIndexed { i, s -> SimDevice(s, File(root, "device-$s"), s, unused, 2026L + i, http ?: unused, ws) }
             val (a, b) = devices
             when (phase) {
                 "1" -> {
@@ -77,8 +86,17 @@ class PracticalHttpDayTest {
                 }
             }
             if (phase != "final") {
-                // Settle: everything pushed and pulled while the server is up.
-                repeat(4) { devices.forEach { it.sync() } }
+                // Settle once the server is up (it may be restarting): everything pushed and pulled.
+                val deadline = System.currentTimeMillis() + 180_000
+                while (true) {
+                    try {
+                        repeat(4) { devices.forEach { it.sync() } }
+                        break
+                    } catch (e: SyncTransportException) {
+                        if (System.currentTimeMillis() > deadline) throw e
+                        delay(2_000)
+                    }
+                }
                 val head = http!!.pull(ws, 0, 1).head
                 devices.forEach { d ->
                     assertEquals(0L, d.db.syncDao().pendingCount(), "${d.name} pending")
@@ -98,6 +116,8 @@ class PracticalHttpDayTest {
         val random = kotlin.random.Random(steps.first)
         var n = steps.first * 10
         for (step in steps) {
+            // A day's pace, compressed: about 30 s per phase, so a server restart lands mid-way.
+            delay(250)
             devices.forEach { it.step = step }
             val d = devices[random.nextInt(devices.size)]
             val at = d.now()

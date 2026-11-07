@@ -71,7 +71,15 @@ internal class FlakyTransport(private val server: SyncTransport, private val ran
 }
 
 /** [link]: how the device reaches [server] (in process, or over HTTP in the contract test). */
-internal class SimDevice(val name: String, val dir: File, val series: String, private val server: SyncServer, seed: Long, link: SyncTransport = server) {
+internal class SimDevice(
+    val name: String,
+    val dir: File,
+    val series: String,
+    private val server: SyncServer,
+    seed: Long,
+    link: SyncTransport = server,
+    private val workspace: String = WS,
+) {
     val random = Random(seed)
     val transport = FlakyTransport(link, Random(seed + 1), faults = 0.0)
     val file = File(dir, "openbill.db")
@@ -91,7 +99,7 @@ internal class SimDevice(val name: String, val dir: File, val series: String, pr
         dir.mkdirs()
         db = openBillDatabase(Room.databaseBuilder<OpenBillDatabase>(name = file.path))
         repos = db.roomRepositories()
-        client = SyncClient(db, transport, WS, blobs = blobs, random = Random(random.nextLong()), sleep = {}, pageSize = 50)
+        client = SyncClient(db, transport, workspace, blobs = blobs, random = Random(random.nextLong()), sleep = {}, pageSize = 50)
     }
 
     fun close() = db.close()

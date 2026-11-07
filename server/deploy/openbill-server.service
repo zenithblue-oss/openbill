@@ -1,0 +1,36 @@
+# OpenBill Server as a systemd service (scripts/install-server.sh installs it; see docs/server-setup.md).
+# Settings: /etc/openbill/server.env (OPENBILL_* variables) and /var/lib/openbill/server.toml.
+[Unit]
+Description=OpenBill Server (sync and backup hub)
+Documentation=https://github.com/zenithblue-oss/openbill/blob/main/docs/server-setup.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=openbill
+Group=openbill
+Environment=OPENBILL_DATA_DIR=/var/lib/openbill
+EnvironmentFile=-/etc/openbill/server.env
+ExecStart=/opt/openbill-server/bin/openbill-server serve
+Restart=on-failure
+RestartSec=5
+UMask=0077
+# Hardening: the server only writes its data directory.
+StateDirectory=openbill
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/openbill
+
+[Install]
+WantedBy=multi-user.target

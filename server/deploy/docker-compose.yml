@@ -1,0 +1,54 @@
+# OpenBill Server with Docker Compose (docs/server-setup.md).
+#
+# LAN (default): HTTPS on port 8090 with a self-signed certificate.
+#   docker compose up -d && docker compose logs openbill    # setup token and certificate fingerprint
+#
+# Public domain with automatic HTTPS (Caddy, Let's Encrypt): in .env set
+#   OPENBILL_DOMAIN=billing.example.com
+#   OPENBILL_TLS_MODE=off
+#   OPENBILL_SERVER_ALLOW_INSECURE_HTTP=true      # plain HTTP only on the private Compose network
+#   OPENBILL_SERVER_TRUST_FORWARDED_FOR=true      # client addresses for sign-in throttling come from Caddy
+#   OPENBILL_PUBLISH=127.0.0.1:8090               # not reachable from outside except through Caddy
+# then: docker compose --profile https up -d   (ports 80 and 443 open, DNS pointing here)
+services:
+  openbill:
+    image: ${OPENBILL_IMAGE:-ghcr.io/zenithblue-oss/openbill-server:latest}
+    restart: unless-stopped
+    environment:
+      OPENBILL_TLS_MODE: ${OPENBILL_TLS_MODE:-self_signed}
+      OPENBILL_TLS_HOSTS: ${OPENBILL_TLS_HOSTS:-}
+      OPENBILL_SERVER_ALLOW_INSECURE_HTTP: ${OPENBILL_SERVER_ALLOW_INSECURE_HTTP:-false}
+      OPENBILL_SERVER_TRUST_FORWARDED_FOR: ${OPENBILL_SERVER_TRUST_FORWARDED_FOR:-false}
+    ports:
+      - "${OPENBILL_PUBLISH:-8090}:8090"
+    volumes:
+      - openbill-data:/data
+    read_only: true
+    tmpfs:
+      # exec: the SQLite driver loads its native library from here.
+      - /tmp:exec
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      OPENBILL_DOMAIN: ${OPENBILL_DOMAIN:?set OPENBILL_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - openbill
+
+volumes:
+  openbill-data:
+  caddy-data:
+  caddy-config:
