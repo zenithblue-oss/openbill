@@ -57,37 +57,67 @@ class PaymentRecord(private val cli: CliState, private val type: VoucherType) :
     private val notes by option("--notes")
     private val allocate by option("--allocate", help = "INVOICE:AMOUNT, repeatable").multiple()
     private val auto by option("--auto", help = "Allocate oldest invoices first").flag()
+    private val discount by option("--discount", help = "Settlement discount ${if (type == VoucherType.PAYMENT_IN) "allowed" else "received"} on top of --amount; settles invoices, never an advance")
+    private val settleExchange by option("--settle-exchange", help = "Foreign-currency INVOICE settled in full; the difference to its outstanding posts to Exchange gain/loss")
 
     override fun run() = cli.withData(write = true) {
         val f = firm()
         val p = findParty(f.id, party)
         val amt = parseMoney(amount)
+        val disc = discount?.let(::parseMoney) ?: Money.ZERO
+        if (disc < Money.ZERO) fail(Exit.VALIDATION, "Discount cannot be negative")
+        if (settleExchange != null && (disc > Money.ZERO || allocate.isNotEmpty() || auto)) fail(Exit.USAGE, "--settle-exchange replaces --discount, --allocate and --auto")
         repos.ledger.ensureSystemAccounts(f.id, now())
         val accounts = repos.ledger.observeAccounts(f.id).first().filter { it.deletedAt == null && (it.type == AccountType.CASH || it.type == AccountType.BANK) }
         val acc = account?.let { a -> accounts.firstOrNull { it.id == a || it.name.equals(a, true) } ?: fail(Exit.NOT_FOUND, "No cash or bank account '$a'") }
             ?: accounts.firstOrNull { it.isDefault } ?: accounts.firstOrNull() ?: fail(Exit.NOT_FOUND, "No cash or bank account")
         val open = repos.payments.outstandingInvoices(f.id, p.id, MoneyVouchers.invoiceTypeFor(type))
-        val requests = if (auto) MoneyVouchers.fifo(open, amt) else allocate.map { spec ->
+        fun invoice(ref: String) = open.firstOrNull { it.voucherId == ref || it.number.equals(ref, true) } ?: fail(Exit.NOT_FOUND, "No outstanding invoice '$ref' for ${p.name}")
+        val fx = settleExchange?.let(::invoice)
+        val requests = if (auto) MoneyVouchers.fifo(open, amt + disc) else allocate.map { spec ->
             val ref = spec.substringBeforeLast(':', "")
             if (ref.isEmpty()) fail(Exit.USAGE, "Bad --allocate '$spec' (use INVOICE:AMOUNT)")
-            val inv = open.firstOrNull { it.voucherId == ref || it.number.equals(ref, true) } ?: fail(Exit.NOT_FOUND, "No outstanding invoice '$ref' for ${p.name}")
-            AllocationRequest(inv.voucherId, parseMoney(spec.substringAfterLast(':')))
+            AllocationRequest(invoice(ref).voucherId, parseMoney(spec.substringAfterLast(':')))
+        }
+        // As the app's payment screen: a discount tops up what the allocations leave open, oldest first.
+        val split = if (fx != null) {
+            MoneyVouchers.exchangeDifference(fx.outstanding, amt)
+            emptyList()
+        } else {
+            MoneyVouchers.splitWithDiscount(requests, open, listOf(amt), disc).single()
         }
         val (d, fy) = dateAndYear(f, date)
         val m = PaymentMethod.valueOf(method.uppercase())
-        val v = MoneyVouchers(repos.vouchers, repos.payments, repos.ledger, PostVoucher(repos.vouchers)).record(
-            MoneyVoucherInput(
-                type = type, id = cli.env.newId(), firmId = f.id, financialYearId = fy, stateCode = f.stateCode, date = d,
-                amount = amt, accountId = acc.id, method = m, partyId = p.id, instrumentNumber = reference,
-                instrumentDate = d.takeIf { m == PaymentMethod.CHEQUE || m == PaymentMethod.BANK }, notes = notes, allocations = requests,
-            ),
-            now(),
-        )
-        val allocated = requests.fold(Money.ZERO) { a, r -> a + r.amount }
+        var v: app.openbill.core.domain.model.Voucher? = null
+        repos.transaction {
+            val discountAccountId = when {
+                fx != null -> MoneyVouchers.exchangeAccount(repos.ledger, f.id, cli.env.newId, now()).id
+                disc > Money.ZERO -> MoneyVouchers.discountAccount(repos.ledger, f.id, type, cli.env.newId, now()).id
+                else -> null
+            }
+            v = MoneyVouchers(repos.vouchers, repos.payments, repos.ledger, PostVoucher(repos.vouchers)).record(
+                MoneyVoucherInput(
+                    type = type, id = cli.env.newId(), firmId = f.id, financialYearId = fy, stateCode = f.stateCode, date = d,
+                    amount = amt, accountId = acc.id, method = m, partyId = p.id, instrumentNumber = reference,
+                    instrumentDate = d.takeIf { m == PaymentMethod.CHEQUE || m == PaymentMethod.BANK }, notes = notes, allocations = split,
+                    discount = disc, discountAccountId = discountAccountId, exchangeInvoiceId = fx?.voucherId,
+                ),
+                now(),
+            )
+        }
+        val saved = v!!
+        val allocated = repos.payments.allocatedTotalForPayment(saved.id)
+        val settled = saved.total
+        val extra = buildList {
+            if (saved.discount != Money.ZERO) {
+                if (fx != null) add("exchange" to (if (MoneyVouchers.isExchangeGain(type, saved.discount)) "gain" else "loss"))
+                add((if (fx != null) "exchangeDifference" else "discount") to saved.discount)
+            }
+        }
         when {
-            cli.json -> cli.printJson(jsonOf("id" to v.id, "number" to v.number, "amount" to v.total, "allocated" to allocated, "advance" to (v.total - allocated)))
-            cli.quiet -> cli.out.println(v.number ?: v.id)
-            else -> cli.out.println("Recorded ${v.number ?: v.id}  ${v.total.indian()}  allocated ${allocated.indian()}")
+            cli.json -> cli.printJson(jsonOf("id" to saved.id, "number" to saved.number, "amount" to amt, "allocated" to allocated, "advance" to (settled - allocated), *extra.toTypedArray()))
+            cli.quiet -> cli.out.println(saved.number ?: saved.id)
+            else -> cli.out.println("Recorded ${saved.number ?: saved.id}  ${amt.indian()}  allocated ${allocated.indian()}" + extra.joinToString("") { "  ${it.first} ${(it.second as? Money)?.indian() ?: it.second}" })
         }
     }
 }

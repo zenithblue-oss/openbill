@@ -318,6 +318,24 @@ class CliTest {
     }
 
     @Test
+    fun paymentDiscountAndExchangeDifference() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        val inv = ok("-q", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:10", "--post").out.trim() // 147.50
+        val paid = ok("--json", "payment", "in", "--party", "Acme Stores", "--amount", "140.00", "--discount", "7.50", "--allocate", "$inv:140.00", "--date", "2026-10-02").out
+        assertTrue("\"allocated\": \"147.50\"" in paid && "\"advance\": \"0.00\"" in paid && "\"discount\": \"7.50\"" in paid, paid)
+        run("payment", "in", "--party", "Acme Stores", "--amount", "1.00", "--allocate", "$inv:1.00", "--date", "2026-10-02").let { assertTrue(it.code == 3 && "exceeds" in it.err, it.err) } // settled in full
+        assertEquals(3, run("payment", "in", "--party", "Acme Stores", "--amount", "10.00", "--discount", "5.00", "--date", "2026-10-02").code) // nothing open to discount
+
+        val usd = ok("-q", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-03", "--line", "SVC:1@100.00", "--export", "wopay", "--currency", "USD", "--exchange-rate", "83.50", "--post").out.trim()
+        assertEquals(3, run("payment", "in", "--party", "Acme Stores", "--amount", "10000.00", "--settle-exchange", usd, "--date", "2026-10-04").code) // > 10% off
+        assertEquals(2, run("payment", "in", "--party", "Acme Stores", "--amount", "8400.00", "--settle-exchange", usd, "--auto").code)
+        val fx = ok("--json", "payment", "in", "--party", "Acme Stores", "--amount", "8400.00", "--settle-exchange", usd, "--date", "2026-10-04").out
+        assertTrue("\"exchange\": \"gain\"" in fx && "\"exchangeDifference\": \"-50.00\"" in fx && "\"allocated\": \"8350.00\"" in fx, fx)
+        assertEquals(0, run("db", "check").code)
+    }
+
+    @Test
     fun exitCodes() {
         seed()
         assertEquals(2, run("party", "add").code) // missing --name
