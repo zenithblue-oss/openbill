@@ -87,12 +87,12 @@ Data directory layout:
 
 | Concern | Decision | Rationale |
 | --- | --- | --- |
-| HTTP server | Ktor server (Netty or CIO engine) | Kotlin and coroutines end to end; same kotlinx.serialization models and Ktor client already chosen for app sync; small footprint; no reflection-heavy container |
-| Serialization | kotlinx.serialization via `core-api-contract` | One DTO set for server, apps, and CLI |
-| SQLite storage | Room KMP (`core-database`) on JVM for projections; plain JDBC for the op log | Projection is byte-compatible with the app schema and backup format |
+| HTTP server | Ktor server, Netty engine (S1a; CIO has no built-in TLS) | Kotlin and coroutines end to end; same kotlinx.serialization models and Ktor client already chosen for app sync; small footprint; no reflection-heavy container |
+| Serialization | kotlinx.serialization via `core-api-contract` (S1a: the sync bodies use one hand-written codec, `SyncWire`, shared by server and devices) | One DTO set for server, apps, and CLI |
+| SQLite storage | Room KMP (`core-database`) on JVM for projections; the op log through the same bundled SQLite driver (S1a), not JDBC | Projection is byte-compatible with the app schema and backup format |
 | PostgreSQL storage | JDBC adapters implementing `core-domain` repository ports | Room does not target PostgreSQL; both adapters pass one repository contract test suite |
 | Migrations | Room migrations for SQLite projection; versioned SQL migrations for PostgreSQL and instance tables | Explicit and tested, like the app |
-| Password hashing | Argon2id | Memory-hard, current recommendation |
+| Password hashing | PBKDF2-HMAC-SHA256, 600,000 iterations (S1a decision; Argon2id was the plan) | In the JDK, so no native or extra crypto library on a Raspberry Pi; OWASP's current PBKDF2 setting; the iteration count is stored with each hash, so it can be raised or moved to Argon2id on next sign-in |
 | API description | OpenAPI 3.1 generated from `core-api-contract` and checked in | Reviewable diffs, client generation by third parties |
 | DI | Koin | Same as the apps |
 
@@ -177,8 +177,8 @@ Implemented in `core-database` (tables, triggers, migration) and `core-sync`
 
 Implemented in `core-sync`: `SyncTransport` (push, pull after a cursor, snapshot),
 `SyncClient` (device side), `SyncRules` (server validation), `SyncRows` (the apply path shared
-by client and server) and, on the JVM, `InMemorySyncServer`: the server without HTTP, one
-database file per workspace with the app's own schema and code. S1 puts Ktor in front of it.
+by client and server) and, on the JVM, the in-process server (renamed `SyncServer` in S1a,
+section 6.2.3): one database file per workspace with the app's own schema and code.
 Decisions on the S0a open issues:
 
 | Issue | Decision |
@@ -230,14 +230,68 @@ no over-allocation; no duplicate numbers. CI default 12 seeds x 150 steps;
 passed with no failures; `-Popenbill.sim.seed=<n>` replays one seed and
 `-Popenbill.sim.keep=<dir>` keeps a realistic day's databases for the CLI.
 
+#### 6.2.3 Server process (S1a)
+
+Done in S1a: the `server` module (Ktor on Netty) around the same sync core the simulation
+uses. How to run it: [server-setup.md](server-setup.md).
+
+- **Sync core** (`core-sync`, JVM): `SyncServer` keeps ordering, dedupe and validation and is
+  storage-agnostic over `SyncLog`; `SqliteSyncLog` stores each workspace's op log in
+  `workspaces/<id>/oplog.sqlite` (WAL, `synchronous = FULL`) beside `projection.sqlite` (the
+  app schema). An accepted group is appended to the log inside the projection's transaction,
+  which also records the applied seq in the projection's `sync_state.cursor`; if the
+  projection commit is lost, opening the workspace replays the log tail. A restore replaces
+  the projection first and truncates the log second, so a crash in between replays as if no
+  restore happened.
+- **Rejection vs failure**: an op is rejected (corrections, review task) only for a sync rule,
+  a malformed op or an SQLite constraint, type or SQL error; disk, lock and other server errors
+  fail the call (HTTP 500) so the device retries and never loses the op.
+- **Wire**: `SyncWire` (JSON bodies) and `HttpSyncTransport` (Ktor client, OkHttp on Android
+  and the JVM) implement `SyncTransport`. 5xx, 408, 429 and link failures are retryable
+  `SyncTransportException`; 4xx refusals, 501 and a rejected sign-in are `SyncRefusedException`.
+  Not wired into the apps until pairing (S1b).
+- **Accounts** (`instance.sqlite`, schema version checked, downgrade refused): local users with
+  PBKDF2 hashes; a one-time setup token (`obst_`) printed on start while no admin exists, or
+  `openbill-server admin create`; sign-in gives a refresh token (`obrt_`, 90 days, not rotated,
+  so a lost response cannot lock a device out) and 15-minute access tokens (`obat_`); tokens
+  are stored as SHA-256 hashes only; sign-out ends the session. Unknown users cost the same
+  hashing time as known ones. Workspaces have members; an admin creates them; a non-member
+  gets 404 for a workspace, the same as for a missing one.
+- **Audit** (section 10): setup, admin creation, sign-in and failures, sign-out, workspace
+  creation and seeding go to a hash-chained table; `openbill-server audit verify` checks it.
+- **Limits** (section 11): 5 failed sign-ins per minute per account and per address lock it
+  for 1, 2, 4 ... 64 minutes (429 with `Retry-After`); 500 ops and 10 MB per push, 64 KB for
+  JSON forms, 512 MB per seed upload; all configurable.
+- **Seeding**: `POST /sync/workspaces/{w}/seed` takes the first device's database (integrity
+  and schema checked, device-local tables cleared) once. Snapshot download answers 501 until
+  S1c; a second device can start from a prepared copy of the seed (as the tests do).
+- **Server-authored ops** (corrections) are relayed back by devices when they refill a
+  restored server, so the server accepts them from devices; S2 signs them before non-owner
+  roles can push.
+- **Tests**: server API, TLS and configuration tests; `HttpContractTest` runs the simulation
+  with every push and pull over HTTP against the real server on a random port (3 seeds by
+  default); `PracticalHttpDayTest` drives two file-backed counters against a running server
+  in phases around a restart.
+
+Practical check (Linux PC, runtime tarball): two counters synced a day of 240 steps (1,347
+server ops, 143 posted vouchers) with the server stopped and restarted mid-way; replicas and
+the server's database converged, `openbill db check` passed on all three, and eight reports
+(registers, day book, outstanding, stock, P&L, GSTR-1, HSN) were byte-identical. Server RSS
+about 205 MB after the day and 288 MB peak under 16 parallel pullers (`-Xmx256m`, serial GC;
+p95 0.11 s). A tablet on the same Wi-Fi reached the LAN listener.
+
 ### 6.3 Exchange
 
 | Step | Endpoint | Behavior |
 | --- | --- | --- |
-| Push | `POST /api/v1/sync/firms/{firmId}/ops` | Batch of up to 500 ops in author order. Each op is accepted, deduplicated, or rejected with a reason. Response carries assigned `seq` values. |
-| Pull | `GET /api/v1/sync/firms/{firmId}/ops?after={cursor}` | Ops after the device's cursor, paginated, including the device's own ops. |
+| Push | `POST /api/v1/sync/workspaces/{w}/ops` | Batch of up to 500 ops in author order. Each op is accepted, deduplicated, or rejected with a reason. Response carries assigned `seq` values. |
+| Pull | `GET /api/v1/sync/workspaces/{w}/ops?after={cursor}&limit={n}` | Ops after the device's cursor, pages of up to 500, including the device's own ops. |
 | Ack | Implicit | The cursor is the last `seq` the device has applied. The server tracks it per device for diagnostics and retention only. |
-| Snapshot | `GET /api/v1/sync/firms/{firmId}/snapshot` | Backup-format archive at a known `seq` for first sync, long-offline devices, and op-log compaction. |
+| Seed | `POST /api/v1/sync/workspaces/{w}/seed` | The first device's database (section 6.6), once per workspace. |
+| Snapshot | `GET /api/v1/sync/workspaces/{w}/snapshot` | Backup-format archive at a known `seq` for first sync, long-offline devices, and op-log compaction (S1c; 501 until then). |
+
+The log is per workspace (one order across its firms), as implemented in S0b; the paths
+say so since S1a.
 
 Rules:
 
@@ -289,7 +343,12 @@ coordinate a single counter, so:
 - Each paired device gets its own number series per document type, for example a prefix
   such as `A/`, `B/`, assigned by the owner at pairing time. Numbers remain gap-free per
   series per device. Implemented in S0b: `sync_state.series` (1-3 letters or digits) is
-  appended to the document prefix (`INV-A-0001`), and the counters are device-local.
+  appended to the document prefix (`INV-A-0001`), and the counters are device-local. A
+  standalone install never has a series (`INV-0001` unchanged); a device that enables sync
+  keeps counters it already had for the running financial year. GST caps a number at 16
+  characters: numbering refuses a longer number with a clear error, setup refuses a prefix
+  that cannot fit, and enabling sync refuses a series that would push the invoice number past
+  16 (use a shorter prefix or a one-letter series).
 - An optional block-lease mode lets online devices reserve blocks from a shared series. A
   device that exhausts its block offline falls back to its own series.
 - The 1.0 schema therefore scopes numbering by a series identifier, not only by firm,
@@ -423,7 +482,7 @@ offline before a role downgrade is quarantined for review rather than rejected.
 | Backups | `GET/POST /workspaces/{w}/backups`, `GET /backups/{id}/download`, `POST /backups/{id}/verify` |
 | Audit | `GET /workspaces/{w}/audit-events`, `GET /firms/{f}/audit-events` |
 | Integrations | `GET /firms/{f}/integrations`, `PUT /integrations/{provider}`, `POST /vouchers/{id}/e-invoice` |
-| Health | `GET /health/live`, `GET /health/ready`, `GET /metrics` (optional) |
+| Health | `GET /healthz`, `GET /readyz` (S1a, outside `/api/v1`), `GET /api/v1/version`, `GET /metrics` (optional) |
 
 Posted vouchers have no `PATCH` or `DELETE`. Long-running work (PDF batches, Tally export,
 large reports) returns `202` with a job resource.
@@ -549,7 +608,7 @@ A thin web client is a later milestone, not part of the first server releases.
 | Milestone | Deliverable | Depends on |
 | --- | --- | --- |
 | S0 | Done. Sync protocol spec, `core-sync` with outbox and in-memory server, simulation suite green. S0a: local operation log, device identity, schema 19 (section 6.2.1). S0b: engine, server validation, per-device series, schema 20 (section 6.2.2) | 1.0 |
-| S1 | Single-user multi-device sync: Ktor server, SQLite, local accounts, QR pairing, push/pull, snapshots, per-device series, scheduled backups | S0 |
+| S1 | Single-user multi-device sync: Ktor server, SQLite, local accounts, QR pairing, push/pull, snapshots, per-device series, scheduled backups. S1a done: server process, SQLite op log per workspace, accounts and tokens, HTTP sync and seeding, TLS (files or self-signed), JAR, runtime tarball, image, Compose, systemd, install script (section 6.2.3). Next: S1b pairing, S1c snapshots and backups | S0 |
 | S2 | Multi-user: memberships, roles, CA seat, device management, review tasks, hash-chained audit | S1 |
 | S3 | REST API v1 with OpenAPI, API tokens, CLI remote mode ([11-cli.md](11-cli.md)) | S2 |
 | S4 | PostgreSQL adapter, E2EE workspaces, metrics and OpenTelemetry, OCI image | S3 |

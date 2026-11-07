@@ -95,7 +95,7 @@ lookup, e-invoice and e-way bill) or are app UI translation (invoices already pr
 | POS | Counter billing: scan or search items, Cash sale default, held bills, split tender with change, keyboard shortcuts, tablet layout, thermal receipt | 100% (5 / 5) |
 | Desktop apps | Windows and Linux builds run the shared UI | Stable |
 | CLI | Direct mode: masters, invoices and PDF, orders, recurring, payments, stock, import/export, attachments, reports, GST, Tally, audit, staff sign-in with roles | C0-C3 complete |
-| Server | S0 done: operation log in the app (off until paired), sync engine with an in-process server, per-device number series, fault simulation green; no network yet (S1) | S0 of S0-S3 |
+| Server | S0 done; S1a done: `openbill-server` (Ktor, SQLite op log per workspace, local accounts and hashed tokens, HTTP sync, built-in or self-signed TLS), JAR, runtime tarball, Docker/Compose with Caddy, systemd and install script ([docs/server-setup.md](docs/server-setup.md)); device pairing next (S1b) | S1a of S0-S3 |
 
 ## What's left
 
@@ -140,7 +140,7 @@ more than shipping every competitor feature in the first release.
 | Linux | Desktop and laptop | Stable | DEB, portable tar.gz (unsigned) |
 | iOS | Phone and tablet | Not planned for 1.0 | - |
 | Web | Browser | Not planned; optional later | - |
-| [Server](docs/10-server.md) | Self-hosted, optional | Planned, after 1.0 | OCI image, JAR |
+| [Server](docs/10-server.md) | Self-hosted, optional | S1a: server runs and syncs over HTTP; app pairing next ([setup](docs/server-setup.md)) | JAR, runtime tar.gz (x64, arm64), OCI image, install script from the next release |
 | [CLI](docs/11-cli.md) | Terminal, scripting and reports | Direct mode works (C0-C3) | tar.gz, zip, DEB from the next release (needs Java 17+; unsigned) |
 
 Windows and Linux are first-class targets, not afterthoughts. The domain, database, tax,
@@ -297,10 +297,10 @@ openbill/
   core-search/              Query parsing, ranking, highlights (planned)
   core-reporting/           Report models and exports (planned)
   core-api-contract/        DTOs and OpenAPI source for API, CLI, sync (planned)
-  core-sync/                Operation log, sync client, rules, in-process server (S0)
+  core-sync/                Operation log, sync client, rules, server core, HTTP transport (S0, S1a)
   platform/                 expect/actual boundaries (planned)
   platform-android/  platform-desktop/  platform-jvm/   (planned)
-  server/                   OpenBill Server (planned, post-1.0)
+  server/                   OpenBill Server: Ktor process, accounts, TLS, deploy/ files (S1a)
   feature-*/                onboarding, dashboard, parties, items, inventory,
                             billing, payments, expenses, reports, gst, settings, search, backup (planned)
   docs/
