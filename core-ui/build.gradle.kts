@@ -7,18 +7,20 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
-// CHANGELOG.md bundled as a Kotlin constant for the in-app "What's new" dialog.
+// CHANGELOG.md and docs/help.md bundled as Kotlin constants for "What's new" and the offline help.
 val generateChangelog by tasks.registering {
-    val source = rootProject.file("CHANGELOG.md")
+    val sources = mapOf("CHANGELOG" to rootProject.file("CHANGELOG.md"), "HELP" to rootProject.file("docs/help.md"))
     val outDir = layout.buildDirectory.dir("generated/changelog")
-    inputs.file(source)
+    inputs.files(sources.values)
     outputs.dir(outDir)
     doLast {
-        val text = source.readText().replace("\r", "").replace("\\", "\\\\").replace("\"", "\\\"")
-            .replace("$", "\\$").replace("\n", "\\n")
-        val out = outDir.get().file("app/openbill/ui/settings/Changelog.kt").asFile
-        out.parentFile.mkdirs()
-        out.writeText("package app.openbill.ui.settings\n\n// Generated from CHANGELOG.md by :core-ui:generateChangelog.\ninternal const val CHANGELOG: String = \"$text\"\n")
+        sources.forEach { (name, source) ->
+            val text = source.readText().replace("\r", "").replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("$", "\\$").replace("\n", "\\n")
+            val out = outDir.get().file("app/openbill/ui/settings/${name.lowercase().replaceFirstChar { it.uppercase() }}.kt").asFile
+            out.parentFile.mkdirs()
+            out.writeText("package app.openbill.ui.settings\n\n// Generated from ${source.name} by :core-ui:generateChangelog.\ninternal const val $name: String = \"$text\"\n")
+        }
     }
 }
 

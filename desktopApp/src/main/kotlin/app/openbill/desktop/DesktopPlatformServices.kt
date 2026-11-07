@@ -36,6 +36,9 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
     // jpackage launchers (the installed .msi/.exe/.deb/AppImage builds) set this property;
     // only `gradlew run` falls back to "dev".
     override val appVersion: String = System.getProperty("jpackage.app-version")?.takeIf { it.isNotBlank() } ?: "dev"
+    override val deviceInfo: String
+        get() = "${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")}), Java ${System.getProperty("java.version")}; " +
+            "database schema ${app.openbill.core.database.OPENBILL_DATABASE_VERSION}"
 
     override val pdfFontMetrics: FontMetrics get() = PdfFonts.metrics
 

@@ -372,6 +372,7 @@ fun MoreScreen(
                     leadingContent = { Image(rememberVectorPainter(BrandLogo.Mark), contentDescription = null, modifier = Modifier.size(40.dp)) },
                     colors = listColors,
                 )
+                HelpItems(container, listColors)
                 LicensesItem(container.platform.appVersion, listColors)
                 app.openbill.ui.settings.UpdateItems(container, listColors)
                 ListItem(

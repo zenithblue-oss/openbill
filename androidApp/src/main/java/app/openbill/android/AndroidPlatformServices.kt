@@ -70,6 +70,10 @@ class AndroidPlatformServices(
     override val appVersion: String,
 ) : PlatformServices {
 
+    override val deviceInfo: String
+        get() = "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}), ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}; " +
+            "database schema ${app.openbill.core.database.OPENBILL_DATABASE_VERSION}"
+
     /** UI preferences (theme) in a private SharedPreferences file; business data stays in Room. */
     override val settingsStore: SettingsStore = object : SettingsStore {
         private val prefs = context.getSharedPreferences("openbill_ui", Context.MODE_PRIVATE)

@@ -37,6 +37,17 @@ class InboxTest {
     }
 
     @Test
+    fun bundledHelpSplitsIntoTopics() {
+        val topics = app.openbill.ui.more.helpTopics()
+        assertEquals("Getting started", topics.first().first)
+        assertTrue(topics.size >= 10 && topics.all { it.first.isNotBlank() && it.second.isNotBlank() }, topics.map { it.first }.toString())
+        assertEquals(
+            listOf("A" to "x y\n• one two\n• three\n\n1. a b", "B" to ""),
+            app.openbill.ui.more.helpTopics("intro\n## A\nx\ny\n- one\n  two\n- three\n\n1. a\n   b\n\n## B"),
+        )
+    }
+
+    @Test
     fun setupChecklist() {
         val at = Instant.fromEpochMilliseconds(0)
         val bare = app.openbill.core.domain.model.Firm(id = "f", name = "F", stateCode = "27", addressLine1 = "1 Road", city = "Pune", createdAt = at, updatedAt = at)

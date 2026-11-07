@@ -77,6 +77,9 @@ interface PlatformServices {
 
     val appVersion: String
 
+    /** Operating system, device model and database schema for the diagnostics export (no user data). */
+    val deviceInfo: String get() = "unknown"
+
     /**
      * Shares plain text (payment reminders, statements) through the platform share sheet, where
      * WhatsApp and SMS pick it up; no network. Returns a message for the user, if any.
