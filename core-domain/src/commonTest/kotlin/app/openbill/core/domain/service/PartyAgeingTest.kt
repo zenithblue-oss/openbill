@@ -41,5 +41,9 @@ class PartyAgeingTest {
         assertEquals(Money.of(110_000), PartyAgeing.overdue(Money.ZERO, moves, asOf, 0))
         assertEquals(Money.of(15_000), PartyAgeing.overdue(Money.of(15_000), emptyList(), asOf, 30), "the opening balance counts as overdue")
         assertEquals(Money.ZERO, PartyAgeing.overdue(Money.ZERO, listOf(sale(asOf, -100)), asOf, 0), "an advance is never overdue")
+        // Period ends in the future: age measured on today (Feb 20), so only the January sale (41 days) is past 30 days.
+        assertEquals(Money.of(40_000), PartyAgeing.overdue(Money.ZERO, moves, asOf, 30, measuredOn = LocalDate(2026, 2, 20)))
+        assertEquals(Money.ZERO, PartyAgeing.overdue(Money.ZERO, moves, asOf, 45, measuredOn = LocalDate(2026, 2, 20)))
+        assertEquals(Money.of(40_000), PartyAgeing.overdue(Money.ZERO, moves, asOf, 45, measuredOn = LocalDate(2027, 1, 1)), "a later today is capped at the period end")
     }
 }

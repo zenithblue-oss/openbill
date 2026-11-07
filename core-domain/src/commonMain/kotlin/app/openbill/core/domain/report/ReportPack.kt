@@ -4,6 +4,7 @@ import app.openbill.core.model.OnProgress
 import app.openbill.core.model.Progress
 import app.openbill.core.domain.repository.Repositories
 import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
 
 /** One file of a report bundle. */
@@ -40,11 +41,11 @@ object ReportPack {
 }
 
 /** CSV of each of [kinds] for [period], named like the single-report export. */
-suspend fun Repositories.reportFiles(firmId: String, period: ReportPeriod, kinds: List<ReportKind>, onProgress: OnProgress = {}): List<ReportFile> =
+suspend fun Repositories.reportFiles(firmId: String, period: ReportPeriod, kinds: List<ReportKind>, onProgress: OnProgress = {}, today: LocalDate? = null): List<ReportFile> =
     kinds.mapIndexed { i, kind ->
         require(!kind.needsParty) { "${kind.title} needs a party" }
         onProgress(Progress("Preparing ${kind.title.lowercase()}", i.toLong(), kinds.size.toLong()))
-        ReportFile("${ReportPack.stem(kind, period)}.csv", Reports.run(kind, loadReportData(firmId, period, kind)).toCsv())
+        ReportFile("${ReportPack.stem(kind, period)}.csv", Reports.run(kind, loadReportData(firmId, period, kind, today = today)).toCsv())
     }
 
 /**
@@ -52,8 +53,8 @@ suspend fun Repositories.reportFiles(firmId: String, period: ReportPeriod, kinds
  * GSTR-2 working (CSV and JSON), GSTR-3B, HSN summary, outstanding, every party's ledger and
  * Tally XML, plus a README listing what was left out.
  */
-suspend fun Repositories.caPack(firmId: String, period: ReportPeriod, onProgress: OnProgress = {}): List<ReportFile> {
-    val files = ArrayList(reportFiles(firmId, period, ReportPack.CA_KINDS, onProgress))
+suspend fun Repositories.caPack(firmId: String, period: ReportPeriod, onProgress: OnProgress = {}, today: LocalDate? = null): List<ReportFile> {
+    val files = ArrayList(reportFiles(firmId, period, ReportPack.CA_KINDS, onProgress, today))
     val notes = ArrayList<String>()
     onProgress(Progress("Preparing GSTR-2 JSON"))
     val extra = mapOf("from" to period.from.toString(), "to" to period.to.toString())

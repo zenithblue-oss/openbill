@@ -24,6 +24,7 @@ import app.openbill.core.model.Progress
 import app.openbill.core.model.RoundingMode
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
 
 /**
@@ -60,6 +61,8 @@ class ReportData(
     /** Batches of batch-tracked items and the godowns; loaded for the batch and expiry report. */
     val batches: List<Batch> = emptyList(),
     val godowns: List<Godown> = emptyList(),
+    /** The device's date; overdue is measured on min(today, period end). Null = period end. */
+    val today: LocalDate? = null,
 ) {
     fun userOf(v: Voucher): String = postedBy[v.id] ?: defaultUser
 
@@ -94,6 +97,7 @@ suspend fun Repositories.loadReportData(
     firmId: String,
     period: ReportPeriod,
     kind: ReportKind? = null,
+    today: LocalDate? = null,
     onProgress: OnProgress = {},
 ): ReportData {
     onProgress(Progress("Reading masters"))
@@ -138,6 +142,7 @@ suspend fun Repositories.loadReportData(
     val batches = if (usesBatches) items.filter { it.trackBatch }.flatMap { stock.observeBatches(it.id).first() } else emptyList()
     val godowns = if (usesBatches) catalog.observeGodowns(firmId).first() else emptyList()
     return ReportData(
+        today = today,
         batches = batches,
         godowns = godowns,
         postedBy = postedBy,

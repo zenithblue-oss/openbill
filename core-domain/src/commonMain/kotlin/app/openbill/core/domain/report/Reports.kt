@@ -241,7 +241,7 @@ object Reports {
         val total = rows.fold(app.openbill.core.domain.service.AgeingBuckets()) { t, (_, a) -> t + a }
         // Past the party's credit terms; only parties with terms have a figure.
         val overdue = rows.associate { (p, _) ->
-            p.id to p.creditDays?.let { d -> PartyAgeing.overdue(p.signedOpening, byParty[p.id].orEmpty(), data.to, d) }
+            p.id to p.creditDays?.let { d -> PartyAgeing.overdue(p.signedOpening, byParty[p.id].orEmpty(), data.to, d, data.today ?: data.to) }
         }
         return ReportTable(
             "Party-wise outstanding",
@@ -265,7 +265,7 @@ object Reports {
             notes = listOf(
                 "As of ${data.to}; ageing buckets are signed (negative = payable or advance).",
                 "Overdue is the receivable still open (oldest settled first) from sales older than the party's credit days; blank for parties without terms.",
-            ),
+            ) + listOfNotNull(data.today?.takeIf { it < data.to }?.let { "Overdue is measured as of today ($it), before the period ends." }),
         )
     }
 

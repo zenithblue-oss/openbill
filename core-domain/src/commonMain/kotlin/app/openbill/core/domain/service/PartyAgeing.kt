@@ -91,11 +91,13 @@ object PartyAgeing {
     /**
      * Receivable still open (FIFO, as [of]) from movements more than [creditDays] old on [asOf]:
      * what is past the party's credit terms. The opening balance always counts as overdue.
+     * Age is measured on [measuredOn] (a report pass min(today, period end): a period ending in
+     * the future must not call bills overdue that are not yet due).
      */
-    fun overdue(opening: Money, movements: List<PartyMovement>, asOf: LocalDate, creditDays: Int): Money =
+    fun overdue(opening: Money, movements: List<PartyMovement>, asOf: LocalDate, creditDays: Int, measuredOn: LocalDate = asOf): Money =
         Money.of(
             openItems(opening, movements, asOf)
-                .filter { (date, amount) -> amount > 0 && (date == null || date.daysUntil(asOf) > creditDays) }
+                .filter { (date, amount) -> amount > 0 && (date == null || date.daysUntil(minOf(asOf, measuredOn)) > creditDays) }
                 .sumOf { it.second },
         )
 

@@ -182,7 +182,7 @@ fun ReportsScreen(
                             FilledTonalButton(enabled = !busy, onClick = {
                                 export { onProgress ->
                                     val month = ReportPeriod.monthOf(period.from)
-                                    val g = withContext(Dispatchers.Default) { Gstr1.build(repos.loadReportData(session.firm.id, month, ReportKind.GSTR1, onProgress)) }
+                                    val g = withContext(Dispatchers.Default) { Gstr1.build(repos.loadReportData(session.firm.id, month, ReportKind.GSTR1, onProgress = onProgress)) }
                                     container.platform.saveTextFile("GSTR1-${session.firm.gstin.orEmpty()}-${month.returnPeriod}.json", g.toJson())
                                 }
                             }) { Text("GSTR-1 JSON") }
@@ -228,8 +228,8 @@ fun ReportsScreen(
             bundle = null
             export { onProgress ->
                 val files = withContext(Dispatchers.Default) {
-                    if (ca) repos.caPack(session.firm.id, period, onProgress)
-                    else repos.reportFiles(session.firm.id, period, ReportPack.BUNDLE_KINDS.filter { it in selected }, onProgress)
+                    if (ca) repos.caPack(session.firm.id, period, onProgress, container.today())
+                    else repos.reportFiles(session.firm.id, period, ReportPack.BUNDLE_KINDS.filter { it in selected }, onProgress, container.today())
                 }
                 val name = (if (ca) "CA-pack" else "Reports") + "-${period.from}-${period.to}"
                 val zip = withContext(Dispatchers.Default) { files.zipBytes() }
@@ -347,7 +347,7 @@ fun ReportScreen(
                     pager = p
                     ReportTable(p.title, p.columns, emptyList())
                 } else {
-                    Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind) { progress = it }, partyId)
+                    Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind, container.today()) { progress = it }, partyId)
                 }
             }
         }
@@ -368,7 +368,7 @@ fun ReportScreen(
     }
     // Exports of a register read the whole period again rather than the loaded page.
     suspend fun fullTable(t: ReportTable) =
-        if (paged) withContext(Dispatchers.Default) { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind), partyId) } else t
+        if (paged) withContext(Dispatchers.Default) { Reports.run(kind, container.repositories.loadReportData(session.firm.id, period, kind, today = container.today()), partyId) } else t
 
     fun act(block: suspend (ReportTable) -> String?) {
         val t = table ?: return
