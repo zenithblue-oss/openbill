@@ -44,6 +44,8 @@ class CliTest {
 
     private var ids = 0
 
+    private var password: CharArray? = null
+
     private fun run(vararg args: String, dir: File = dataDir): Result {
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
@@ -57,6 +59,8 @@ class CliTest {
             interactive = false,
             appVersion = "test",
             defaultDataDir = { dir },
+            backupPassword = password,
+            readSecret = { null },
         )
         val code = runCli(args.toList(), env)
         fun norm(s: ByteArrayOutputStream) = s.toString(Charsets.UTF_8).replace("\r\n", "\n")
@@ -195,6 +199,32 @@ class CliTest {
         assertEquals(0, restored.code, restored.err)
         assertTrue("Sharma Traders" in run("firm", "list", dir = other).out)
         assertTrue(other.listFiles()!!.any { it.name.startsWith("restore-safety-") })
+    }
+
+    @Test
+    fun dbInfoAndBackupInspect() {
+        seed()
+        val info = run("--json", "db", "info")
+        assertEquals(0, info.code, info.err)
+        assertTrue("\"schemaVersion\": ${app.openbill.core.database.OPENBILL_DATABASE_VERSION}" in info.out && "\"firms\": 1" in info.out && "\"parties\": 2" in info.out, info.out)
+        assertTrue(run("db", "info").out.contains("Firms"))
+        assertEquals(4, run("--data-dir", File(root, "empty").path, "db", "info").code)
+
+        val plain = File(root, "p.openbill.zip")
+        assertEquals(0, run("backup", "create", "--out", plain.path).code)
+        val inspected = run("--json", "backup", "inspect", plain.path)
+        assertEquals(0, inspected.code, inspected.err)
+        assertTrue("\"encrypted\": false" in inspected.out && "\"parties\": 2" in inspected.out && "\"attachments\": 0" in inspected.out, inspected.out)
+        assertTrue("\"parties\": 2" in run("--json", "--backup", plain.path, "db", "info").out)
+
+        password = "s3cret".toCharArray()
+        val enc = File(root, "e.openbill.zip")
+        assertEquals(0, run("backup", "create", "--out", enc.path).code)
+        assertTrue("\"encrypted\": true" in run("--json", "backup", "inspect", enc.path).out)
+        password = null
+        assertEquals(8, run("backup", "inspect", enc.path).code) // encrypted, no password, no terminal
+        password = "wrong".toCharArray()
+        assertEquals(7, run("backup", "inspect", enc.path).code)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package app.openbill.cli
 
+import app.openbill.core.backup.BackupCrypto
 import app.openbill.core.backup.BackupManifest
 import app.openbill.core.backup.OpenBillBackup
 import app.openbill.core.database.OPENBILL_DATABASE_VERSION
@@ -14,7 +15,7 @@ import java.io.File
 import java.time.Instant
 
 fun backupCommands(cli: CliState) = Group("backup", "Create, verify, and restore backup archives").subcommands(
-    BackupCreate(cli), BackupVerify(cli), BackupRestore(cli),
+    BackupCreate(cli), BackupVerify(cli), BackupInspect(cli), BackupRestore(cli),
 )
 
 private fun CliState.printManifest(m: BackupManifest, path: File?) {
@@ -70,9 +71,43 @@ class BackupVerify(private val cli: CliState) : CliktCommand("verify") {
     private val file by argument().file(mustExist = true, canBeDir = false)
 
     override fun run() {
-        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.env.backupPassword, cli.backupProgress).also { cli.progressDone() }
+        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.backupPassword(file), cli.backupProgress).also { cli.progressDone() }
         cli.printManifest(m, file)
         if (!cli.json) cli.info("OK")
+    }
+}
+
+/** `backup inspect FILE`: what an archive holds, after the same checks as verify; nothing is restored. */
+class BackupInspect(private val cli: CliState) : CliktCommand("inspect") {
+    override fun help(context: Context) = "Show an archive's metadata, schema, encryption, record counts and attachments without restoring it"
+    private val file by argument().file(mustExist = true, canBeDir = false)
+
+    override fun run() {
+        val encrypted = BackupCrypto.isEncrypted(file)
+        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.backupPassword(file), cli.backupProgress).also { cli.progressDone() }
+        val attachments = m.files.keys.filter { it.startsWith("attachments/") }
+        val logos = attachments.count { it.startsWith("attachments/logos/") }
+        if (cli.json) {
+            cli.printJson(
+                jsonOf(
+                    "path" to file.path, "sizeBytes" to file.length(), "encrypted" to encrypted, "formatVersion" to m.formatVersion,
+                    "appVersion" to m.appVersion, "schemaVersion" to m.schemaVersion, "currentSchemaVersion" to OPENBILL_DATABASE_VERSION,
+                    "createdAt" to m.createdAt, "firms" to m.firms.map { jsonOf("id" to it.id, "name" to it.name) },
+                    "recordCounts" to kotlinx.serialization.json.JsonObject(m.recordCounts.mapValues { toJson(it.value) }),
+                    "attachments" to (attachments.size - logos), "logos" to logos,
+                ),
+            )
+            return
+        }
+        cli.printManifest(m, file)
+        if (cli.quiet) return
+        cli.printFields(
+            listOf(
+                "Encrypted" to (if (encrypted) "yes" else "no"), "Size" to "${file.length()} bytes",
+                "Attachments" to (attachments.size - logos), "Logos" to logos,
+                "Needs migration" to (if (m.schemaVersion < OPENBILL_DATABASE_VERSION) "yes, ${m.schemaVersion} -> $OPENBILL_DATABASE_VERSION on restore" else "no"),
+            ),
+        )
     }
 }
 
@@ -81,11 +116,12 @@ class BackupRestore(private val cli: CliState) : CliktCommand("restore") {
     private val file by argument().file(mustExist = true, canBeDir = false)
 
     override fun run() {
-        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, cli.env.backupPassword, cli.backupProgress).also { cli.progressDone() }
+        val password = cli.backupPassword(file)
+        val m = OpenBillBackup.verify(file, OPENBILL_DATABASE_VERSION, password, cli.backupProgress).also { cli.progressDone() }
         cli.exclusive { loc ->
             if (!cli.json && !cli.quiet) cli.printManifest(m, file)
             cli.confirm("Replace the data in ${loc.databaseFile.parentFile} with this backup?")
-            val safety = OpenBillBackup.restore(file, loc, OPENBILL_DATABASE_VERSION, password = cli.env.backupPassword, onProgress = cli.backupProgress).also { cli.progressDone() }
+            val safety = OpenBillBackup.restore(file, loc, OPENBILL_DATABASE_VERSION, password = password, onProgress = cli.backupProgress).also { cli.progressDone() }
             // Bring an older archive up to the current schema now, while we hold the lock.
             openAndMigrate(loc.databaseFile)
             if (cli.json) cli.printJson(jsonOf("restored" to file.path, "safetyCopy" to safety.path))

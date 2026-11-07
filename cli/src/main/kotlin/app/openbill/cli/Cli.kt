@@ -54,6 +54,8 @@ class CliEnv(
     val defaultDataDir: () -> File = ::desktopDataDirectory,
     /** OPENBILL_BACKUP_PASSWORD: encrypts `backup create` and opens encrypted archives (kept out of argv). */
     val backupPassword: CharArray? = System.getenv("OPENBILL_BACKUP_PASSWORD")?.takeIf { it.isNotEmpty() }?.toCharArray(),
+    /** Hidden terminal input (passwords, PINs); null when there is no console. Never echoed. */
+    val readSecret: (prompt: String) -> CharArray? = { prompt -> System.console()?.readPassword("%s", prompt) },
 )
 
 /** Global options, filled by the root command before a subcommand runs. */
@@ -105,6 +107,13 @@ class CliState(val env: CliEnv) {
         if (env.readLine()?.trim()?.lowercase() !in setOf("y", "yes")) fail(Exit.USAGE, "Cancelled")
     }
 
+    /** OPENBILL_BACKUP_PASSWORD, else a hidden prompt on a terminal when [archive] is encrypted. */
+    fun backupPassword(archive: File): CharArray? {
+        if (env.backupPassword != null || !app.openbill.core.backup.BackupCrypto.isEncrypted(archive)) return env.backupPassword
+        val typed = if (env.interactive) env.readSecret("Backup password: ") else null
+        return typed?.takeIf { it.isNotEmpty() } ?: fail(Exit.DENIED, "${archive.name} is encrypted; set OPENBILL_BACKUP_PASSWORD or run on a terminal to type it")
+    }
+
     fun location(): DataLocation {
         val dir = dataDir ?: env.defaultDataDir()
         return DataLocation(File(dir, "openbill.db"), mapOf("logos" to File(dir, "logos"), "attachments" to File(dir, "attachments")))
@@ -120,7 +129,7 @@ class CliState(val env: CliEnv) {
             if (write) fail(Exit.DENIED, "A backup file is read-only; writes are rejected")
             val tmp = Files.createTempDirectory("openbill-cli").toFile()
             try {
-                val prepared = OpenBillBackup.extract(archive, tmp, OPENBILL_DATABASE_VERSION, env.backupPassword)
+                val prepared = OpenBillBackup.extract(archive, tmp, OPENBILL_DATABASE_VERSION, backupPassword(archive))
                 return open(prepared.databaseFile, File(tmp, "attachments"), block)
             } finally {
                 tmp.deleteRecursively()

@@ -15,7 +15,81 @@ import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 
-fun dbCommands(cli: CliState) = Group("db", "Database checks and migration").subcommands(DbCheck(cli), DbMigrate(cli))
+fun dbCommands(cli: CliState) = Group("db", "Database checks and migration").subcommands(DbInfo(cli), DbCheck(cli), DbMigrate(cli))
+
+/**
+ * Runs [block] on a consistent read-only copy of the data: the extracted `--backup` archive, or a
+ * `VACUUM INTO` snapshot of the live database (so the running app is never blocked).
+ */
+fun <T> CliState.withSnapshot(block: (File) -> T): T {
+    val tmp = Files.createTempDirectory("openbill-check").toFile()
+    try {
+        val db = File(tmp, "openbill.db")
+        val archive = backup
+        if (archive != null) {
+            OpenBillBackup.extract(archive, File(tmp, "x"), OPENBILL_DATABASE_VERSION, backupPassword(archive)).databaseFile.copyTo(db)
+        } else {
+            val live = location().databaseFile
+            if (!live.isFile) fail(Exit.NOT_FOUND, "No OpenBill database in ${live.parentFile}")
+            OpenBillBackup.snapshot(live, db)
+        }
+        return block(db)
+    } finally {
+        tmp.deleteRecursively()
+    }
+}
+
+/** Rows of a read-only query, columns joined by spaces. */
+fun <T> readOnlySql(db: File, block: ((String) -> List<String>) -> T): T {
+    val c = BundledSQLiteDriver().open(db.path, SQLITE_OPEN_READONLY)
+    try {
+        return block { sql ->
+            c.prepare(sql).use { s ->
+                buildList { while (s.step()) add((0 until s.getColumnCount()).joinToString(" ") { if (s.isNull(it)) "null" else s.getText(it) }) }
+            }
+        }
+    } finally {
+        c.close()
+    }
+}
+
+class DbInfo(private val cli: CliState) : CliktCommand("info") {
+    override fun help(context: Context) = "Path, size, schema version, firm count and rows per table"
+
+    override fun run() {
+        val path = cli.backup ?: cli.location().databaseFile
+        val size = if (cli.backup != null) path.length() else listOf("", "-wal").sumOf { File(path.path + it).takeIf(File::isFile)?.length() ?: 0L }
+        val (schema, firms, counts) = cli.withSnapshot { db ->
+            readOnlySql(db) { rows ->
+                val tables = rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'room_%' AND name NOT LIKE 'android_%' ORDER BY name")
+                Triple(
+                    rows("PRAGMA user_version").single().toInt(),
+                    rows("SELECT COUNT(*) FROM firms WHERE deletedAt IS NULL").single().toLong(),
+                    tables.associateWith { rows("SELECT COUNT(*) FROM `$it`").single().toLong() },
+                )
+            }
+        }
+        if (cli.json) {
+            cli.printJson(
+                jsonOf(
+                    "path" to path.path, "sizeBytes" to size, "schemaVersion" to schema, "currentSchemaVersion" to OPENBILL_DATABASE_VERSION,
+                    "firms" to firms, "tables" to kotlinx.serialization.json.JsonObject(counts.mapValues { toJson(it.value) }),
+                ),
+            )
+        } else if (cli.quiet) {
+            cli.out.println(path.path)
+        } else {
+            cli.printFields(
+                listOf(
+                    "Path" to path.path, "Size" to "$size bytes", "Schema" to (if (schema == OPENBILL_DATABASE_VERSION) "$schema (current)" else "$schema (this openbill: $OPENBILL_DATABASE_VERSION)"),
+                    "Firms" to firms,
+                ),
+            )
+            cli.out.println()
+            cli.printTable(listOf(Col("TABLE"), Col("ROWS", true)), counts.map { listOf(it.key, it.value.toString()) })
+        }
+    }
+}
 
 /** Opens the database through Room once, which runs any pending migrations. */
 fun openAndMigrate(db: File) {
@@ -31,35 +105,16 @@ class DbCheck(private val cli: CliState) : CliktCommand("check") {
     override fun help(context: Context) = "Integrity, foreign keys, journal balance, and audit triggers (exit 7 on failure)"
 
     override fun run() {
-        val tmp = Files.createTempDirectory("openbill-check").toFile()
-        try {
-            // Check a consistent snapshot so the running app is never blocked.
-            val db = File(tmp, "openbill.db")
-            if (cli.backup != null) {
-                OpenBillBackup.extract(cli.backup!!, tmp, OPENBILL_DATABASE_VERSION, cli.env.backupPassword).databaseFile.copyTo(db)
-            } else {
-                val live = cli.location().databaseFile
-                if (!live.isFile) fail(Exit.NOT_FOUND, "No OpenBill database in ${live.parentFile}")
-                OpenBillBackup.snapshot(live, db)
-            }
-            val results = check(db)
-            if (cli.json) {
-                cli.printJson(jsonOf("ok" to results.all { it.second == null }, "checks" to results.map { jsonOf("name" to it.first, "ok" to (it.second == null), "detail" to it.second) }))
-            } else {
-                cli.printTable(listOf(Col("CHECK"), Col("RESULT")), results.map { listOf(it.first, it.second ?: "ok") })
-            }
-            if (results.any { it.second != null }) fail(Exit.INTEGRITY, "Database check failed")
-        } finally {
-            tmp.deleteRecursively()
+        val results = cli.withSnapshot(::check)
+        if (cli.json) {
+            cli.printJson(jsonOf("ok" to results.all { it.second == null }, "checks" to results.map { jsonOf("name" to it.first, "ok" to (it.second == null), "detail" to it.second) }))
+        } else {
+            cli.printTable(listOf(Col("CHECK"), Col("RESULT")), results.map { listOf(it.first, it.second ?: "ok") })
         }
+        if (results.any { it.second != null }) fail(Exit.INTEGRITY, "Database check failed")
     }
 
-    private fun check(db: File): List<Pair<String, String?>> {
-        val c = BundledSQLiteDriver().open(db.path, SQLITE_OPEN_READONLY)
-        try {
-            fun rows(sql: String): List<String> = c.prepare(sql).use { s ->
-                buildList { while (s.step()) add((0 until s.getColumnCount()).joinToString(" ") { if (s.isNull(it)) "null" else s.getText(it) }) }
-            }
+    private fun check(db: File): List<Pair<String, String?>> = readOnlySql(db) { rows ->
             val integrity = rows("PRAGMA integrity_check")
             val fk = rows("PRAGMA foreign_key_check")
             val unbalanced = rows(
@@ -67,16 +122,13 @@ class DbCheck(private val cli: CliState) : CliktCommand("check") {
             )
             val triggers = rows("SELECT name FROM sqlite_master WHERE type = 'trigger'")
             val schema = rows("PRAGMA user_version").single().toInt()
-            return listOf(
+            listOf(
                 "schema version" to (if (schema == OPENBILL_DATABASE_VERSION) null else "$schema, expected $OPENBILL_DATABASE_VERSION"),
                 "integrity" to (if (integrity == listOf("ok")) null else integrity.take(5).joinToString("; ")),
                 "foreign keys" to (if (fk.isEmpty()) null else "${fk.size} violation(s): ${fk.take(3).joinToString("; ")}"),
                 "journal balance" to (if (unbalanced.isEmpty()) null else "${unbalanced.size} unbalanced voucher(s): ${unbalanced.take(3).joinToString("; ")}"),
                 "audit triggers" to (if (triggers.isNotEmpty()) null else "missing"),
             )
-        } finally {
-            c.close()
-        }
     }
 }
 
