@@ -1,6 +1,7 @@
 package app.openbill.cli
 
 import app.openbill.core.domain.model.Access
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.report.ColumnKind
 import app.openbill.core.domain.report.Gstr1
 import app.openbill.core.domain.report.ReportData
@@ -41,7 +42,7 @@ class CaPackCmd(private val cli: CliState) : CliktCommand("ca-pack") {
     private val to by option("--to", help = "YYYY-MM-DD (default: end of this financial year)")
     private val out by option("--out", help = "ZIP file to write").file(canBeDir = false).required()
 
-    override fun run() = cli.withData(write = false) {
+    override fun run() = cli.withData(write = false, Permission.EXPORT) {
         val period = reportPeriod(from, to)
         val files = repos.caPack(firm().id, period, cli.progress, now().toLocalDateTime(TimeZone.currentSystemDefault()).date)
         cli.progressDone()
@@ -127,7 +128,7 @@ open class ReportNamed(private val cli: CliState, private val fixed: ReportKind?
     private val out by option("--out", help = "File (default: stdout)").file(canBeDir = false)
     private val party by option("--party", help = "Party id or name (party-statement)")
 
-    override fun run() = cli.withData(write = false) {
+    override fun run() = cli.withData(write = false, Permission.VIEW_REPORTS) {
         val kind = ReportKind.of(kindKey)!!
         val fmt = if (cli.json && format == "table") "json" else format
         if ((kind == ReportKind.SALES_REGISTER || kind == ReportKind.PURCHASE_REGISTER) && (fmt == "csv" || (fmt == "table" && out != null))) {
@@ -160,7 +161,7 @@ class PeriodReport(private val cli: CliState, name: String, private val kind: Re
     private val format by option("--format").choice("table", "csv", "json").default("table")
     private val out by option("--out").file(canBeDir = false)
 
-    override fun run() = cli.withData(write = false) {
+    override fun run() = cli.withData(write = false, Permission.VIEW_REPORTS) {
         val p = period?.let { runCatching { ReportPeriod.month(it) }.getOrElse { e -> fail(Exit.USAGE, e.message!!) } }
         val data = reportData(p?.from?.toString() ?: from, p?.to?.toString() ?: to, kind)
         cli.render(Reports.run(kind, data), if (cli.json && format == "table") "json" else format, out, data.period)
@@ -174,7 +175,7 @@ class Gstr1Cmd(private val cli: CliState) : CliktCommand("gstr1") {
     private val format by option("--format").choice("json", "csv", "table").default("json")
     private val out by option("--out", help = "File (default: stdout)").file(canBeDir = false)
 
-    override fun run() = cli.withData(write = false) {
+    override fun run() = cli.withData(write = false, Permission.EXPORT) {
         val p = runCatching { ReportPeriod.month(period) }.getOrElse { fail(Exit.USAGE, it.message!!) }
         val data = reportData(p.from.toString(), p.to.toString(), ReportKind.GSTR1)
         val g = Gstr1.build(data)
@@ -195,7 +196,7 @@ class TallyExport(private val cli: CliState, name: String) : CliktCommand(name) 
     private val to by option("--to")
     private val out by option("--out", help = "File (default: stdout)").file(canBeDir = false)
 
-    override fun run() = cli.withData(write = false) {
+    override fun run() = cli.withData(write = false, Permission.EXPORT) {
         val period = reportPeriod(from, to)
         val firmId = firm().id
         cli.emitStreamed(out) { w -> repos.writeTallyXml(firmId, period, w, cli.progress) }
@@ -206,10 +207,15 @@ class TallyExport(private val cli: CliState, name: String) : CliktCommand(name) 
 class AuditList(private val cli: CliState) : CliktCommand("list") {
     override fun help(context: Context) = "Recent audit events, newest first"
     private val limit by option("--limit").int().default(50)
+    private val byUser by option("--user", "--by", help = "Only events by this user (name or id), like the app's activity log filter")
 
-    override fun run() = cli.withData(write = false) {
-        val events = repos.audit.observeRecent(firm().id, limit).first()
-        val names = repos.users.observeUsers().first().associate { it.id to it.name }
+    override fun run() = cli.withData(write = false, Permission.VIEW_ACTIVITY) {
+        val users = repos.users.observeUsers().first()
+        val names = users.associate { it.id to it.name }
+        val actor = byUser?.let { ref -> (users.firstOrNull { it.id == ref } ?: users.firstOrNull { it.name.equals(ref.trim(), true) })?.id ?: fail(Exit.NOT_FOUND, "No user '$ref'") }
+        // ponytail: filters the whole trail in memory; an actor index if trails grow past a few hundred thousand events.
+        val events = if (actor == null) repos.audit.observeRecent(firm().id, limit).first()
+        else repos.audit.observeRecent(firm().id, Int.MAX_VALUE).first().filter { (it.actor ?: Access.OWNER_ID) == actor }.take(limit)
         fun user(actor: String?) = (actor ?: Access.OWNER_ID).let { names[it] ?: it }
         if (cli.json) {
             cli.printJson(toJson(events.map { jsonOf("id" to it.id, "at" to it.createdAt.toString(), "user" to user(it.actor), "action" to it.action, "entityType" to it.entityType, "entityId" to it.entityId, "voucherId" to it.voucherId, "details" to it.detailsJson) }))

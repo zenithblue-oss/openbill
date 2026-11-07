@@ -1,6 +1,8 @@
 package app.openbill.cli
 
 import app.openbill.core.backup.BackupException
+import app.openbill.core.domain.model.Access
+import app.openbill.core.domain.model.PermissionDeniedException
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
@@ -23,9 +25,15 @@ fun main(args: Array<String>) {
 fun runCli(args: List<String>, env: CliEnv): Int {
     val cli = CliState(env)
     val root = rootCommand(cli)
+    // Process-wide sign-in state (Access): start each run as nobody-special and leave it clean.
+    Access.current = null
+    Access.loadManagersChangeSettings(false)
     return try {
         root.parse(args)
         Exit.OK
+    } catch (e: PermissionDeniedException) {
+        env.err.println("error: ${e.message}")
+        Exit.DENIED
     } catch (e: CliFailure) {
         env.err.println("error: ${e.message}")
         e.code
@@ -56,6 +64,8 @@ fun runCli(args: List<String>, env: CliEnv): Int {
     } catch (e: Exception) {
         env.err.println("internal error: ${e::class.simpleName}: ${e.message}")
         Exit.INTERNAL
+    } finally {
+        Access.current = null
     }
 }
 
@@ -68,9 +78,13 @@ class Root(private val cli: CliState) : CliktCommand(name = "openbill") {
     private val quiet by option("-q", "--quiet", help = "Print only the essential value").flag()
     private val yes by option("-y", "--yes", help = "Do not prompt for destructive operations").flag()
     private val firm by option("--firm", help = "Firm id, GSTIN, or name")
+    private val user by option("--user", help = "Sign in as this user (required when the data has staff users; or OPENBILL_USER)")
+    private val pinStdin by option("--pin-stdin", help = "Read the PIN from the first stdin line (else OPENBILL_PIN or a hidden prompt)").flag()
 
     override fun run() {
         if (dataDir != null && backup != null) throw UsageError("--data-dir and --backup are mutually exclusive")
+        cli.user = user
+        cli.pinStdin = pinStdin
         cli.dataDir = dataDir
         cli.backup = backup
         cli.json = json
@@ -111,5 +125,6 @@ fun rootCommand(cli: CliState): CliktCommand = Root(cli).subcommands(
     gstCommands(cli),
     tallyCommands(cli),
     auditCommands(cli),
+    userCommands(cli),
     devCommands(cli),
 )

@@ -52,7 +52,7 @@ class BackupCreate(private val cli: CliState) : CliktCommand("create") {
         val loc = cli.location()
         if (!loc.databaseFile.isFile) fail(Exit.NOT_FOUND, "No OpenBill database in ${loc.databaseFile.parentFile}")
         // VACUUM INTO is a consistent read: safe while the app is running, so no lock is needed.
-        val firmName = cli.withData(write = false) { runCatching { firm().name }.getOrNull() }
+        val firmName = cli.withData(write = false, app.openbill.core.domain.model.Permission.BACKUP_RESTORE) { runCatching { firm().name }.getOrNull() }
         val now = Instant.ofEpochMilli(cli.env.clock.now().toEpochMilliseconds())
         val target = out.let { o ->
             when {

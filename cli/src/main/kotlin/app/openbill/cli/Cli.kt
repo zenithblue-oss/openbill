@@ -9,6 +9,7 @@ import app.openbill.core.database.OPENBILL_DATABASE_VERSION
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.database.openBillDatabase
 import app.openbill.core.domain.model.Firm
+import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.repository.Repositories
 import app.openbill.core.model.OnProgress
 import app.openbill.core.model.Ulid
@@ -56,6 +57,12 @@ class CliEnv(
     val backupPassword: CharArray? = System.getenv("OPENBILL_BACKUP_PASSWORD")?.takeIf { it.isNotEmpty() }?.toCharArray(),
     /** Hidden terminal input (passwords, PINs); null when there is no console. Never echoed. */
     val readSecret: (prompt: String) -> CharArray? = { prompt -> System.console()?.readPassword("%s", prompt) },
+    /** OPENBILL_USER / OPENBILL_PIN sign in without flags; OPENBILL_NEW_PIN is a new user's PIN (`users add`). */
+    val user: String? = System.getenv("OPENBILL_USER")?.takeIf { it.isNotBlank() },
+    val pin: String? = System.getenv("OPENBILL_PIN")?.takeIf { it.isNotEmpty() },
+    val newPin: String? = System.getenv("OPENBILL_NEW_PIN")?.takeIf { it.isNotEmpty() },
+    /** The desktop app's preferences: owner (app-lock) PIN hash and the shared wrong-PIN back-off. */
+    val lockStore: LockStore = LockStore.desktop(),
 )
 
 /** Global options, filled by the root command before a subcommand runs. */
@@ -66,6 +73,9 @@ class CliState(val env: CliEnv) {
     var quiet = false
     var yes = false
     var firm: String? = null
+    var user: String? = null
+    var pinStdin = false
+    var signedInWithPin = false
 
     val out get() = env.out
 
@@ -124,13 +134,13 @@ class CliState(val env: CliEnv) {
      * (exit 6 when the app runs); reads while the app runs use a `VACUUM INTO` snapshot. Backup
      * mode verifies and extracts the archive to a temporary directory and rejects writes.
      */
-    fun <T> withData(write: Boolean, block: suspend Data.() -> T): T {
+    fun <T> withData(write: Boolean, need: Permission? = null, block: suspend Data.() -> T): T {
         backup?.let { archive ->
             if (write) fail(Exit.DENIED, "A backup file is read-only; writes are rejected")
             val tmp = Files.createTempDirectory("openbill-cli").toFile()
             try {
                 val prepared = OpenBillBackup.extract(archive, tmp, OPENBILL_DATABASE_VERSION, backupPassword(archive))
-                return open(prepared.databaseFile, File(tmp, "attachments"), block)
+                return open(prepared.databaseFile, File(tmp, "attachments"), need, block)
             } finally {
                 tmp.deleteRecursively()
             }
@@ -141,13 +151,13 @@ class CliState(val env: CliEnv) {
         checkSchema(loc.databaseFile)
         val lock = InstanceLock.tryAcquire(dataDir)
         try {
-            if (lock != null) return open(loc.databaseFile, dataDir, block)
+            if (lock != null) return open(loc.databaseFile, dataDir, need, block)
             if (write) fail(Exit.LOCKED, "OpenBill is running for $dataDir (lock ${InstanceLock.file(dataDir)}); close it first")
             val tmp = Files.createTempDirectory("openbill-cli").toFile()
             try {
                 val copy = File(tmp, "openbill.db")
                 OpenBillBackup.snapshot(loc.databaseFile, copy)
-                return open(copy, dataDir, block)
+                return open(copy, dataDir, need, block)
             } finally {
                 tmp.deleteRecursively()
             }
@@ -164,16 +174,23 @@ class CliState(val env: CliEnv) {
         val lock = InstanceLock.tryAcquire(dataDir)
             ?: fail(Exit.LOCKED, "OpenBill is running for $dataDir (lock ${InstanceLock.file(dataDir)}); close it first")
         try {
+            signInOwnerRaw(loc.databaseFile)
             return block(loc)
         } finally {
             lock.release()
         }
     }
 
-    private fun <T> open(db: File, dataDir: File, block: suspend Data.() -> T): T {
+    private fun <T> open(db: File, dataDir: File, need: Permission?, block: suspend Data.() -> T): T {
         val database = openBillDatabase(db.absolutePath)
         try {
-            return runBlocking { Data(this@CliState, database, database.roomRepositories(), dataDir).block() }
+            val repos = database.roomRepositories()
+            return runBlocking {
+                signIn(repos.users.observeUsers().first())
+                // Screens the app gates by role (reports, exports, activity log, backups); writes are checked by the repositories.
+                need?.let(app.openbill.core.domain.model.Access::require)
+                Data(this@CliState, database, repos, dataDir).block()
+            }
         } finally {
             database.close()
         }
@@ -190,7 +207,7 @@ class Data(val cli: CliState, val database: OpenBillDatabase, val repos: Reposit
     fun now(): Instant = cli.env.clock.now()
 
     /** `--firm id|gstin|name`, or the only firm. */
-    suspend fun firm(): Firm {
+    private suspend fun pickFirm(): Firm {
         val firms = repos.firms.observeFirms().first().filter { it.deletedAt == null }
         val sel = cli.firm
         if (sel == null) {
@@ -206,6 +223,11 @@ class Data(val cli: CliState, val database: OpenBillDatabase, val repos: Reposit
             1 -> matches.single()
             else -> fail(Exit.USAGE, "Firm '$sel' is ambiguous")
         }
+    }
+
+    /** The firm, with its "managers can change settings" switch loaded as the app does when a business opens. */
+    suspend fun firm(): Firm = pickFirm().also {
+        app.openbill.core.domain.model.Access.loadManagersChangeSettings(repos.firms.findSettings(it.id)?.managersChangeSettings == true)
     }
 }
 

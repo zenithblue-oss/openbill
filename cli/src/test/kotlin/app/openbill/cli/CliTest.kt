@@ -45,6 +45,9 @@ class CliTest {
     private var ids = 0
 
     private var password: CharArray? = null
+    private val lock = HashMap<String, String>()
+    private val stdin = ArrayDeque<String>()
+    private var pinEnv: String? = null
 
     private fun run(vararg args: String, dir: File = dataDir): Result {
         val out = ByteArrayOutputStream()
@@ -61,6 +64,16 @@ class CliTest {
             defaultDataDir = { dir },
             backupPassword = password,
             readSecret = { null },
+            readLine = { stdin.removeFirstOrNull() },
+            user = null,
+            pin = pinEnv,
+            newPin = null,
+            lockStore = object : LockStore {
+                override fun get(key: String) = lock[key]
+                override fun put(key: String, value: String) {
+                    lock[key] = value
+                }
+            },
         )
         val code = runCli(args.toList(), env)
         fun norm(s: ByteArrayOutputStream) = s.toString(Charsets.UTF_8).replace("\r\n", "\n")
@@ -150,6 +163,73 @@ class CliTest {
         assertEquals(2, run("invoice", "recycle-bin", "--purge", draft).code) // needs --yes
         ok("--yes", "invoice", "recycle-bin", "--purge", draft)
         assertEquals(4, run("invoice", "show", draft).code)
+    }
+
+    @Test
+    fun pinHashMatchesTheAppFormat() {
+        // PBKDF2-HMAC-SHA256, 1000 rounds, independently computed (Python hashlib).
+        val stored = "1000:00112233445566778899aabbccddeeff:b8ad0f1dacec0beb4f418fadcb2ee5939ef45823391bb89692028dd1b67e9cef"
+        assertTrue(Pins.verify("1234", stored))
+        assertTrue(!Pins.verify("1235", stored) && !Pins.verify("1234", null) && !Pins.verify("1234", "junk"))
+        assertTrue(Pins.verify("2468", Pins.hash("2468")))
+        assertEquals("Use at least 4 digits", Pins.error("12"))
+    }
+
+    @Test
+    fun usersSignInAndRolePermissions() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        fun pinned(vararg pins: String) = stdin.apply { clear(); addAll(pins) }
+        // Owner-only, and the owner PIN is the desktop app-lock PIN: not set yet.
+        pinned("1234", "5678")
+        assertEquals(8, run("--pin-stdin", "users", "add", "--name", "Ravi", "--role", "cashier", "--new-pin-stdin").code)
+        lock[Pins.KEY_PIN] = Pins.hash("1234")
+        assertEquals(2, run("--pin", "1234", "users", "list").code) // no PIN in argv
+        pinned("1234", "56")
+        assertEquals(3, run("--pin-stdin", "users", "add", "--name", "Ravi", "--role", "cashier", "--new-pin-stdin").code) // PIN too short
+        pinned("1234", "5678")
+        ok("--pin-stdin", "users", "add", "--name", "Ravi", "--role", "cashier", "--new-pin-stdin")
+        pinned("1234", "9999")
+        assertEquals(8, run("--pin-stdin", "users", "add", "--name", "Asha", "--role", "accountant", "--new-pin-stdin").code) // staff now: sign in
+        pinned("1234", "9999")
+        ok("--user", "Owner", "--pin-stdin", "users", "add", "--name", "Asha", "--role", "accountant", "--new-pin-stdin")
+
+        // Staff exist: every command needs a signed-in user.
+        assertEquals(8, run("party", "list").code)
+        pinEnv = "5678"
+        ok("--user", "Ravi", "party", "list")
+        ok("--user", "ravi", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:2", "--post")
+        assertEquals(8, run("--user", "Ravi", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:2@1.00").code) // cashier price
+        assertEquals(8, run("--user", "Ravi", "report", "sales-register").code)
+        assertEquals(8, run("--user", "Ravi", "audit", "list").code)
+        assertEquals(8, run("--user", "Ravi", "export", "parties").code)
+        assertEquals(8, run("--user", "Ravi", "backup", "create", "--out", File(root, "b").path).code)
+        assertEquals(8, run("--user", "Ravi", "users", "list").code)
+        val number = run("-q", "--user", "Ravi", "invoice", "list").out.trim()
+        assertEquals(8, run("--yes", "--user", "Ravi", "invoice", "cancel", number, "--reason", "x").code)
+        pinEnv = "9999"
+        ok("--user", "Asha", "report", "sales-register")
+        assertTrue(ok("--user", "Asha", "audit", "list", "--user", "Ravi").out.contains("voucher.posted"))
+        assertTrue(ok("--user", "Asha", "audit", "list", "--user", "Asha").out.lines().none { it.contains("voucher.posted") })
+        assertEquals(8, run("--user", "Asha", "party", "add", "--name", "Nope").code)
+        assertEquals(8, run("--yes", "--user", "Asha", "db", "migrate").code) // owner only
+
+        // Wrong PINs back off like the app (shared counter): 3 free tries, then a wait.
+        pinEnv = "0000"
+        repeat(3) { assertEquals(8, run("--user", "Asha", "party", "list").code) }
+        pinEnv = "9999"
+        assertTrue("wait" in run("--user", "Asha", "party", "list").err)
+        lock[Pins.KEY_RETRY_AT] = "0"
+
+        pinEnv = "1234"
+        ok("--user", "Owner", "report", "sales-register")
+        ok("--yes", "--user", "Owner", "users", "deactivate", "Ravi")
+        ok("--user", "Owner", "users", "role", "Asha", "manager")
+        assertTrue(ok("--json", "--user", "Owner", "users", "list").out.contains("\"role\": \"manager\""))
+        pinEnv = "5678"
+        assertEquals(8, run("--user", "Ravi", "party", "list").code) // deactivated
+        pinEnv = null
+        assertEquals(8, run("--user", "Asha", "party", "list").code) // no PIN off a terminal
     }
 
     @Test

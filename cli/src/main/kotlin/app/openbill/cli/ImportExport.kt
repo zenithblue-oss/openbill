@@ -91,7 +91,7 @@ open class ExportCmd(private val cli: CliState, private val fixed: String?) : Cl
     private val format by option("--format").choice("csv", "json").default("csv")
     private val out by option("--out", help = "File (default: stdout)").file(canBeDir = false)
 
-    override fun run() = cli.withData(write = false) {
+    override fun run() = cli.withData(write = false, app.openbill.core.domain.model.Permission.EXPORT) {
         val f = firm()
         val units = units(f.id)
         val text = if (format == "json") {
