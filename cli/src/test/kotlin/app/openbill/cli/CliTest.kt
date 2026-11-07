@@ -233,6 +233,29 @@ class CliTest {
     }
 
     @Test
+    fun invoiceDocumentFields() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        // Reverse charge: tax is computed but the party owes only the taxable value.
+        ok("party", "add", "--name", "Kiran Traders", "--gstin", "27AAAPL1234C1ZE")
+        val rc = ok("--json", "invoice", "create", "--party", "Kiran Traders", "--date", "2026-10-01", "--line", "BOLT:10+2", "--reverse-charge", "--post").out
+        assertTrue("\"reverseCharge\": true" in rc && "\"tax\": \"22.50\"" in rc && "\"total\": \"125.00\"" in rc && "\"freeQuantity\": \"2\"" in rc, rc)
+        // Export under LUT in dollars: zero-rated, place of supply 96, rupee amounts stored.
+        val ex = ok(
+            "--json", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-02", "--line", "SVC:1@100.00",
+            "--export", "wopay", "--currency", "usd", "--exchange-rate", "83.50", "--port", "INBOM1",
+            "--transporter", "Fast Roadways", "--transport-mode", "road", "--vehicle", "MH12 AB 1234", "--po-number", "PO-7", "--field", "Order ref=WEB-12",
+        ).out
+        assertTrue("\"placeOfSupply\": \"96\"" in ex && "\"tax\": \"0.00\"" in ex && "\"total\": \"8350.00\"" in ex && "\"currency\": \"USD\"" in ex && "\"foreignRate\": \"100.00\"" in ex, ex)
+        assertTrue("\"Vehicle no.\": \"MH12AB1234\"" in ex && "\"Order ref\": \"WEB-12\"" in ex && "\"PO no.\": \"PO-7\"" in ex, ex)
+        val id = Regex("\"id\": \"([^\"]+)\"").find(ex)!!.groupValues[1]
+        assertTrue(ok("invoice", "show", id).out.contains("USD 100.00"))
+        assertEquals(3, run("invoice", "create", "--party", "Acme Stores", "--line", "BOLT:1", "--date", "2026-10-02", "--eway-bill", "123").code) // 12 digits
+        assertEquals(2, run("invoice", "create", "--party", "Acme Stores", "--line", "BOLT:1", "--date", "2026-10-02", "--currency", "USD").code) // needs --export
+        assertEquals(3, run("invoice", "create", "--party", "Bharat Supplies", "--line", "BOLT:1", "--date", "2026-10-02", "--reverse-charge", "--post").code) // unregistered
+    }
+
+    @Test
     fun exitCodes() {
         seed()
         assertEquals(2, run("party", "add").code) // missing --name
