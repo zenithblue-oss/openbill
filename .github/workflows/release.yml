@@ -119,8 +119,50 @@ jobs:
           path: desktopApp/build/release/*
           if-no-files-found: error
 
+  # The `openbill` command-line client: one portable JVM build (Java 17+ on the machine; the
+  # bundled SQLite jar carries natives for Linux, Windows and macOS). Not code-signed yet.
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and test
+        run: ./gradlew --console=plain :cli:test :cli:installDist
+      - name: Package tar.gz, zip and deb
+        run: |
+          set -euo pipefail
+          out=cli/build/release
+          base="openbill-cli-${GITHUB_REF_NAME}"
+          mkdir -p "$out" stage
+          cp -r cli/build/install/openbill "stage/$base"
+          tar -C stage -czf "$out/$base-linux.tar.gz" "$base"
+          (cd stage && zip -qr "../$out/$base-windows.zip" "$base")
+          ver="${GITHUB_REF_NAME#v}"
+          pkg=stage/deb
+          mkdir -p "$pkg/DEBIAN" "$pkg/usr/lib/openbill-cli" "$pkg/usr/bin"
+          cp -r cli/build/install/openbill/. "$pkg/usr/lib/openbill-cli/"
+          ln -s ../lib/openbill-cli/bin/openbill "$pkg/usr/bin/openbill"
+          rm -f "$pkg/usr/lib/openbill-cli/bin/openbill.bat"
+          printf '%s\n' "Package: openbill-cli" "Version: $ver" "Section: utils" "Priority: optional" "Architecture: all" \
+            "Depends: default-jre-headless (>= 2:1.17) | java17-runtime-headless" \
+            "Maintainer: OpenBill <noreply@github.com>" \
+            "Description: OpenBill command-line client" " Reads and writes OpenBill data and backups from scripts." > "$pkg/DEBIAN/control"
+          dpkg-deb --root-owner-group --build "$pkg" "$out/openbill-cli_${ver}_all.deb"
+          "$pkg/usr/bin/openbill" version
+          ls -l "$out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli
+          path: cli/build/release/*
+          if-no-files-found: error
+
   publish:
-    needs: [android, desktop]
+    needs: [android, desktop, cli]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
