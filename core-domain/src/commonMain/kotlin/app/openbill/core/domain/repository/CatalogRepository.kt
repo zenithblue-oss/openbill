@@ -4,9 +4,14 @@ import app.openbill.core.domain.model.Godown
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.ItemCategory
 import app.openbill.core.domain.model.UnitOfMeasure
+import app.openbill.core.model.Money
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlin.time.Instant
+
+/** A price edit of one item; a side that did not change has equal old and new values (null when not recorded). */
+data class ItemPriceChange(val at: Instant, val actor: String?, val oldSale: Money, val sale: Money, val oldPurchase: Money?, val purchase: Money?)
 
 interface CatalogRepository {
     fun observeItems(firmId: String): Flow<List<Item>>
@@ -30,6 +35,9 @@ interface CatalogRepository {
 
     /** Bulk edit: saves all of [items] or none, logging a bulk-update event per item. */
     suspend fun saveItems(items: List<Item>) = items.forEach { saveItem(it) }
+
+    /** One item's sale/purchase price changes from the audit trail, newest first. */
+    fun observePriceChanges(firmId: String, itemId: String): Flow<List<ItemPriceChange>> = flowOf(emptyList())
 
     suspend fun archiveItem(id: String, at: Instant)
 

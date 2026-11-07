@@ -84,4 +84,25 @@ class RoomCatalogRepositoryTest {
         val category = assertNotNull(repository.findCategory("category-1"))
         assertEquals(ARCHIVED_AT, category.deletedAt)
     }
+
+    @Test
+    fun priceEditsBecomeTheItemsPriceHistory(): Unit = runBlocking {
+        db.firmDao().insert(testFirm().toEntity(null))
+        repository.saveUnit(testUnit())
+        repository.saveCategory(testCategory())
+        val item = testItem()
+        repository.saveItem(item)
+        repository.saveItem(item.copy(name = "Renamed")) // not a price change
+        val m = app.openbill.core.model.Money::parse
+        repository.saveItem(item.copy(salePrice = m("150"), purchasePrice = m("90")))
+        repository.saveItems(listOf(item.copy(salePrice = m("165"), purchasePrice = m("90"))))
+        // Saves within one millisecond have no fixed order, so compare by price.
+        val history = repository.observePriceChanges("firm-1", item.id).first().sortedByDescending { it.sale }
+        assertEquals(2, history.size)
+        assertEquals(listOf(m("165"), m("150")), history.map { it.sale })
+        assertEquals(m("150"), history[0].oldSale)
+        assertEquals(null, history[0].purchase) // bulk edits change only the sale price
+        assertEquals(item.salePrice, history[1].oldSale)
+        assertEquals(item.purchasePrice to m("90"), history[1].oldPurchase to history[1].purchase)
+    }
 }

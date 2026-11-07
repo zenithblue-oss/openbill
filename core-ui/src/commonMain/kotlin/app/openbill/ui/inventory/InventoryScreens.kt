@@ -91,6 +91,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 
 /** Inventory helpers shared by the stock screens, the item editor and the invoice editor. */
 object Inventory {
@@ -374,6 +375,12 @@ fun ItemStockScreen(
     val godowns by remember { repos.catalog.observeGodowns(firmId) }.collectAsState(initial = emptyList())
     val batches by remember(itemId) { repos.stock.observeBatches(itemId) }.collectAsState(initial = emptyList())
     val serials by remember(itemId) { repos.stock.observeSerials(itemId) }.collectAsState(initial = emptyList())
+    // Price history shows cost prices, so only roles that manage prices or read reports see it.
+    val seesPrices = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS) ||
+        app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.VIEW_REPORTS)
+    val priceChanges by remember(itemId, seesPrices) {
+        if (seesPrices) repos.catalog.observePriceChanges(firmId, itemId) else kotlinx.coroutines.flow.flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
     // Only the vouchers behind this item's movements, looked up as they appear.
     val voucherById = remember(itemId) { androidx.compose.runtime.mutableStateMapOf<String, Voucher>() }
     androidx.compose.runtime.LaunchedEffect(movements) {
@@ -454,6 +461,23 @@ fun ItemStockScreen(
                     item(key = "serials") { SectionHeader("Serial numbers in stock (${inStock.size})") }
                     item(key = "serial-list") {
                         Text(inStock.joinToString(", ") { it.serialNumber }.ifEmpty { "None" }, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                if (priceChanges.isNotEmpty()) {
+                    item(key = "prices") { SectionHeader("Price changes") }
+                    items(priceChanges.take(20), key = { "p" + it.at.toEpochMilliseconds() + it.sale.paise }) { c ->
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    listOfNotNull(
+                                        "Sale ${Fmt.inr(c.oldSale)} → ${Fmt.inr(c.sale)}".takeIf { c.sale != c.oldSale },
+                                        c.purchase?.takeIf { c.oldPurchase != null && it != c.oldPurchase }?.let { "Purchase ${Fmt.inr(c.oldPurchase!!)} → ${Fmt.inr(it)}" },
+                                    ).joinToString(" · "),
+                                )
+                            },
+                            supportingContent = { Text(Fmt.dateLong(c.at.toLocalDateTime(container.timeZone).date)) },
+                        )
+                        HorizontalDivider()
                     }
                 }
                 item(key = "timeline") { SectionHeader("Movements") }

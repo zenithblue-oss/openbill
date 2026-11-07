@@ -9,6 +9,8 @@ import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.ItemCategory
 import app.openbill.core.domain.model.UnitOfMeasure
 import app.openbill.core.domain.repository.CatalogRepository
+import app.openbill.core.domain.repository.ItemPriceChange
+import app.openbill.core.model.Money
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -27,6 +29,20 @@ class RoomCatalogRepository(
         items.observePage(firmId, services, query.trim(), limit, categoryId).map { values -> values.map { it.toDomain() } }
 
     override suspend fun findItem(id: String): Item? = items.findById(id)?.toDomain()
+
+    override fun observePriceChanges(firmId: String, itemId: String): Flow<List<ItemPriceChange>> =
+        database.auditDao().observeForEntity(firmId, "item", itemId).map { rows ->
+            rows.filter { it.action == "item.updated" || it.action == "item.bulk_updated" }.mapNotNull { e ->
+                val json = e.detailsJson ?: return@mapNotNull null
+                fun paise(key: String) = Regex("\"$key\":(-?\\d+)").find(json)?.groupValues?.get(1)?.toLong()?.let(Money::of)
+                val sale = paise("salePrice") ?: return@mapNotNull null
+                val oldSale = paise("oldSalePrice") ?: return@mapNotNull null
+                val purchase = paise("purchasePrice")
+                val oldPurchase = paise("oldPurchasePrice")
+                if (sale == oldSale && purchase == oldPurchase) return@mapNotNull null
+                ItemPriceChange(Instant.fromEpochMilliseconds(e.createdAt), e.actor, oldSale, sale, oldPurchase, purchase)
+            }
+        }
 
     override suspend fun saveItem(item: Item) {
         Access.require(Permission.MANAGE_MASTERS)
@@ -62,7 +78,10 @@ class RoomCatalogRepository(
                         "oldTaxRateUnits" to existing.taxRateUnits, "categoryId" to entity.categoryId, "oldCategoryId" to existing.categoryId,
                         "unitId" to entity.unitId, "oldUnitId" to existing.unitId,
                     )
-                    priceChanged -> AuditDetails.json("salePrice" to entity.salePrice, "oldSalePrice" to existing?.salePrice)
+                    priceChanged -> AuditDetails.json(
+                        "salePrice" to entity.salePrice, "oldSalePrice" to existing?.salePrice,
+                        "purchasePrice" to entity.purchasePrice, "oldPurchasePrice" to existing?.purchasePrice,
+                    )
                     else -> null
                 },
             )
