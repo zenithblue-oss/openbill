@@ -260,8 +260,37 @@ private fun FirmShell(container: AppContainer, firm: Firm, backHandler: BackHand
         while (true) {
             // Made by whoever is signed in; a read-only accountant leaves them for the next sign-in.
             val made = if (!Access.can(Permission.CREATE_VOUCHERS)) 0 else runCatching { app.openbill.ui.recurring.generateRecurring(container, session) }.getOrDefault(0)
-            if (made > 0) messages.show(if (made == 1) "1 recurring invoice made" else "$made recurring invoices made")
+            if (made > 0) {
+                val text = if (made == 1) "1 recurring invoice made" else "$made recurring invoices made"
+                messages.show(text)
+                container.inbox.addEvent(firm.id, app.openbill.ui.notify.InboxCategory.RECURRING, container.now(), text, "Made by your schedules; drafts wait for you to post them", Route.Recurring)
+            }
             delay(60 * 60 * 1000L)
+        }
+    }
+    // Deep links (Android `openbill://`) open on top of the current screen once the business is ready.
+    LaunchedEffect(firm.id) {
+        container.pendingLink.collect { link ->
+        val l = link ?: return@collect
+        container.pendingLink.value = null
+        // Only records of this business; a voucher opens the way its list would open it.
+        val repos = container.repositories
+        val target: Route? = runCatching {
+            when (l) {
+                is Route.InvoiceDetail -> repos.vouchers.findVoucher(l.voucherId)?.takeIf { it.firmId == firm.id && it.deletedAt == null }?.let { v ->
+                    when {
+                        v.type in setOf(VoucherType.PAYMENT_IN, VoucherType.PAYMENT_OUT, VoucherType.EXPENSE, VoucherType.CONTRA) -> Route.MoneyDetail(v.id)
+                        v.type == VoucherType.STOCK_ADJUSTMENT || v.type == VoucherType.STOCK_TRANSFER -> null
+                        v.status == VoucherStatus.DRAFT -> Route.InvoiceEditor(v.id, v.type)
+                        else -> Route.InvoiceDetail(v.id)
+                    }
+                }
+                is Route.PartyLedger -> repos.parties.findParty(l.partyId)?.takeIf { it.firmId == firm.id }?.let { l }
+                is Route.ItemStock -> repos.catalog.findItem(l.itemId)?.takeIf { it.firmId == firm.id }?.let { l }
+                else -> l
+            }
+        }.getOrNull()
+        if (target != null) nav.push(target) else messages.show("That link is not for anything in ${firm.name}")
         }
     }
     val route = nav.current
@@ -532,6 +561,7 @@ private fun RouteContent(
                 onStock = { low -> nav.push(Route.StockSummary(low)) },
                 onMoney = { c -> if (c == MoneyCard.CASH_BANK) nav.selectTab(Tab.MONEY) else nav.push(moneyCardRoute(c)) },
                 onPos = { nav.push(Route.Pos()) },
+                onInbox = { nav.push(Route.Inbox) },
             )
             Tab.MONEY -> MoneyScreen(
                 container, s,
@@ -672,6 +702,9 @@ private fun RouteContent(
         Route.Recurring -> app.openbill.ui.recurring.RecurringListScreen(container, s, onBack = nav::pop, onOpenInvoice = { id -> nav.push(Route.InvoiceDetail(id)) })
         Route.BooksLock -> BooksLockScreen(container, s, onBack = nav::pop)
         Route.Users -> app.openbill.ui.settings.UsersScreen(container, s, onBack = nav::pop)
+        Route.Inbox -> app.openbill.ui.notify.InboxScreen(container, s, onBack = nav::pop) { r ->
+            if (r is Route.Home) nav.selectTab(r.tab) else nav.push(r)
+        }
         is Route.InvoicePdf -> InvoicePdfScreen(container, s, route.voucherId, onBack = nav::pop, backHandler = backHandler, receipt = route.receipt)
         is Route.Pos -> app.openbill.ui.pos.PosScreen(
             container, s, route.voucherId,

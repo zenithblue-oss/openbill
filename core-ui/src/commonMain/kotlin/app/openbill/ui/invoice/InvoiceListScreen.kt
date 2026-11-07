@@ -131,6 +131,8 @@ fun InvoiceListScreen(
     onMoney: ((app.openbill.ui.money.MoneyCard) -> Unit)? = null,
     /** Opens POS counter billing from the top bar. */
     onPos: (() -> Unit)? = null,
+    /** Opens the notifications inbox (dashboard only). */
+    onInbox: (() -> Unit)? = null,
 ) {
     val types = when {
         docType != null -> setOf(docType)
@@ -169,6 +171,7 @@ fun InvoiceListScreen(
             if (onBack != null) AppTopBar(title, onBack = onBack)
             else CollapsingTopBar(title, scrollBehavior, actions = {
                 if (onPos != null && canCreate) androidx.compose.material3.TextButton(onClick = onPos) { Text("POS") }
+                if (onInbox != null) app.openbill.ui.notify.InboxButton(container, session, onInbox)
             })
         },
         snackbarHost = { AppSnackbarHost() },

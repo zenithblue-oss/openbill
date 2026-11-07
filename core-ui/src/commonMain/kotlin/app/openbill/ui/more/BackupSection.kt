@@ -67,7 +67,7 @@ interface BackupService {
 val LocalBackupService = staticCompositionLocalOf<BackupService?> { null }
 
 @Composable
-fun BackupSection(listColors: ListItemColors) {
+fun BackupSection(listColors: ListItemColors, container: app.openbill.ui.AppContainer? = null) {
     val service = LocalBackupService.current ?: return
     val scope = rememberCoroutineScope()
     val messages = LocalAppMessages.current
@@ -78,14 +78,21 @@ fun BackupSection(listColors: ListItemColors) {
     var prompt by remember { mutableStateOf<Pair<Boolean, CompletableDeferred<String?>>?>(null) }
     suspend fun askPassword(creating: Boolean): String? = CompletableDeferred<String?>().also { prompt = creating to it }.await()
 
-    fun run(block: suspend () -> String?) {
+    fun run(creating: Boolean = false, block: suspend () -> String?) {
         busy = true
         scope.launch {
             // Owner only: a backup holds every staff PIN hash, and a restore replaces the users table.
             val msg = runCatching {
                 app.openbill.core.domain.model.Access.require(app.openbill.core.domain.model.Permission.BACKUP_RESTORE)
-                block()
-            }.getOrElse { it.message ?: "Something went wrong" }
+                block().also { done -> if (creating && done != null) container?.inbox?.lastBackup = container?.now() }
+            }.getOrElse { e ->
+                val text = e.message ?: "Something went wrong"
+                container?.let { c ->
+                    c.inbox.recordError(c.now(), "${if (creating) "Backup" else "Restore"} failed: $text")
+                    if (creating) c.inbox.addEvent(null, app.openbill.ui.notify.InboxCategory.BACKUP, c.now(), "Backup failed", text)
+                }
+                text
+            }
             busy = false
             progress = null
             msg?.let { messages?.show(it) }
@@ -100,7 +107,7 @@ fun BackupSection(listColors: ListItemColors) {
         leadingContent = { Icon(Icons.Outlined.Create, contentDescription = null) },
         colors = listColors,
         modifier = Modifier.clickable(enabled = !busy, role = Role.Button) {
-            run { askPassword(creating = true)?.let { service.createBackup(it.ifEmpty { null }, onProgress) } }
+            run(creating = true) { askPassword(creating = true)?.let { service.createBackup(it.ifEmpty { null }, onProgress) } }
         },
     )
     ListItem(

@@ -323,6 +323,9 @@ fun MoreScreen(
                     ),
                 )
 
+                SectionHeader("Notifications")
+                app.openbill.ui.notify.NotificationPreferences(container, listColors)
+
                 if (container.platform.isDebugBuild && can(Permission.SETTINGS)) {
                     SectionHeader("Developer")
                     ListItem(
@@ -353,7 +356,7 @@ fun MoreScreen(
                     colors = listColors,
                     modifier = Modifier.clickable(role = Role.Button, onClick = onUsers),
                 )
-                if (can(Permission.BACKUP_RESTORE)) BackupSection(listColors)
+                if (can(Permission.BACKUP_RESTORE)) BackupSection(listColors, container)
                 if (can(Permission.OWNER_CONTROLS)) DeleteFirmItem(firm.name, listColors) {
                     // Files go only after the erase transaction commits, so a rollback never loses them.
                     container.repositories.firms.eraseFirm(firm.id).forEach { runCatching { container.platform.deleteAllAttachments(it) } }

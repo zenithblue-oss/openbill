@@ -55,6 +55,7 @@ sealed interface Route {
     data object BooksLock : Route
     data object Recurring : Route
     data object Users : Route
+    data object Inbox : Route
 
     /** The introduction, replayed from More. */
     data object Introduction : Route
@@ -106,9 +107,27 @@ sealed interface Route {
             BooksLock -> "books:"
             Recurring -> "recurring:"
             Users -> "users:"
+            Inbox -> "inbox:"
         }
 
     companion object {
+        /**
+         * `openbill://invoice/ID`, `openbill://party/ID`, `openbill://item/ID` or `openbill://inbox`;
+         * null for anything else. Ids are checked against the database by the screens they open.
+         */
+        fun fromLink(uri: String): Route? {
+            val rest = uri.trim().removePrefix("openbill://").takeIf { it != uri.trim() } ?: return null
+            val parts = rest.substringBefore('?').trimEnd('/').split('/')
+            val id = parts.getOrNull(1)?.takeIf { it.isNotEmpty() && it.length <= 64 && it.all { c -> c.isLetterOrDigit() || c == '-' || c == '_' } }
+            return when (parts[0]) {
+                "invoice" -> id?.let { InvoiceDetail(it) }
+                "party" -> id?.let { PartyLedger(it) }
+                "item" -> id?.let { ItemStock(it) }
+                "inbox" -> Inbox
+                else -> null
+            }
+        }
+
         fun fromKey(key: String): Route? {
             val kind = key.substringBefore(':')
             val arg = key.substringAfter(':', "")
@@ -151,6 +170,7 @@ sealed interface Route {
                 "books" -> BooksLock
                 "recurring" -> Recurring
                 "users" -> Users
+                "inbox" -> Inbox
                 else -> null
             }
         }

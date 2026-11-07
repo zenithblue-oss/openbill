@@ -174,7 +174,11 @@ class MainActivity : FragmentActivity() {
         )
         setContent {
             var ready by remember { mutableStateOf(app.startUp.isCompleted) }
-            LaunchedEffect(Unit) { app.startUp.await(); ready = true }
+            LaunchedEffect(Unit) {
+                app.startUp.await()
+                ready = true
+                if (savedInstanceState == null) openLink(intent)
+            }
             if (!ready) {
                 OpenBillTheme { ProgressOverlay(app.startUpProgress.collectAsState().value, "Starting OpenBill") }
             } else {
@@ -186,6 +190,18 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if ((application as OpenBillApplication).startUp.isCompleted) openLink(intent)
+    }
+
+    /** `openbill://` deep links; anything else (the launcher intent) is ignored. */
+    private fun openLink(intent: android.content.Intent?) {
+        if (intent?.action != android.content.Intent.ACTION_VIEW) return
+        val route = intent.dataString?.let { app.openbill.ui.nav.Route.fromLink(it) } ?: return
+        (application as OpenBillApplication).container.pendingLink.value = route
     }
 
     // Null while the database is still starting up (the lock cannot be engaged yet).

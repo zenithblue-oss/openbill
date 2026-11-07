@@ -182,6 +182,12 @@ class AppContainer(
     /** Per-firm invoice template, accent and print options (device settings, not the database). */
     val invoiceStyles: InvoiceStyleController by lazy { InvoiceStyleController(platform.settingsStore) }
 
+    /** In-app notifications inbox, its preferences and recent errors (device setting). */
+    val inbox by lazy { app.openbill.ui.notify.InboxController(platform.settingsStore) }
+
+    /** A deep link (Android `openbill://` intent) waiting for the business shell to open it. */
+    val pendingLink = kotlinx.coroutines.flow.MutableStateFlow<app.openbill.ui.nav.Route?>(null)
+
     /** Serializes first-run setup with default seeding so they never race. */
     val setupLock = Mutex()
 
