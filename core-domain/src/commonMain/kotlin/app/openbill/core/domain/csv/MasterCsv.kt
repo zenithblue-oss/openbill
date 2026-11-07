@@ -52,8 +52,10 @@ class CsvImport<T>(
     val errors: List<Pair<Int, String>>,
     /** Opening stock by item id, from an item import's optional opening columns. */
     val openings: Map<String, OpeningStock> = emptyMap(),
+    /** Rows left out on purpose (contacts already saved as parties), not errors. */
+    val skipped: Int = 0,
 ) {
-    val rows: Int get() = valid.size + errors.size
+    val rows: Int get() = valid.size + errors.size + skipped
 }
 
 /** Opening stock of one imported item; [godownId] null means the business's default godown. */
@@ -92,6 +94,27 @@ object MasterCsv {
                 stateCode = col("state_code") ?: col("gstin")?.take(2), createdAt = now, updatedAt = now,
             ).also(::validateParty)
         }
+
+    /**
+     * Address-book contacts (vCard) as new customers. A contact whose phone, or name when it has
+     * no phone, matches an existing party or an earlier card is skipped, so importing twice is safe.
+     */
+    fun contacts(text: String, firmId: String, existing: List<Party>, newId: () -> String, now: Instant): CsvImport<Party> {
+        val cards = VCard.parse(text)
+        require(cards.isNotEmpty()) { "No contacts with a name found in the file" }
+        fun digits(p: String?) = p?.filter(Char::isDigit)?.takeLast(10)?.takeIf { it.length >= 6 }
+        val phones = existing.mapNotNull { digits(it.phone) }.toHashSet()
+        val names = existing.map { it.name.trim().lowercase() }.toHashSet()
+        var skipped = 0
+        val valid = cards.mapNotNull { c ->
+            val phone = digits(c.phone)
+            val fresh = if (phone != null) phones.add(phone) else names.add(c.name.lowercase())
+            if (!fresh) { skipped++; return@mapNotNull null }
+            names.add(c.name.lowercase())
+            Party(id = newId(), firmId = firmId, name = c.name, type = PartyType.CUSTOMER, phone = c.phone, email = c.email, createdAt = now, updatedAt = now)
+        }
+        return CsvImport(valid, emptyList(), skipped = skipped)
+    }
 
     fun items(
         text: String,

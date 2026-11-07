@@ -91,6 +91,7 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
         progress = Progress("Checking rows")
         preview = entity to withContext(Dispatchers.Default) {
             if (entity == "parties") MasterCsv.parties(text, firmId, container::newId, container.now())
+            else if (entity == "contacts") MasterCsv.contacts(text, firmId, repos.parties.observeParties(firmId).first().filter { it.deletedAt == null }, container::newId, container.now())
             else MasterCsv.items(
                 text, firmId, repos.catalog.observeUnits(firmId).first(), repos.catalog.observeItems(firmId).first().filter { it.deletedAt == null },
                 container::newId, container.now(), repos.catalog.observeGodowns(firmId).first(),
@@ -101,17 +102,18 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
 
     // Each row needs the right its write or read does; the recycle bin is for whoever bills.
     val can = { p: app.openbill.core.domain.model.Permission -> app.openbill.core.domain.model.Access.can(p) }
-    val imports = listOf("parties", "items").filter {
-        can(if (it == "parties") app.openbill.core.domain.model.Permission.EDIT_PARTIES else app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
+    val imports = listOf("parties", "contacts", "items").filter {
+        can(if (it == "items") app.openbill.core.domain.model.Permission.MANAGE_MASTERS else app.openbill.core.domain.model.Permission.EDIT_PARTIES)
     }
     val canExport = can(app.openbill.core.domain.model.Permission.EXPORT)
     if (imports.isNotEmpty() || canExport) SectionHeader("Import and export")
     imports.forEach { entity ->
         ListItem(
-            headlineContent = { Text("Import $entity from CSV") },
+            headlineContent = { Text(if (entity == "contacts") "Import contacts (vCard)" else "Import $entity from CSV") },
             supportingContent = {
                 Text(
-                    if (entity == "parties") "Header: ${MasterCsv.PARTY_COLUMNS.joinToString(", ")}"
+                    if (entity == "contacts") "A .vcf file exported from your phone or address book; new contacts become customers, ones already here are skipped"
+                    else if (entity == "parties") "Header: ${MasterCsv.PARTY_COLUMNS.joinToString(", ")}"
                     else "Header: ${MasterCsv.ITEM_COLUMNS.joinToString(", ")}; optional opening stock: ${MasterCsv.OPENING_COLUMNS.joinToString(", ")} (expiry as YYYY-MM-DD)",
                 )
             },
@@ -182,6 +184,7 @@ fun CsvSection(container: AppContainer, session: Session, listColors: ListItemCo
                 Text(
                     buildString {
                         append("${result.rows} rows checked: ${result.valid.size} valid, ${result.errors.size} with errors.")
+                        if (result.skipped > 0) append("\n${result.skipped} skipped: already a party with that phone or name.")
                         if (ok && result.openings.isNotEmpty()) append("\n${result.openings.size} with opening stock, posted as one stock adjustment dated today.")
                         result.errors.take(8).forEach { (row, msg) -> append("\nRow $row: $msg") }
                         if (result.errors.size > 8) append("\n…and ${result.errors.size - 8} more")

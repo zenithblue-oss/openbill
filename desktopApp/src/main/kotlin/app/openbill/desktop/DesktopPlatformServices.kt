@@ -320,7 +320,7 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
     }
 
     override suspend fun openTextFile(): String? =
-        withContext(Dispatchers.IO) { chooseOpenFile("Choose a CSV file", "csv", "txt")?.readText() }
+        withContext(Dispatchers.IO) { chooseOpenFile("Choose a CSV or vCard file", "csv", "txt", "vcf")?.readText() }
 
     private fun chooseOpenFile(title: String, vararg exts: String): File? {
         val result = CompletableFuture<File?>()
