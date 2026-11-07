@@ -373,13 +373,27 @@ class InvoiceEditorModel(
     fun setParty(party: Party) = mutate {
         val pos = if (it.fields.exportType?.sez == false) EXPORT_POS
         else party.shipToStateCode() ?: party.stateCode ?: Validation.stateFromGstin(party.gstin.orEmpty()) ?: firm.stateCode
-        it.copy(party = party, placeOfSupply = pos, errors = it.errors - "party" - "reverseCharge" - "export")
+        val f = if (party.id != it.party?.id) withPartyCurrency(it, it.fields, party) else it.fields
+        it.copy(party = party, placeOfSupply = pos, fields = f, errors = it.errors - "party" - "reverseCharge" - "export")
+    }
+
+    /**
+     * A new export/SEZ invoice takes the party's default currency when none is set yet; the
+     * exchange rate is still entered. Applied only when the party is chosen or export is turned
+     * on, so clearing the currency afterwards sticks.
+     */
+    private fun withPartyCurrency(s: InvoiceEditorState, f: DocFieldsForm, party: Party?): DocFieldsForm {
+        val code = party?.defaultCurrency ?: return f
+        val applies = voucherId == null && f.exportType != null && f.currency.isBlank() &&
+            DocFieldRules.supportsExport(s.type) && Access.can(Permission.MANAGE_MASTERS)
+        return if (applies) f.copy(currency = code) else f
     }
 
     fun setPlaceOfSupply(code: String) = mutate { it.copy(placeOfSupply = code) }
 
     /** Exports take place of supply 96 (other countries); leaving export goes back to the party's state. */
-    fun setFields(f: DocFieldsForm) = mutate { s ->
+    fun setFields(form: DocFieldsForm) = mutate { s ->
+        val f = if (s.fields.exportType == null) withPartyCurrency(s, form, s.party) else form
         val wasExport = s.fields.exportType?.sez == false
         val isExport = f.exportType?.sez == false
         val pos = when {

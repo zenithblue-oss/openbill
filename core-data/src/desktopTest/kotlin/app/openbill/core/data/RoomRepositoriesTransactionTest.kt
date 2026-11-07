@@ -23,6 +23,10 @@ class RoomRepositoriesTransactionTest {
         assertEquals(null, repos.parties.findParty("p1"))
         repos.transaction { repos.parties.saveParty(testParty("p2", addresses = emptyList())) }
         assertEquals("p2", repos.parties.findParty("p2")?.id)
+        // The party's default export currency survives a save and load.
+        repos.parties.saveParty(testParty("p3", addresses = emptyList()).copy(defaultCurrency = "USD"))
+        assertEquals("USD", repos.parties.findParty("p3")?.defaultCurrency)
+        assertFailsWith<IllegalArgumentException> { testParty("p4").copy(defaultCurrency = "INR") }
         db.close()
     }
 }

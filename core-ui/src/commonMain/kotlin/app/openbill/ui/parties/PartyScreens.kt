@@ -49,6 +49,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import app.openbill.core.domain.model.AddressKind
+import app.openbill.core.domain.model.ExportDetails
 import app.openbill.core.domain.model.OpeningBalanceType
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.PartyAddress
@@ -230,6 +231,8 @@ data class PartyForm(
     val openingBalance: String = "",
     val openingType: OpeningBalanceType = OpeningBalanceType.DEBIT,
     val notes: String = "",
+    /** ISO code prefilled on new export/SEZ invoices for this party; blank for none. */
+    val defaultCurrency: String = "",
     /** Delivery sites; the first is the default ship-to on documents. */
     val shipping: List<ShipForm> = emptyList(),
     val errors: Map<String, String> = emptyMap(),
@@ -263,6 +266,8 @@ object PartyRules {
         Validation.gstinError(form.gstin)?.let { put("gstin", it) }
             ?: Validation.gstinStateMismatch(form.gstin, form.stateCode)?.let { put("gstin", it) }
         Validation.moneyError(form.openingBalance)?.let { put("opening", it) }
+        form.defaultCurrency.takeIf { it.isNotEmpty() && (!ExportDetails.isCurrencyCode(it) || it == "INR") }
+            ?.let { put("currency", "Use a 3-letter code such as USD, or leave blank for rupees") }
         val anyAddress = form.addressLine1.isNotBlank() || form.city.isNotBlank()
         if (anyAddress) {
             if (form.addressLine1.isBlank()) put("address", "Add the street address or clear the city")
@@ -317,6 +322,7 @@ class PartyEditorModel(
                         openingBalance = if (p.openingBalance.paise == 0L) "" else p.openingBalance.format(),
                         openingType = p.openingBalanceType,
                         notes = p.notes.orEmpty(),
+                        defaultCurrency = p.defaultCurrency.orEmpty(),
                         shipping = p.addresses.filter { it.kind == AddressKind.SHIPPING }.sortedByDescending { it.isDefault }.map {
                             ShipForm(it.id, it.line1, it.city, it.pincode.orEmpty(), it.stateCode, it.gstin.orEmpty())
                         },
@@ -406,6 +412,7 @@ class PartyEditorModel(
                     addresses = listOfNotNull(address) + otherAddresses,
                     notes = form.notes.trim().ifBlank { null },
                     creditLimit = old?.creditLimit,
+                    defaultCurrency = form.defaultCurrency.ifBlank { null },
                     createdAt = old?.createdAt ?: now,
                     updatedAt = now,
                 )
@@ -525,6 +532,16 @@ fun PartyEditScreen(
                     SelectableChip("They owe me (Dr)", form.openingType == OpeningBalanceType.DEBIT, { model.edit { it.copy(openingType = OpeningBalanceType.DEBIT) } })
                     SelectableChip("I owe them (Cr)", form.openingType == OpeningBalanceType.CREDIT, { model.edit { it.copy(openingType = OpeningBalanceType.CREDIT) } })
                 }
+                SectionHeader("Export")
+                FormField(
+                    "Default currency",
+                    form.defaultCurrency,
+                    { v -> model.edit { it.copy(defaultCurrency = v.filter(Char::isLetter).take(3).uppercase()) } },
+                    error = form.errors["currency"],
+                    capitalization = KeyboardCapitalization.Characters,
+                    placeholder = "e.g. USD",
+                    supporting = "Filled in on new export or SEZ invoices for this party; you still enter the exchange rate. Leave blank for rupees.",
+                )
                 SectionHeader("Notes")
                 FormField("Notes", form.notes, { v -> model.edit { it.copy(notes = v) } }, singleLine = false)
                 if (partyId != null && container.platform.supportsAttachments) app.openbill.ui.invoice.AttachmentsSection(container, partyId)

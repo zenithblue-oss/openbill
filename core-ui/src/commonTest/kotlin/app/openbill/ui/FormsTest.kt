@@ -110,6 +110,9 @@ class FormsTest {
         val e = PartyRules.validate(PartyForm(name = "X", addressLine1 = "1 Road"))
         assertTrue("city" in e && "state" in e)
         assertTrue("opening" in PartyRules.validate(PartyForm(name = "X", openingBalance = "12.345")))
+        assertTrue(PartyRules.validate(PartyForm(name = "X", defaultCurrency = "USD")).isEmpty())
+        assertTrue("currency" in PartyRules.validate(PartyForm(name = "X", defaultCurrency = "INR")), "rupees is the default, not a foreign currency")
+        assertTrue("currency" in PartyRules.validate(PartyForm(name = "X", defaultCurrency = "US")))
     }
 
     @Test
