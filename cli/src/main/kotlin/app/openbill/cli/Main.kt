@@ -124,7 +124,7 @@ fun rootCommand(cli: CliState): CliktCommand = Root(cli).subcommands(
     posCommands(cli),
     Search(cli),
     Group("import", "Import master data from CSV").subcommands(ImportCsv(cli, "parties"), ImportCsv(cli, "items")),
-    Group("export", "Export data as CSV, JSON or Tally XML").subcommands(ExportCmd(cli, "parties"), ExportCmd(cli, "items"), ExportCmd(cli, "invoices"), ExportCsv(cli), TallyExport(cli, "tally")),
+    Group("export", "Export data as CSV, JSON or Tally XML").subcommands(ExportCmd(cli, "parties"), ExportCmd(cli, "items"), ExportCmd(cli, "invoices"), ExportCsv(cli), TallyExport(cli, "tally"), ExportAttachments(cli)),
     paymentCommands(cli),
     stockCommands(cli),
     reportCommands(cli),

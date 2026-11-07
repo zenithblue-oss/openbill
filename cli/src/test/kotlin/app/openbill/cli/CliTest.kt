@@ -361,6 +361,21 @@ class CliTest {
     }
 
     @Test
+    fun attachmentExportAndEveryReportListed() {
+        seed()
+        val zip = File(root, "att.zip")
+        assertEquals(4, run("export", "attachments", "--out", zip.path).code) // none yet
+        val id = run("-q", "party", "add", "--name", "Zed Traders").out.trim()
+        File(dataDir, "attachments/$id").apply { mkdirs() }.resolve("gst.png").writeBytes(byteArrayOf(1, 2, 3))
+        val r = run("--json", "export", "attachments", "--out", zip.path)
+        assertTrue(r.code == 0 && "\"files\": 1" in r.out, r.err + r.out)
+        val names = java.util.zip.ZipFile(zip).use { z -> z.entries().toList().map { it.name } }
+        assertEquals(listOf("index.csv", "party_${id}/gst.png"), names)
+        val list = run("--json", "report", "list").out
+        app.openbill.core.domain.report.ReportKind.entries.forEach { assertTrue("\"${it.key}\"" in list, it.key) }
+    }
+
+    @Test
     fun exitCodes() {
         seed()
         assertEquals(2, run("party", "add").code) // missing --name

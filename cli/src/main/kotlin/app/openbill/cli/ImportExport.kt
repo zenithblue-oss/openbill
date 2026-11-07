@@ -3,6 +3,9 @@ package app.openbill.cli
 import app.openbill.core.domain.csv.Csv
 import app.openbill.core.domain.csv.CsvImport
 import app.openbill.core.domain.csv.MasterCsv
+import app.openbill.core.domain.csv.AttachmentOwner
+import app.openbill.core.domain.csv.attachmentExport
+import com.github.ajalt.clikt.parameters.options.required
 import app.openbill.core.model.Progress
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
@@ -115,6 +118,35 @@ open class ExportCmd(private val cli: CliState, private val fixed: String?) : Cl
             target.writeText(text + if (format == "csv") "\r\n" else "\n")
             cli.info("Wrote ${target.path}")
             if (cli.quiet) cli.out.println(target.path)
+        }
+    }
+}
+
+/** `export attachments --out FILE.zip`: the app's attachment export (one folder per record plus index.csv). */
+class ExportAttachments(private val cli: CliState) : CliktCommand("attachments") {
+    override fun help(context: Context) = "Export every file attached to the firm's documents and parties as one ZIP with an index.csv"
+    private val out by option("--out", help = "ZIP file to write").file(canBeDir = false).required()
+
+    override fun run() = cli.withData(write = false, app.openbill.core.domain.model.Permission.EXPORT) {
+        val f = firm()
+        val store = app.openbill.core.backup.AttachmentStore(File(dataDir, "attachments"))
+        val parties = repos.parties.observeParties(f.id).first()
+        val names = parties.associate { it.id to it.name }
+        val owners = repos.vouchers.observeVouchers(f.id, kotlinx.datetime.LocalDate(2000, 1, 1), kotlinx.datetime.LocalDate(2099, 12, 31)).first()
+            .sortedWith(compareBy({ it.date }, { it.number ?: "" }))
+            .map { AttachmentOwner(it.id, it.type.label(), it.number ?: "draft", it.date.toString(), it.status.name.lowercase(), it.partyId?.let(names::get)) } +
+            parties.sortedBy { it.name.lowercase() }.map { AttachmentOwner(it.id, "party", null, null, null, it.name) }
+        // ponytail: built in memory like the app's export; stream entries if attachment folders grow past a few hundred MB.
+        val files = owners.associate { o -> o.id to store.list(o.id).map { it to store.file(o.id, it).readBytes() } }.filterValues { it.isNotEmpty() }
+        if (files.isEmpty()) fail(Exit.NOT_FOUND, "No attachments in ${f.name}")
+        val target = out.absoluteFile
+        target.parentFile.mkdirs()
+        target.writeBytes(app.openbill.core.domain.report.ZipWriter.write(attachmentExport(owners, files)))
+        val count = files.values.sumOf { it.size }
+        when {
+            cli.json -> cli.printJson(jsonOf("file" to target.path, "files" to count, "records" to files.size))
+            cli.quiet -> cli.out.println(target.path)
+            else -> cli.out.println("Wrote $count file(s) of ${files.size} record(s) to ${target.path}")
         }
     }
 }

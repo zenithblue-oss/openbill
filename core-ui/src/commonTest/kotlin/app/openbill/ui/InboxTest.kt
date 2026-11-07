@@ -50,11 +50,11 @@ class InboxTest {
     @Test
     fun attachmentExportFoldersAndIndex() {
         val owners = listOf(
-            app.openbill.ui.more.AttachmentOwner("v1", "Sales invoice", "INV/24-25/1", "2026-04-01", "posted", "Lotus, Pune"),
-            app.openbill.ui.more.AttachmentOwner("v2", "Quotation", "draft", "2026-04-02", "draft", null),
-            app.openbill.ui.more.AttachmentOwner("p1", "Party", null, null, null, "Lotus, Pune"),
+            app.openbill.core.domain.csv.AttachmentOwner("v1", "Sales invoice", "INV/24-25/1", "2026-04-01", "posted", "Lotus, Pune"),
+            app.openbill.core.domain.csv.AttachmentOwner("v2", "Quotation", "draft", "2026-04-02", "draft", null),
+            app.openbill.core.domain.csv.AttachmentOwner("p1", "Party", null, null, null, "Lotus, Pune"),
         )
-        val out = app.openbill.ui.more.attachmentExport(owners, mapOf("v1" to listOf("bill.pdf" to byteArrayOf(1, 2)), "p1" to listOf("gst.png" to byteArrayOf(3))))
+        val out = app.openbill.core.domain.csv.attachmentExport(owners, mapOf("v1" to listOf("bill.pdf" to byteArrayOf(1, 2)), "p1" to listOf("gst.png" to byteArrayOf(3))))
         assertEquals(listOf("index.csv", "Sales_invoice_INV_24-25_1_v1/bill.pdf", "Party_p1/gst.png"), out.map { it.first })
         val index = out[0].second.decodeToString().trim().lines()
         assertEquals("file,record,number,date,status,party,bytes", index[0])

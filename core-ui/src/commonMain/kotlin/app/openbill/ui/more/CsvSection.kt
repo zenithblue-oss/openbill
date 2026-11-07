@@ -33,6 +33,8 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import app.openbill.core.domain.csv.MasterCsv
+import app.openbill.core.domain.csv.AttachmentOwner
+import app.openbill.core.domain.csv.attachmentExport
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
 import app.openbill.core.domain.model.VoucherType
@@ -59,26 +61,7 @@ private suspend fun postOpenings(container: AppContainer, firmId: String, items:
 
 private const val MAX_EXPORT = 150L * 1024 * 1024
 
-/** A record that can hold attachments (a voucher or a party), as the attachment export lists it. */
-internal data class AttachmentOwner(val id: String, val kind: String, val number: String?, val date: String?, val status: String?, val party: String?)
-
-/**
- * ZIP entries for the attachment export: one folder per owner ("kind_number_id") holding its
- * files, plus index.csv listing each file with its record. [files] maps owner id to (name, bytes).
- */
-internal fun attachmentExport(owners: List<AttachmentOwner>, files: Map<String, List<Pair<String, ByteArray>>>): List<Pair<String, ByteArray>> {
-    val safe = { s: String -> s.replace(Regex("[^A-Za-z0-9._-]"), "_") }
-    val rows = mutableListOf(app.openbill.core.domain.csv.Csv.row(listOf("file", "record", "number", "date", "status", "party", "bytes")))
-    val entries = owners.flatMap { o ->
-        val folder = listOfNotNull(o.kind, o.number, o.id).joinToString("_") { safe(it) }
-        files[o.id].orEmpty().map { (name, bytes) ->
-            val path = "$folder/$name"
-            rows += app.openbill.core.domain.csv.Csv.row(listOf(path, o.kind, o.number, o.date, o.status, o.party, bytes.size.toString()))
-            path to bytes
-        }
-    }
-    return listOf("index.csv" to (rows.joinToString("\r\n") + "\r\n").encodeToByteArray()) + entries
-}
+// AttachmentOwner and attachmentExport live in core-domain (csv/AttachmentExport.kt), shared with the CLI.
 
 /** CSV import of parties and items (dry-run preview first, all rows or none), CSV export, and the recycle bin. */
 @Composable
