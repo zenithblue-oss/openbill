@@ -173,14 +173,14 @@ Inventory invariants:
 | Payment voucher | Money in and money out | P0 | Done | Phase 5 |
 | Expense voucher | Category, amount, receipt | P0 | Done | Phase 5; receipt attachments after 1.0 |
 | POS billing | Fast counter workflow and barcode scan | P1 | Done | Counter screen (scan or search, Cash sale default, tablet two-pane layout, 58/80 mm receipt); posts through the normal invoice engine |
-| Recurring invoice | Schedule and generate | P1 | Done | Daily/weekly/monthly/yearly; drafts or auto-post; missed periods made on app open, once each; no OS background job |
+| Recurring invoice | Schedule and generate | P1 | Done | Daily/weekly/monthly/yearly; drafts or auto-post; missed periods made on app open, once each; per schedule copies the original or the latest generated invoice (falls back to the original); no OS background job |
 | Invoice numbering | Prefix, suffix, sequence, FY reset | P0 | Done | Per document type |
 | Due date and payment terms | Optional | P0 | Done | Drives aging |
 | Item-level discount | Percentage or amount | P0 | Done | Tax computed after discount |
 | Invoice-level discount | Percentage or amount | P0 | Done | Allocation across lines |
 | Additional charges | Freight, packing, etc. | P0 | Done | Taxable or non-taxable flag |
 | Round-off | Nearest rupee | P0 | Done | Ledger rounding account |
-| Multi-currency | Exchange rate and currency | P1 | Done | Export and SEZ invoices: foreign rates, GST, ledger and returns in rupees (Rule 34); no party default currency or exchange gain/loss ledger |
+| Multi-currency | Exchange rate and currency | P1 | Done | Export and SEZ invoices: foreign rates, GST, ledger and returns in rupees (Rule 34); party default currency prefills new export/SEZ invoices (schema v17); a payment can settle the rupee difference as exchange gain/loss (system income account, cap 10%); no year-end revaluation |
 | Reverse charge | GST reverse charge flag | P1 | Done | Sales and purchases; GSTR-1 rchrg and GSTR-3B 3.1(c)/3.1(d)/4(A)(3) |
 | TDS and TCS | Threshold-based | P2 | Not started | After 1.0 |
 | Attachments | Receipt or reference image | P0 | Done | Files included in backup; expense receipt attachments are post-1.0 |
@@ -192,7 +192,7 @@ Inventory invariants:
 | Delivery challan | Non-posting movement document | P1 | Done | After 1.0 |
 | Delivery challan with e-way bill | Challan carries transport details and can drive e-way generation | P1 | Partial | Transport details and e-way bill number print on challans; generation not started |
 | Purchase order | Order to a supplier; convert to purchase bill | P1 | Done | Non-posting; preserves source link; partial receipt |
-| Sales order | Customer order that can be converted to an invoice | P1 | Done | Non-posting; preserves source link; partial fulfilment; quotation converts to it |
+| Sales order | Customer order that can be converted to an invoice | P1 | Done | Non-posting; preserves source link; partial fulfilment; quotation converts to it; "Close remaining" short-closes the rest (sales and purchase orders, audit-logged, no re-open) |
 | Sales return e-invoice | E-invoice for credit notes | P1 | Not started | With e-invoice support |
 | Bulk e-invoice and e-way generation | Select many invoices and generate in one run | P2 | Not started | Rate-limited queue with per-document results |
 | E-way expiry alerts | Notify before an e-way bill expires | P2 | Not started | Local notification |
@@ -213,7 +213,7 @@ Inventory invariants:
 | Staff loan and salary advance | Payments to staff tracked as loan or advance and offset later | P2 | Not started | Part of payroll |
 | Unlimited recurring schedules | Vendor limits the count of active schedules by plan | P1 | Done | Recurring invoices are unlimited in OpenBill; part of the recurring-invoice feature |
 | POS held bills | Several open bills at once, switch between them | P1 | Done | Held drafts survive restarts and are in backups (schema v14); discard asks first and goes to the recycle bin |
-| POS multi-tender | Cash, UPI, card, wallet on a single sale | P1 | Done | Cash, UPI, card and bank with change due; paying short needs credit to a named party; no wallet tender |
+| POS multi-tender | Cash, UPI, card, wallet on a single sale | P1 | Done | Cash, UPI, card and bank with change due; paying short needs credit to a named party; UPI/card reference optional unless "Require reference for UPI/card payments" is on (also applies in Money); no wallet tender |
 | POS item-first billing | Item grid or barcode first, party optional | P1 | Done | Party defaults to Cash sale |
 | POS keyboard commands | Quick keys for add, discount, tender, hold | P1 | Done | F1 help, F2 search, F3 qty, F4 discount, F6 held, F8 hold, F9 new, F12 pay; desktop and tablet keyboards |
 | Cash drawer | Open drawer on sale via printer kick | P2 | Not started | Desktop and thermal printers |
@@ -373,8 +373,8 @@ Backup format requirements:
 
 | Feature | Observed behavior | Priority | Status | Notes |
 | --- | --- | --- | --- | --- |
-| Multiple users per firm | Invite staff | P1 | Done | Local users on one install (schema v16), each with a name and PIN; user picker on the lock screen; needs app lock; owner signs in with the app lock PIN |
-| Roles and permissions | Owner, accountant, operator | P1 | Done | Owner, Manager, Salesperson/cashier, Accountant; checked in the repositories and use cases, menus hidden to match; cashiers bill only at list prices with no discount |
+| Multiple users per firm | Invite staff | P1 | Done | Local users on one install (schema v16), each with a name and PIN of 4 to 8 digits (6+ advised; older longer PINs still work); user picker on the lock screen; needs app lock; owner signs in with the app lock PIN and can change it |
+| Roles and permissions | Owner, accountant, operator | P1 | Done | Owner, Manager, Salesperson/cashier, Accountant; checked in the repositories and use cases, menus hidden to match; cashiers bill only at list prices with no discount and cannot change the exchange rate; an owner switch lets managers change business settings (users, backup/restore, erase, app lock stay owner-only) |
 | User activity log | Who changed what | P1 | Done | Audit events carry the user; sign-ins, masters and settings changes logged; filter by user in the app, user column in CSV and `audit list` |
 | CA access | Share reports or ledger | P1 | Done | Accountant role: read-only reports, exports and activity log; CSV/Tally/GSTR exports unchanged |
 | Device management | Active devices | P2 | Not started | Tied to optional sync |

@@ -278,7 +278,8 @@ Scope:
   recurring schedules, party categories, bulk item edit, CA report pack, and custom item
   fields) is scheduled in this phase; the parity tracker below gives the group-level map.
 - Multi-currency for export and SEZ invoices (done: currency and exchange rate per document,
-  rupee GST, ledger and returns). Party default currency and exchange gain/loss are later.
+  rupee GST, ledger and returns; party default currency and realised exchange gain/loss on
+  payments, schema v17). Year-end revaluation of open foreign-currency balances is later.
 - e-invoice and e-way bill integration using the user's own credentials, behind a
   provider interface.
 - WhatsApp/SMS deep-link sharing and bring-your-own provider integration.
