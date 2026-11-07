@@ -10,6 +10,7 @@ import app.openbill.core.domain.model.Voucher
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.model.Money
 import app.openbill.core.model.Quantity
+import kotlinx.datetime.plus
 import app.openbill.core.model.Rate
 import app.openbill.core.tax.Gstin
 import app.openbill.core.tax.TaxMode
@@ -94,7 +95,11 @@ object SampleData {
                 isService = s.service,
                 taxRate = s.rate,
                 salePrice = Money.of(s.price),
-                trackInventory = false,
+                purchasePrice = Money.of(s.price * 4 / 5),
+                // Oil is batch-tracked (one batch near expiry), bulbs are plain stock: both show on the stock screens.
+                trackInventory = s.name.startsWith("Sunflower") || s.name.startsWith("LED"),
+                trackBatch = s.name.startsWith("Sunflower"),
+                lowStockLevel = Quantity.of(20).takeIf { s.name.startsWith("LED") },
                 createdAt = now,
                 updatedAt = now,
             )
@@ -103,8 +108,21 @@ object SampleData {
 
         val today = container.today()
         val fy = session.financialYearFor(today) ?: return "No financial year covers today"
+        val godown = app.openbill.ui.inventory.Inventory.ensureDefaultGodown(container, firmId)
+        val stockId = container.newId()
+        app.openbill.core.domain.usecase.StockVouchers(repos.vouchers, container.postVoucher).adjust(
+            stockId, firmId, fy.id, home, today, "Opening stock",
+            listOf(
+                app.openbill.core.domain.usecase.StockLineInput(items[1].id, items[1].name, Quantity.of(30), godown, unitCost = items[1].purchasePrice, batchNumber = "OIL-A", expiryDate = today.plus(kotlinx.datetime.DatePeriod(days = 10))),
+                app.openbill.core.domain.usecase.StockLineInput(items[1].id, items[1].name, Quantity.of(40), godown, unitCost = items[1].purchasePrice, batchNumber = "OIL-B", expiryDate = today.plus(kotlinx.datetime.DatePeriod(days = 120))),
+                app.openbill.core.domain.usecase.StockLineInput(items[3].id, items[3].name, Quantity.of(50), godown, unitCost = items[3].purchasePrice),
+            ),
+            { i -> "$stockId-$i" },
+            container.now(),
+        )
         val plans = listOf(
-            Triple(0, listOf(0 to "4", 1 to "6", 7 to "10"), true),
+            // Oil (1) is batch-tracked, so the sample sales leave it out (a sale must name its batch).
+            Triple(0, listOf(0 to "4", 4 to "6", 7 to "10"), true),
             Triple(2, listOf(2 to "2", 3 to "24"), true),
             Triple(1, listOf(5 to "3", 6 to "2.5"), true),
             Triple(4, listOf(3 to "12"), false),

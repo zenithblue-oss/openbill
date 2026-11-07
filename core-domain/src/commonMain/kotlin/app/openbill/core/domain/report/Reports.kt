@@ -558,6 +558,7 @@ object Reports {
         val onHand = data.stock.filter { it.batchId != null && it.date <= data.to }.groupBy { it.batchId!! }
             .mapValues { (_, list) -> list.sumOf { it.quantity.scaledUnits } }
         val godowns = data.godowns.associate { it.id to it.name }
+        val window = data.settings?.nearExpiryDays?.takeIf { it > 0 } ?: 30
         val rows = data.batches.mapNotNull { b -> onHand[b.id]?.takeIf { it != 0L }?.let { b to it } }
             .sortedWith(compareBy({ it.first.expiryDate == null }, { it.first.expiryDate }, { data.itemById[it.first.itemId]?.name?.lowercase() }, { it.first.batchNumber }))
             .map { (b, qty) ->
@@ -566,7 +567,7 @@ object Reports {
                 val status = when {
                     days == null -> "No expiry"
                     days < 0 -> "Expired"
-                    days <= 30 -> "Expiring soon"
+                    days <= window -> "Expiring soon"
                     else -> "OK"
                 }
                 listOf(
@@ -581,7 +582,7 @@ object Reports {
                 col("on_hand", "On hand", ColumnKind.QUANTITY), col("days_left", "Days left", ColumnKind.NUMBER), col("status", "Status"),
             ),
             rows,
-            notes = listOf("As of ${data.to}; batches with stock only. Days left count from ${data.to}; expiring soon = within 30 days."),
+            notes = listOf("As of ${data.to}; batches with stock only. Days left count from ${data.to}; expiring soon = within $window days (the near-expiry alert window)."),
         )
     }
 }

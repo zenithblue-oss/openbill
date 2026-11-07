@@ -89,6 +89,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.plus
 
 /** Inventory helpers shared by the stock screens, the item editor and the invoice editor. */
 object Inventory {
@@ -167,6 +169,70 @@ fun SwitchRow(label: String, supporting: String?, checked: Boolean, onChange: (B
 /** Dashboard card: stock value and the number of items at or below their low-stock level. */
 @Composable
 fun StockDashboardCard(container: AppContainer, session: Session, onOpen: (lowOnly: Boolean) -> Unit) {
+    Column {
+        StockValueCard(container, session, onOpen)
+        NearExpiryCard(container, session)
+    }
+}
+
+/**
+ * Dashboard card: batches with stock that expire within the business's near-expiry window
+ * (expired ones included); opens the list. Hidden when the window is 0 or nothing is due.
+ */
+@Composable
+fun NearExpiryCard(container: AppContainer, session: Session) {
+    val days = session.settings.nearExpiryDays
+    if (days <= 0) return
+    val today = remember { container.today() }
+    val through = remember(days) { today.plus(kotlinx.datetime.DatePeriod(days = days)) }
+    val due by remember(session.firm.id, through) { container.repositories.stock.observeExpiringBatches(session.firm.id, through) }.collectAsState(initial = emptyList())
+    if (due.isEmpty()) return
+    val items by remember(session.firm.id) { container.repositories.catalog.observeItems(session.firm.id) }.collectAsState(initial = emptyList())
+    val names = items.associate { it.id to it.name }
+    val expired = due.count { (b, _) -> b.expiryDate!! < today }
+    var open by remember { mutableStateOf(false) }
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = pageGutter, vertical = Spacing.xs).clickable(onClickLabel = "Show batches") { open = true },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
+    ) {
+        ListItem(
+            leadingContent = { Icon(Icons.Outlined.Warning, contentDescription = null) },
+            headlineContent = { Text("${due.size} ${if (due.size == 1) "batch expires" else "batches expire"} within $days days") },
+            supportingContent = { Text(if (expired > 0) "$expired already expired · tap to see them" else "Sell these first · tap to see them") },
+            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)),
+        )
+    }
+    if (open) {
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text("Near expiry") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    due.forEach { (b, qty) ->
+                        val expiry = b.expiryDate!!
+                        val left = today.daysUntil(expiry)
+                        ListItem(
+                            headlineContent = { Text("${names[b.itemId] ?: "Item"} · batch ${b.batchNumber}") },
+                            supportingContent = {
+                                Text("${Fmt.qty(qty)} in stock · expires ${Fmt.date(expiry)} · " + when {
+                                    left < 0 -> "expired ${-left} days ago"
+                                    left == 0 -> "expires today"
+                                    else -> "$left days left"
+                                })
+                            },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)),
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { open = false }) { Text("Close") } },
+        )
+    }
+}
+
+/** Stock value and the number of items at or below their low-stock level. */
+@Composable
+private fun StockValueCard(container: AppContainer, session: Session, onOpen: (lowOnly: Boolean) -> Unit) {
     val stock by rememberStock(container, session.firm.id)
     val list = stock ?: return
     if (list.isEmpty()) return

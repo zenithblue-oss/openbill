@@ -131,6 +131,10 @@ class RoomStockRepository(
     override fun observeBatches(itemId: String): Flow<List<Batch>> =
         database.batchDao().observeForItem(itemId).map { values -> values.map { it.toDomain() } }
 
+    override fun observeExpiringBatches(firmId: String, through: kotlinx.datetime.LocalDate): Flow<List<Pair<Batch, Quantity>>> =
+        database.batchDao().observeExpiring(firmId, through.toString())
+            .map { rows -> rows.map { it.batch.toDomain() to Quantity.ofScaledUnits(it.onHand) } }
+
     override fun observeSerials(itemId: String): Flow<List<SerialNumber>> =
         database.serialNumberDao().observeForItem(itemId).map { values -> values.map { it.toDomain() } }
 }

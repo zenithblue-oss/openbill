@@ -344,6 +344,9 @@ class RoomStockPostingTest {
         val batch = stock.observeBatches(ITEM_ID).first().single()
         assertEquals("B1", batch.batchNumber)
         assertEquals(LocalDate(2027, 1, 31), batch.expiryDate)
+        // Near-expiry: in stock and due by the date asked; nothing due before it.
+        assertEquals(listOf(batch to Quantity.of(5)), stock.observeExpiringBatches("firm-1", LocalDate(2027, 1, 31)).first())
+        assertEquals(0, stock.observeExpiringBatches("firm-1", LocalDate(2027, 1, 30)).first().size)
         assertEquals(batch.id, movements(purchase.id).single().batchId)
 
         val wrongBatch = voucher(

@@ -241,6 +241,20 @@ fun MoreScreen(
                     session.settings.requirePaymentReference,
                     { on -> scope.launch { container.repositories.firms.saveSettings(session.settings.copy(requirePaymentReference = on)) } },
                 )
+                if (can(Permission.SETTINGS)) {
+                    val days = session.settings.nearExpiryDays
+                    ListItem(
+                        headlineContent = { Text("Near-expiry alert") },
+                        supportingContent = { Text(if (days == 0) "Off" else "Flag batches expiring within $days days on the dashboard") },
+                        trailingContent = { Text(if (days == 0) "Off" else "$days days", style = MaterialTheme.typography.labelLarge) },
+                        colors = listColors,
+                        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Change") {
+                            val choices = listOf(7, 15, 30, 60, 90, 0)
+                            val next = choices[(choices.indexOf(days) + 1) % choices.size]
+                            scope.launch { container.repositories.firms.saveSettings(session.settings.copy(nearExpiryDays = next)) }
+                        },
+                    )
+                }
 
                 SectionHeader("Appearance")
                 Text("Theme", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = Spacing.xs))

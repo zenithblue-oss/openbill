@@ -40,4 +40,21 @@ interface BatchDao {
             "ORDER BY batches.expiryDate, batches.batchNumber, batches.id",
     )
     suspend fun search(firmId: String, query: String): List<BatchEntity>
+
+    /** Batches of the firm's active items with stock on hand that expire on or before [through] (ISO date), earliest first. */
+    @Query(
+        "SELECT batches.*, SUM(stock_movements.quantity) AS onHand FROM batches " +
+            "INNER JOIN items ON items.id = batches.itemId " +
+            "INNER JOIN stock_movements ON stock_movements.batchId = batches.id " +
+            "WHERE items.firmId = :firmId AND items.deletedAt IS NULL AND batches.deletedAt IS NULL " +
+            "AND batches.expiryDate IS NOT NULL AND batches.expiryDate <= :through " +
+            "GROUP BY batches.id HAVING SUM(stock_movements.quantity) > 0 " +
+            "ORDER BY batches.expiryDate, batches.batchNumber, batches.id",
+    )
+    fun observeExpiring(firmId: String, through: String): Flow<List<BatchStockRow>>
 }
+
+data class BatchStockRow(
+    @androidx.room.Embedded val batch: BatchEntity,
+    val onHand: Long,
+)

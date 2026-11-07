@@ -36,5 +36,9 @@ interface StockRepository {
 
     fun observeBatches(itemId: String): Flow<List<Batch>>
 
+    /** Batches with stock on hand expiring on or before [through] (expired included), earliest first. */
+    fun observeExpiringBatches(firmId: String, through: LocalDate): Flow<List<Pair<Batch, Quantity>>> =
+        kotlinx.coroutines.flow.flowOf(emptyList())
+
     fun observeSerials(itemId: String): Flow<List<SerialNumber>>
 }
