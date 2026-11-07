@@ -41,22 +41,26 @@ class LedgerJournalDerivation(
             VoucherType.PURCHASE -> purchaseEntries(voucher, accounts, at, debitControl = true)
             VoucherType.DEBIT_NOTE -> purchaseEntries(voucher, accounts, at, debitControl = false)
             // A settlement discount ([Voucher.discount]) settles part of the total without money
-            // moving: it posts to the discount account in [Voucher.ledgerAccountId].
+            // moving: it posts to the discount account in [Voucher.ledgerAccountId]. A negative
+            // one is an exchange gain on a foreign-currency invoice (more rupees moved than the
+            // invoice's outstanding), posted to the other side of the exchange account.
             VoucherType.PAYMENT_IN -> {
                 val accountId = requirePaymentAccount(voucher, paymentAccountId)
+                val d = voucher.discount
                 listOfNotNull(
-                    entry(voucher, accountId, debit = voucher.total - voucher.discount, at = at),
-                    discountAccount(voucher)?.let { entry(voucher, it, debit = voucher.discount, at = at) },
+                    entry(voucher, accountId, debit = voucher.total - d, at = at),
+                    discountAccount(voucher)?.let { if (d > Money.ZERO) entry(voucher, it, debit = d, at = at) else entry(voucher, it, credit = -d, at = at) },
                     entry(voucher, accounts.accountsReceivable.id, credit = voucher.total, at = at),
                 )
             }
 
             VoucherType.PAYMENT_OUT -> {
                 val accountId = requirePaymentAccount(voucher, paymentAccountId)
+                val d = voucher.discount
                 listOfNotNull(
                     entry(voucher, accounts.accountsPayable.id, debit = voucher.total, at = at),
-                    entry(voucher, accountId, credit = voucher.total - voucher.discount, at = at),
-                    discountAccount(voucher)?.let { entry(voucher, it, credit = voucher.discount, at = at) },
+                    entry(voucher, accountId, credit = voucher.total - d, at = at),
+                    discountAccount(voucher)?.let { if (d > Money.ZERO) entry(voucher, it, credit = d, at = at) else entry(voucher, it, debit = -d, at = at) },
                 )
             }
 
@@ -262,7 +266,7 @@ class LedgerJournalDerivation(
 
     private fun discountAccount(voucher: Voucher): String? {
         if (voucher.discount == Money.ZERO) return null
-        require(voucher.discount > Money.ZERO && voucher.discount <= voucher.total) { "Discount must be above zero and within the settled amount" }
+        require(voucher.discount <= voucher.total) { "Discount must be within the settled amount" }
         return requireNotNull(voucher.ledgerAccountId) { "Settlement discount needs a discount account" }
     }
 

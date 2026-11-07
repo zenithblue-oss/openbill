@@ -208,4 +208,19 @@ class MoneyVouchersTest {
         val advance = PartyAgeing.of(Money.ZERO, listOf(m(asOf, 100), m(asOf, -300)), asOf)
         assertEquals(Money.of(-200), advance.upTo30)
     }
+
+    @Test
+    fun exchangeDifferenceSignAndCap() {
+        val owed = Money.of(10_000)
+        // Receipts: less money is a loss, more is a gain; payments out the other way round.
+        assertEquals(Money.of(300), MoneyVouchers.exchangeDifference(owed, Money.of(9_700)))
+        assertEquals(false, MoneyVouchers.isExchangeGain(VoucherType.PAYMENT_IN, Money.of(300)))
+        assertEquals(true, MoneyVouchers.isExchangeGain(VoucherType.PAYMENT_IN, Money.of(-300)))
+        assertEquals(true, MoneyVouchers.isExchangeGain(VoucherType.PAYMENT_OUT, Money.of(300)))
+        assertEquals(false, MoneyVouchers.isExchangeGain(VoucherType.PAYMENT_OUT, Money.of(-300)))
+        assertEquals(Money.of(-1_000), MoneyVouchers.exchangeDifference(owed, Money.of(11_000)), "10% is the limit")
+        assertFailsWith<IllegalArgumentException> { MoneyVouchers.exchangeDifference(owed, Money.of(11_001)) }
+        assertFailsWith<IllegalArgumentException> { MoneyVouchers.exchangeDifference(owed, Money.of(8_999)) }
+        assertFailsWith<IllegalArgumentException> { MoneyVouchers.exchangeDifference(owed, owed) }
+    }
 }

@@ -223,16 +223,26 @@ fun requireLedgerAccount(voucher: Voucher, account: Account?, paymentAccountId: 
                 require(account == null) { "A payment without a discount has no discount account" }
                 return
             }
-            require(voucher.discount > Money.ZERO && voucher.discount <= voucher.total) { "Discount must be above zero and within the settled amount" }
+            require(voucher.discount <= voucher.total) { "Discount must be within the settled amount" }
             require(account != null) { "Settlement discount needs a discount account" }
-            val want = if (voucher.type == VoucherType.PAYMENT_IN) AccountType.EXPENSE else AccountType.INCOME
-            require(account.type == want && account.code == null) { "Settlement discount must post to a user ${want.name.lowercase()} account" }
+            // Exchange gain/loss on a foreign-currency invoice: either sign, one income account.
+            if (!isExchangeAccount(account)) {
+                require(voucher.discount > Money.ZERO) { "Only an exchange difference can settle more than the invoice" }
+                val want = if (voucher.type == VoucherType.PAYMENT_IN) AccountType.EXPENSE else AccountType.INCOME
+                require(account.type == want && account.code == null) { "Settlement discount must post to a user ${want.name.lowercase()} account" }
+            }
         }
         else -> return
     }
     require(account.firmId == voucher.firmId) { "Account belongs to a different firm" }
     require(account.deletedAt == null) { "Account is deleted" }
 }
+
+/** Name of the system income account foreign-currency settlement differences post to. */
+const val EXCHANGE_GAIN_LOSS = "Exchange gain/loss"
+
+fun isExchangeAccount(account: Account): Boolean =
+    account.type == AccountType.INCOME && account.code == null && account.name.equals(EXCHANGE_GAIN_LOSS, ignoreCase = true)
 
 /** A receivable/payable movement of a party, for outstanding and ageing. */
 data class PartyMovement(

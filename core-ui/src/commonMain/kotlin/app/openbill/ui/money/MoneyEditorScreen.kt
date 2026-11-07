@@ -104,7 +104,10 @@ fun MoneyEditorScreen(
     var refNo by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
     var discount by rememberSaveable { mutableStateOf("") }
+    var fxSettle by rememberSaveable { mutableStateOf(false) }
     var open by remember { mutableStateOf<List<OutstandingInvoice>>(emptyList()) }
+    // Open invoices billed in a foreign currency (id to ISO code): only these settle an exchange difference.
+    var fxInvoices by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     val alloc = remember { mutableStateMapOf<String, String>() }
     // Split tender: further modes for the same payment, each saved as its own payment voucher.
     val extra = remember { mutableStateListOf<Tender>() }
@@ -119,6 +122,9 @@ fun MoneyEditorScreen(
     val party = parties.firstOrNull { it.id == partyId }
     val amountMoney = Parse.money(amount)?.let { a -> extra.fold(a) { t, x -> t + (Parse.money(x.amount) ?: Money.ZERO) } }
     val allocated = alloc.values.fold(Money.ZERO) { t, s -> t + (Parse.money(s) ?: Money.ZERO) }
+    // The one foreign-currency invoice this payment settles, when that is all it allocates to.
+    val fxTarget = alloc.filterValues { (Parse.money(it) ?: Money.ZERO) > Money.ZERO }.keys.singleOrNull()
+        ?.takeIf { it in fxInvoices && extra.isEmpty() }?.let { id -> open.firstOrNull { it.voucherId == id } }
 
     LaunchedEffect(partyId) {
         alloc.clear()
@@ -128,6 +134,7 @@ fun MoneyEditorScreen(
         } else {
             emptyList()
         }
+        fxInvoices = open.mapNotNull { o -> runCatching { repos.vouchers.findVoucher(o.voucherId)?.currency }.getOrNull()?.let { o.voucherId to it } }.toMap()
         open.firstOrNull { it.voucherId == invoiceId }?.let { inv ->
             alloc[inv.voucherId] = inv.outstanding.format()
             if (amount.isBlank()) amount = inv.outstanding.format()
@@ -141,7 +148,9 @@ fun MoneyEditorScreen(
     }
 
     fun submit() {
-        val disc = if (discount.isBlank() || !type.isPayment()) Money.ZERO else Parse.money(discount)?.takeIf { it >= Money.ZERO } ?: run { error = "Enter a valid discount"; return }
+        val fx = fxTarget.takeIf { fxSettle && type.isPayment() }
+        if (fxSettle && type.isPayment() && fx == null) { error = "To settle an exchange difference, allocate to one foreign-currency invoice and use one payment mode"; return }
+        val disc = if (discount.isBlank() || !type.isPayment() || fx != null) Money.ZERO else Parse.money(discount)?.takeIf { it >= Money.ZERO } ?: run { error = "Enter a valid discount"; return }
         // With a settlement discount the amount may be left blank: the balance is written off.
         val discountOnly = disc > Money.ZERO && extra.isEmpty() && (amount.isBlank() || Parse.money(amount) == Money.ZERO)
         if (!discountOnly) Parse.money(amount)?.takeIf { it > Money.ZERO } ?: run { error = "Enter an amount above zero"; return }
@@ -161,7 +170,12 @@ fun MoneyEditorScreen(
             if (t.method.needsReference(refRequired) && t.ref.isBlank()) { error = refMissing(t.method); return }
         }
         val split = try {
-            MoneyVouchers.splitWithDiscount(requests, open, amounts, disc)
+            if (fx != null) {
+                MoneyVouchers.exchangeDifference(fx.outstanding, amounts.first())
+                listOf(emptyList())
+            } else {
+                MoneyVouchers.splitWithDiscount(requests, open, amounts, disc)
+            }
         } catch (e: IllegalArgumentException) {
             error = e.message; return
         }
@@ -171,7 +185,11 @@ fun MoneyEditorScreen(
         val id = ids.first()
         scope.launch {
             runCatching { repos.transaction {
-                val discountAccountId = if (disc > Money.ZERO) MoneyVouchers.discountAccount(repos.ledger, firmId, type, container::newId, container.now()).id else null
+                val discountAccountId = when {
+                    fx != null -> MoneyVouchers.exchangeAccount(repos.ledger, firmId, container::newId, container.now()).id
+                    disc > Money.ZERO -> MoneyVouchers.discountAccount(repos.ledger, firmId, type, container::newId, container.now()).id
+                    else -> null
+                }
                 tenders.take(amounts.size).forEachIndexed { i, t ->
                 MoneyVouchers(repos.vouchers, repos.payments, repos.ledger, container.postVoucher).record(
                     MoneyVoucherInput(
@@ -193,6 +211,7 @@ fun MoneyEditorScreen(
                         allocations = split[i],
                         discount = if (i == 0) disc else Money.ZERO,
                         discountAccountId = discountAccountId.takeIf { i == 0 },
+                        exchangeInvoiceId = fx?.voucherId,
                     ),
                     container.now(),
                 )
@@ -296,14 +315,34 @@ fun MoneyEditorScreen(
                     val disc = Parse.money(discount)?.takeIf { it > Money.ZERO } ?: Money.ZERO
                     val paidIn = amountMoney ?: Money.ZERO
                     val advance = paidIn - allocated + minOf(maxOf(allocated - paidIn, Money.ZERO), disc)
-                    Text(
+                    // Settling an exchange difference: the switch below explains the difference instead.
+                    if (!(fxSettle && fxTarget != null)) Text(
                         if (advance < Money.ZERO) "Allocated ${Fmt.inr(allocated)} is more than the amount" + (if (disc > Money.ZERO) " and discount" else "")
                         else "Allocated ${Fmt.inr(allocated)} · on account (advance) ${Fmt.inr(advance)}",
                         color = if (advance < Money.ZERO) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    if (fxTarget != null) {
+                        val note = amountMoney?.takeIf { it > Money.ZERO }?.let { paid ->
+                            runCatching { MoneyVouchers.exchangeDifference(fxTarget.outstanding, paid) }.fold(
+                                { d ->
+                                    val size = Fmt.inr(if (d < Money.ZERO) -d else d)
+                                    (if (MoneyVouchers.isExchangeGain(type, d)) "Exchange gain" else "Exchange loss") +
+                                        " of $size posts to ${app.openbill.core.domain.model.EXCHANGE_GAIN_LOSS}; ${fxTarget.number ?: "the invoice"} (${fxInvoices[fxTarget.voucherId]}) is settled in full."
+                                },
+                                { it.message },
+                            )
+                        }
+                        app.openbill.ui.inventory.SwitchRow(
+                            "Settle difference as exchange gain/loss",
+                            if (fxSettle) note ?: "Enter the rupees actually ${if (type == VoucherType.PAYMENT_IN) "received" else "paid"}"
+                            else "For a foreign-currency invoice whose rupee value changed with the exchange rate",
+                            fxSettle,
+                            { fxSettle = it; error = null },
+                        )
+                    }
                     val discountLedger = if (type == VoucherType.PAYMENT_IN) MoneyVouchers.DISCOUNT_ALLOWED else MoneyVouchers.DISCOUNT_RECEIVED
-                    FormField(
+                    if (!(fxSettle && fxTarget != null)) FormField(
                         "Settlement discount",
                         discount,
                         { discount = it; error = null },

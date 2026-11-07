@@ -3,6 +3,8 @@ package app.openbill.core.domain.usecase
 import app.openbill.core.domain.model.Account
 import app.openbill.core.domain.model.AccountType
 import app.openbill.core.domain.model.AllocationRequest
+import app.openbill.core.domain.model.EXCHANGE_GAIN_LOSS
+import app.openbill.core.domain.model.isExchangeAccount
 import app.openbill.core.domain.model.OutstandingInvoice
 import app.openbill.core.domain.model.PaymentDetails
 import app.openbill.core.domain.model.PaymentMethod
@@ -49,6 +51,12 @@ data class MoneyVoucherInput(
      */
     val discount: Money = Money.ZERO,
     val discountAccountId: String? = null,
+    /**
+     * Payments only: settle this foreign-currency invoice in full, posting the difference between
+     * its outstanding and [amount] to the exchange account in [discountAccountId] (see
+     * [MoneyVouchers.exchangeAccount]). Replaces [allocations] and [discount].
+     */
+    val exchangeInvoiceId: String? = null,
 )
 
 class MoneyVouchers(
@@ -57,9 +65,10 @@ class MoneyVouchers(
     private val ledger: LedgerRepository,
     private val post: PostVoucher = PostVoucher(vouchers),
 ) {
-    suspend fun record(input: MoneyVoucherInput, at: Instant): Voucher {
-        require(input.type.usesPaymentAccount()) { "${input.type} is not a money voucher" }
-        require(input.discount >= Money.ZERO) { "Discount cannot be negative" }
+    suspend fun record(request: MoneyVoucherInput, at: Instant): Voucher {
+        require(request.type.usesPaymentAccount()) { "${request.type} is not a money voucher" }
+        val input = request.exchangeInvoiceId?.let { exchangeSettlement(request, it) } ?: request
+        require(input.discount >= Money.ZERO || request.exchangeInvoiceId != null) { "Discount cannot be negative" }
         require(input.discount == Money.ZERO || input.type.isPayment()) { "Only payments can carry a settlement discount" }
         require(input.discount == Money.ZERO || input.discountAccountId != null) { "Settlement discount needs a discount account" }
         require(input.amount > Money.ZERO || (input.amount == Money.ZERO && input.discount > Money.ZERO)) { "Amount must be above zero" }
@@ -87,7 +96,7 @@ class MoneyVouchers(
             type = input.type,
             date = input.date,
             partyId = input.partyId,
-            ledgerAccountId = if (input.discount > Money.ZERO) input.discountAccountId else input.ledgerAccountId,
+            ledgerAccountId = if (input.discount != Money.ZERO) input.discountAccountId else input.ledgerAccountId,
             placeOfSupplyStateCode = input.stateCode,
             taxable = if (input.type == VoucherType.EXPENSE) input.amount - input.inputTax else Money.ZERO,
             tax = input.inputTax,
@@ -122,7 +131,56 @@ class MoneyVouchers(
         return posted
     }
 
+    /**
+     * Settles [invoiceId] in full: the rupees that moved ([MoneyVoucherInput.amount]) differ from
+     * its outstanding because the exchange rate changed. The difference ([exchangeDifference])
+     * becomes a signed settlement discount posted to the exchange account.
+     */
+    private suspend fun exchangeSettlement(input: MoneyVoucherInput, invoiceId: String): MoneyVoucherInput {
+        require(input.type.isPayment()) { "Only payments can settle an exchange difference" }
+        require(input.discount == Money.ZERO) { "Use either a settlement discount or an exchange difference, not both" }
+        require(input.discountAccountId != null) { "Exchange difference needs the exchange gain/loss account" }
+        require(input.amount > Money.ZERO) { "Amount must be above zero" }
+        val partyId = requireNotNull(input.partyId) { "Choose a party" }
+        val invoice = vouchers.findVoucher(invoiceId) ?: throw IllegalArgumentException("Unknown invoice")
+        require(invoice.currency != null) { "Only foreign-currency invoices can settle an exchange difference" }
+        val open = payments.outstandingInvoices(input.firmId, partyId, invoiceTypeFor(input.type)).firstOrNull { it.voucherId == invoiceId }
+            ?: throw IllegalArgumentException("Invoice is not outstanding")
+        val difference = exchangeDifference(open.outstanding, input.amount)
+        return input.copy(discount = difference, allocations = listOf(AllocationRequest(invoiceId, open.outstanding)))
+    }
+
     companion object {
+        const val EXCHANGE_CAP_PERCENT = 10
+
+        /**
+         * Outstanding minus the rupees that moved, as a signed settlement discount. On a receipt a
+         * positive value is an exchange loss and a negative one a gain; on a payment out it is the
+         * other way round. Refuses no difference and one above [EXCHANGE_CAP_PERCENT]% of the
+         * outstanding (almost certainly a typing mistake, or a part payment).
+         */
+        fun exchangeDifference(outstanding: Money, amount: Money): Money {
+            val d = outstanding - amount
+            require(d != Money.ZERO) { "The amount equals the outstanding; there is no difference to settle" }
+            val size = if (d < Money.ZERO) -d else d
+            require(size * 100 <= outstanding * EXCHANGE_CAP_PERCENT) {
+                "The difference of ${size.format()} is more than $EXCHANGE_CAP_PERCENT% of the outstanding ${outstanding.format()}; check the amount, or record a part payment"
+            }
+            return d
+        }
+
+        /** Whether [difference] (from [exchangeDifference]) is a gain for a payment of [paymentType]. */
+        fun isExchangeGain(paymentType: VoucherType, difference: Money): Boolean =
+            if (paymentType == VoucherType.PAYMENT_OUT) difference > Money.ZERO else difference < Money.ZERO
+
+        /** The "Exchange gain/loss" income account (Indirect Incomes in Tally); created on first use, by any role. */
+        suspend fun exchangeAccount(ledger: LedgerRepository, firmId: String, newId: () -> String, at: Instant): Account {
+            val same = ledger.observeAccounts(firmId).first().filter { it.deletedAt == null && it.name.equals(EXCHANGE_GAIN_LOSS, ignoreCase = true) }
+            same.firstOrNull { isExchangeAccount(it) }?.let { return it }
+            require(same.isEmpty()) { "An account named \"$EXCHANGE_GAIN_LOSS\" already exists with another type; rename it to settle an exchange difference" }
+            return Account(newId(), firmId, EXCHANGE_GAIN_LOSS, AccountType.INCOME, createdAt = at, updatedAt = at).also { ledger.createSystemAccount(it) }
+        }
+
         const val DISCOUNT_ALLOWED = "Discount allowed"
         const val DISCOUNT_RECEIVED = "Discount received"
 

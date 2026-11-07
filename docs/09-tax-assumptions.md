@@ -359,10 +359,21 @@ are not recorded here.
   value in the foreign currency. Limits: the currency is assumed to have two decimal places;
   foreign-currency documents are not rounded to the rupee; the foreign-currency GST shown in
   the editor is approximate (the rupee figure is the one that counts); the user picks the rate
-  (the CBIC notified rate or the bank rate, as applicable). Payments are recorded in rupees as
-  received; no exchange gain or loss ledger is posted, so a difference between the invoice and
-  the rupees realised stays outstanding or is settled with the settlement discount on the
-  receipt. A party has no default currency.
+  (the CBIC notified rate or the bank rate, as applicable). Since schema 17 a party can have a
+  default currency, filled in on its new export or SEZ invoices; the rate is still entered.
+  Only an owner or manager sets the currency and rate (the rate is a price).
+- **Exchange gain or loss.** Payments are recorded in rupees as received or paid. When the
+  rupees differ from what a foreign-currency invoice or bill still has outstanding, the payment
+  can "settle the difference as exchange gain/loss": the invoice is settled in full and the
+  difference posts to a system income account "Exchange gain/loss", created on first use by
+  any role (Indirect Incomes in the Tally export, other income in the profit and loss). On a
+  receipt, fewer rupees than outstanding is a loss (debit) and more is a gain (credit); on a
+  payment out it is the other way round. The account is credited for a net gain and debited for
+  a net loss. The rupee value of the invoice, its GST and the GSTR figures do not change: the
+  difference is realised forex, not a change in the value of supply. Limits: only one
+  foreign-currency invoice per payment, one payment mode, no settlement discount at the same
+  time; the difference may be at most 10% of the outstanding (larger gaps are usually a typing
+  mistake or a part payment); unrealised (year-end revaluation) differences are not posted.
 - **Composition scheme.** Regular dealers only. A composition dealer would need a bill of
   supply with no tax shown and different returns; neither is supported, and a composition
   dealer must not use the 1.0 tax engine as is.

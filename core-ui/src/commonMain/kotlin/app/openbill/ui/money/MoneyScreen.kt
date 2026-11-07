@@ -251,7 +251,11 @@ fun MoneyVoucherRow(v: Voucher, names: Map<String, String>, onClick: () -> Unit)
     ListItem(
         headlineContent = { Text(moneyCounterparty(v, names), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            val discount = v.discount.takeIf { it > Money.ZERO }?.let { "discount ${Fmt.inr(it)}" }
+            val discount = when {
+                v.discount == Money.ZERO -> null
+                names[v.ledgerAccountId].equals(app.openbill.core.domain.model.EXCHANGE_GAIN_LOSS, ignoreCase = true) -> "exchange difference ${Fmt.inr(if (v.discount < Money.ZERO) -v.discount else v.discount)}"
+                else -> "discount ${Fmt.inr(v.discount)}"
+            }
             Text(listOfNotNull(moneyTitle(v.type), v.number, Fmt.dateLong(v.date), discount).joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         trailingContent = {

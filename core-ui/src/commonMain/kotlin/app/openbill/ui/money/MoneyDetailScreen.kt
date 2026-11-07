@@ -99,9 +99,15 @@ fun MoneyDetailScreen(container: AppContainer, session: Session, voucherId: Stri
                     Column(Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         Text(moneyCounterparty(v, names + accountNames), style = MaterialTheme.typography.titleLarge)
                         StatusChip(v.status)
-                        if (v.discount > Money.ZERO) {
+                        val exchange = accountNames[v.ledgerAccountId].equals(app.openbill.core.domain.model.EXCHANGE_GAIN_LOSS, ignoreCase = true)
+                        if (v.discount != Money.ZERO) {
                             AmountRow(if (v.type == VoucherType.PAYMENT_IN) "Received" else "Paid", v.total - v.discount)
-                            AmountRow("Settlement discount (${accountNames[v.ledgerAccountId] ?: "discount"})", v.discount)
+                            if (exchange) {
+                                val gain = app.openbill.core.domain.usecase.MoneyVouchers.isExchangeGain(v.type, v.discount)
+                                AmountRow(if (gain) "Exchange gain" else "Exchange loss", if (v.discount < Money.ZERO) -v.discount else v.discount)
+                            } else {
+                                AmountRow("Settlement discount (${accountNames[v.ledgerAccountId] ?: "discount"})", v.discount)
+                            }
                             AmountRow("Settled", v.total, emphasize = true)
                         } else {
                             AmountRow("Amount", v.total, emphasize = true)

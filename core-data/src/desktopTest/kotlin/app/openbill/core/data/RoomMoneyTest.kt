@@ -133,9 +133,75 @@ class RoomMoneyTest {
         assertEquals(Money.of(6_000), balances["disc"])
         assertEquals(Money.of(12_345), ledger.partyBalance("firm-1", "party-1", LocalDate(2026, 5, 31)).net, "only the opening balance is left")
 
+        // A negative discount is only for an exchange difference.
+        assertFailsWith<IllegalArgumentException> {
+            money.record(input(VoucherType.PAYMENT_IN, "r4", 100, cash.id).copy(partyId = "party-1", discount = Money.of(-50), discountAccountId = discount.id), POSTED_AT)
+        }
         // A discount must settle invoices; it is never an advance.
         assertFailsWith<IllegalArgumentException> {
             money.record(input(VoucherType.PAYMENT_IN, "r3", 100, cash.id).copy(partyId = "party-1", discount = Money.of(50), discountAccountId = discount.id), POSTED_AT)
         }
+    }
+
+    @Test
+    fun exchangeDifferenceSettlesForeignInvoicesAsGainOrLoss(): Unit = runBlocking {
+        val money = MoneyVouchers(vouchers, payments, ledger)
+        val cash = ledger.ensureSystemAccounts("firm-1", CREATED_AT).cash
+        suspend fun sale(id: String, amt: Long, usd: Boolean) {
+            val line = testLine(id = "$id-l", rate = Money.of(amt)).copy(taxable = Money.of(amt), tax = Money.ZERO, total = Money.of(amt))
+            val v = testVoucher(id = id, lines = listOf(line), charges = emptyList()).copy(subtotal = Money.of(amt), taxable = Money.of(amt), tax = Money.ZERO, total = Money.of(amt))
+            vouchers.saveDraft(
+                if (!usd) v else v.copy(
+                    placeOfSupplyStateCode = "96",
+                    export = app.openbill.core.domain.model.ExportDetails(
+                        app.openbill.core.domain.model.ExportType.EXPORT_UNDER_LUT, currency = "USD",
+                        exchangeRate = app.openbill.core.model.Quantity.parse("83"),
+                    ),
+                ),
+            )
+            vouchers.post(id, POSTED_AT)
+        }
+        sale("usd1", 10_000, usd = true)
+        sale("usd2", 10_000, usd = true)
+        sale("inr", 10_000, usd = false)
+        // Cashier-safe: the account is a system account, created on first use and reused.
+        val fx = MoneyVouchers.exchangeAccount(ledger, "firm-1", { "fx" }, CREATED_AT)
+        assertEquals(AccountType.INCOME, fx.type)
+        assertEquals(fx, MoneyVouchers.exchangeAccount(ledger, "firm-1", { "other" }, CREATED_AT))
+        suspend fun pay(id: String, amount: Long, invoice: String) = money.record(
+            input(VoucherType.PAYMENT_IN, id, amount, cash.id).copy(partyId = "party-1", exchangeInvoiceId = invoice, discountAccountId = fx.id),
+            POSTED_AT,
+        )
+
+        // Received ₹9,700 for ₹10,000: a ₹300 loss, debited to the exchange account; invoice settled.
+        val loss = pay("r1", 9_700, "usd1")
+        assertEquals(Money.of(10_000), loss.total)
+        assertEquals(Money.ZERO, payments.invoiceOutstanding("usd1"))
+        assertEquals(false, MoneyVouchers.isExchangeGain(VoucherType.PAYMENT_IN, loss.discount))
+        // Received ₹10,400 for ₹10,000: a ₹400 gain, credited.
+        val gain = pay("r2", 10_400, "usd2")
+        assertEquals(true, MoneyVouchers.isExchangeGain(VoucherType.PAYMENT_IN, gain.discount))
+        assertEquals(Money.ZERO, payments.invoiceOutstanding("usd2"))
+        val entries = ledger.journalEntriesForVoucher("r2").associate { it.accountId to (it.debit to it.credit) }
+        assertEquals(Money.of(10_400) to Money.ZERO, entries[cash.id])
+        assertEquals(Money.ZERO to Money.of(400), entries["fx"])
+
+        val balances = ledger.observeAccountBalances("firm-1").first()
+        assertEquals(Money.of(9_700 + 10_400), balances[cash.id])
+        // Income account balance is credit-positive or debit-positive per the ledger; either way net 100 gain.
+        assertEquals(Money.of(100), balances["fx"]?.let { if (it < Money.ZERO) -it else it })
+        assertEquals(Money.of(12_345 + 10_000), ledger.partyBalance("firm-1", "party-1", LocalDate(2026, 5, 31)).net, "only the opening and the rupee invoice remain")
+
+        // Rupee invoices, no difference and differences above 10% are refused.
+        assertFailsWith<IllegalArgumentException> { pay("r3", 9_900, "inr") }
+        sale("usd3", 10_000, usd = true)
+        assertFailsWith<IllegalArgumentException> { pay("r4", 10_000, "usd3") }
+        assertFailsWith<IllegalArgumentException> { pay("r5", 8_999, "usd3") }
+        assertFailsWith<IllegalArgumentException> { pay("r6", 11_001, "usd3") }
+        pay("r7", 9_000, "usd3")
+        assertEquals(Money.ZERO, payments.invoiceOutstanding("usd3"), "exactly 10% is allowed")
+        // Cancelling a settlement reverses the exchange posting and reopens the invoice.
+        vouchers.cancel("r7", "wrong", POSTED_AT)
+        assertEquals(Money.of(10_000), payments.invoiceOutstanding("usd3"))
     }
 }
