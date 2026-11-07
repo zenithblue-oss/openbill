@@ -31,7 +31,7 @@ internal val OPEN_SOURCE_LICENSES: List<Pair<String, String>> = listOf(
     "Apache PDFBox (desktop PDF output and printing)" to "Apache-2.0",
     "ZXing core (QR and barcodes)" to "Apache-2.0",
     "Clikt (command-line interface)" to "Apache-2.0",
-    "Noto Sans fonts (The Noto Project Authors)" to "OFL-1.1",
+    "Noto Sans and Noto Sans Devanagari fonts (The Noto Project Authors)" to "OFL-1.1",
     "HSN/SAC code list (CBIC, Government of India; see NOTICE)" to "Public classification data",
 )
 

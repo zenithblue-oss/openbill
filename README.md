@@ -78,7 +78,10 @@ against what is usable in the app today. A feature counts 1 when it works end to
 only the engine/data layer exists without UI, and 0 otherwise. These are the maintainers' estimates, not a test metric.
 
 **1.0 scope: 100% (136 of 136 P0 features)** `████████████████████`
-**Full parity: about 71% (195 of 277 P0+P1+P2 features)** `██████████████░░░░░░`
+**Full parity: about 75% (208 of 277 P0+P1+P2 features)** `███████████████░░░░░`
+
+Every P1 row that works offline is done; the open P1 rows need online services (sign-in, GSTIN
+lookup, e-invoice and e-way bill) or are app UI translation (invoices already print in Hindi).
 
 | Area | Status | Done |
 | --- | --- | --- |
@@ -87,8 +90,8 @@ only the engine/data layer exists without UI, and 0 otherwise. These are the mai
 | Inventory | Godowns, batches (FEFO picker), serials (batch or serial per item), adjustments, transfers, valuation, labels, low-stock card and report | 100% |
 | Payments and accounting | Payments, allocation, split tender, expenses, accounts, ageing, reconciliation, reminder templates | 100% (14 / 14) |
 | Reports and GST | Registers, books, day summary, statements, stock, low stock, batch expiry, profit, GST/HSN, GSTR-1 JSON, GSTR-2/3B working, Tally XML, multi-report share/email/ZIP, CA pack | 100% (19 / 19 P0) |
-| Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image | 100% (15 / 15) |
-| Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, local staff users with roles (owner, manager, cashier, accountant) and a per-user activity log, business erasure, CSV, Tally, GSTR-1 | 100% (10 / 10) |
+| Printing and output | Templates, party balance, A4/A5/thermal PDF, print, silent print, bulk export/print with OS notification, ESC/POS thermal printing (Bluetooth, print service, serial), share with summary, share as image; P1: Hindi invoice labels, label-printer rolls, SMS/email with UPI payment link | 100% (15 / 15) |
+| Data and backup | Backup/restore with attachments, password-encrypted backups, app lock (PIN with backoff, biometric on Android, desktop idle lock), daily automatic backups, portable desktop mode, local staff users with roles (owner, manager, cashier, accountant) and a per-user activity log, business erasure, CSV, Tally, GSTR-1; P1: attachment ZIP export, import from other software, notifications inbox, deep links, get-started checklist, modules screen, offline help, diagnostics | 100% (10 / 10) |
 | POS | Counter billing: scan or search items, Cash sale default, held bills, split tender with change, keyboard shortcuts, tablet layout, thermal receipt | 100% (5 / 5) |
 | Desktop apps | Windows and Linux builds run the shared UI | Stable |
 | CLI | Direct mode: masters, invoices and PDF, payments, stock, import/export, reports, GST, Tally, audit | C0-C3 (a few commands pending; see What's left) |

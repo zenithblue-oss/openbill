@@ -286,9 +286,16 @@ Scope:
 - Multi-currency for export and SEZ invoices (done: currency and exchange rate per document,
   rupee GST, ledger and returns; party default currency and realised exchange gain/loss on
   payments, schema v17). Year-end revaluation of open foreign-currency balances is later.
+- Onboarding, sharing and support P1 (done): get-started checklist, import from other
+  billing software by column name (with Dr/Cr opening balances and templates), notifications
+  inbox with per-category preferences, openbill:// deep links, SMS and email sharing with the
+  amount, due date and a UPI payment link, Hindi invoice labels with embedded Noto Sans
+  Devanagari, label-printer roll stock, attachment ZIP export, offline help, contact support,
+  diagnostics export, and a modules screen. Still open: app UI translation (strings are not
+  externalized yet).
 - e-invoice and e-way bill integration using the user's own credentials, behind a
   provider interface.
-- WhatsApp/SMS deep-link sharing and bring-your-own provider integration.
+- WhatsApp/SMS deep-link sharing (done) and bring-your-own provider integration.
 - Optional self-hosted OpenBill Server, milestones S0-S3 (docs/10): sync protocol and
   simulation suite, single-user multi-device sync with QR pairing, multi-user roles with a
   CA seat, and REST API v1. Conflict rules are fixed in docs/10 before coding.
@@ -389,7 +396,7 @@ S = self-hosted server, C = CLI. In OpenBill every row is free.
 | POS counter workflow (held bills, multi-tender, keyboard) | Top paid tier | Phase 7 | A W L | Done (item-first counter screen, held bills persisted in schema v14, cash/UPI/card/bank split with change, F-key shortcuts, tablet layout, thermal receipt) |
 | Sync, self-hosted server, REST API, CLI remote mode | Vendor cloud (paid tiers) | Phase 7 (S0-S3, C4) | A W L S C | Planned |
 | E-invoice and e-way bill, bulk generation | Paid tiers | Phase 7 (provider interface), Phase 9 (bulk, alerts) | A W L S C | Planned |
-| POS and retail hardware (cash drawer, scale, label sheets) | Top paid tier | Phase 9 | W L A | Planned |
+| POS and retail hardware (cash drawer, scale, label sheets) | Top paid tier | Phase 9 | W L A | Label-printer roll stock done (PDF through the driver); cash drawer and scale planned |
 | Restaurant tables and kitchen slips | Add-on module | Phase 9 | A W L | Planned |
 | Staff attendance, payroll, geo check-in, staff mode | Separate paid module | Phase 9 | A W L S | Planned |
 | CRM, loyalty, service reminders, greetings, shared ledger | Paid tiers | Phase 9 | A W L S | Planned |

@@ -27,6 +27,10 @@ Bundled fonts: core-printing/pdf-assets/fonts/NotoSans-Regular.ttf and
 NotoSans-Bold.ttf are Noto Sans, Copyright 2022 The Noto Project Authors
 (https://github.com/notofonts/latin-greek-cyrillic), licensed under the SIL
 Open Font License, Version 1.1 (core-printing/pdf-assets/fonts/NotoSans-OFL.txt).
+NotoSansDevanagari-Regular.ttf and NotoSansDevanagari-Bold.ttf are Noto Sans
+Devanagari, Copyright 2022 The Noto Project Authors
+(https://github.com/notofonts/devanagari), licensed under the SIL Open Font
+License, Version 1.1 (core-printing/pdf-assets/fonts/NotoSansDevanagari-OFL.txt).
 They are embedded in generated invoice PDFs.
 
 Bundled HSN/SAC list: core-ui/src/commonMain/kotlin/app/openbill/ui/items/HsnCodes.kt holds

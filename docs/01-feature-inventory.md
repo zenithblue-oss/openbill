@@ -48,10 +48,10 @@ are described in [10-server.md](10-server.md) and [11-cli.md](11-cli.md).
 | GSTIN autofill | Fetch legal name and address from GSTIN | P1 | Not started | Requires a licensed API or manual entry fallback |
 | Multiple firms | Switch between businesses | P0 | Done | Local firm switcher; no artificial limit |
 | Business logo and signature | Upload, crop, and place on documents | P0 | Done | Image picker; PDF-safe storage |
-| Language selection | English and Indian languages | P1 | Not started | Start with English; externalize strings from day one |
-| Guided setup | Sample party, item, and invoice | P1 | Not started | 1.0 first-run flow is a simple manual firm form; guided setup is post-1.0 |
+| Language selection | English and Indian languages | P1 | Not started | App screens are English only (strings are not externalized yet); printed invoices can use Hindi labels (see Multi-language invoice) |
+| Guided setup | Sample party, item, and invoice | P1 | Done | "Get started" checklist on the dashboard (profile, first item, party, invoice, backup), hideable per business; debug builds can load sample data |
 | Industry type selection | Firm picks an industry (retail, pharmacy, restaurant, jewellery, etc.) to tailor defaults | P2 | Not started | Optional preset bundles of units, tax rates, and fields; never required |
-| Import from other billing software | Guided import of items and parties from competitor files and spreadsheets | P1 | Partial | Generic CSV mapping first; competitor-specific formats only from public documentation |
+| Import from other billing software | Guided import of items and parties from competitor files and spreadsheets | P1 | Done | CSV import maps common column names of other billing software and spreadsheets (Party Name, GSTIN/UIN, Opening Balance with Dr/Cr, HSN Code, GST %, Opening Stock); downloadable templates; app and CLI |
 | Shared product library | Pick items from a common catalogue | P2 | Not started | Community-maintained, offline item packs (name, HSN, unit, tax rate) imported from a file or a self-hosted server; no vendor-hosted dataset or upload of user data |
 | Credits for scans and messages | Prepaid credits for OCR scans and messaging | No | Not planned | Vendor-sold credit packs are not offered; OCR and messaging are unmetered and use local models or the user's own provider account |
 | Demo or trial mode | Time-limited premium access | No | Not planned | OpenBill is free and open source; no trial gates |
@@ -77,11 +77,11 @@ First-run acceptance criteria:
 | Outstanding reminders | Receivables and payables summary | P0 | Done | Tap opens filtered ledger |
 | Low-stock card | Items below threshold | P0 | Done | Phase 4 |
 | Business switcher | Change active firm | P0 | Done | Preserve per-firm UI state |
-| Notifications inbox | Transactional and marketing messages | P1 | Not started | Local notifications only; no marketing |
+| Notifications inbox | Transactional and marketing messages | P1 | Done | In-app inbox: low stock, near expiry, overdue customers, backup reminders and failures, recurring results; read state; no marketing |
 | Command palette | Not observed on Android; desktop apps commonly use one | P0 | Done | Ctrl/Cmd+K on desktop, search icon on Android |
 | Home-screen widgets | Sales and quick actions | P2 | Not started | Android only |
-| Deep links | Branch links to invoices and campaigns | P1 | Not started | Standard Android App Links; no Branch dependency |
-| Tools and feature-discovery tab | Grid of optional modules and promotional banners | P1 | Not started | A modules screen to enable or disable optional modules (POS, restaurant, payroll, and so on); no promotional banners |
+| Deep links | Branch links to invoices and campaigns | P1 | Done | openbill://invoice, party, item and inbox links on Android (validated against the open business); no Branch dependency |
+| Tools and feature-discovery tab | Grid of optional modules and promotional banners | P1 | Done | More > Modules hides POS, quotations/challans/orders and recurring invoices per business; restaurant and payroll modules arrive with those features; no promotional banners |
 | In-app calculator | Calculator that can attach to a party or invoice, with optional floating widget | P2 | Not started | Simple calculator; sound and haptics optional |
 | Business-wide tools | GST calculator, late-fee calculator | P2 | Not started | Offline, public-formula calculators |
 
@@ -252,7 +252,7 @@ Tax engine requirements:
 | Bank reconciliation | Match statement lines to vouchers | P0 | Done | Manual confirmation |
 | Cheque tracking | Post-dated cheques | P2 | Not started | After 1.0 |
 | Bad debt write-off | Adjustment entry | P2 | Not started | Audit trail |
-| Share payment link | Link or QR sent with a reminder | P1 | Not started | UPI intent or static QR only; no gateway |
+| Share payment link | Link or QR sent with a reminder | P1 | Done | upi://pay link for the balance due in shared invoices, SMS and email, plus the invoice QR; no gateway |
 | Multiple bank accounts with deactivation | Retire an account but keep history | P0 | Done | Soft state |
 | Other ledger accounts | User-defined ledgers such as loans given or taken, capital, and other income or expense | P2 | Not started | Needs the full accounting model; see balance sheet in section 7 |
 | Staff payroll postings | Salary, bonus, advance as expense or loan postings | P2 | Not started | Phase 7 payroll |
@@ -320,7 +320,7 @@ Report correctness rules:
 | QR code | UPI or document link | P0 | Done | Locally generated |
 | Barcode on invoice | Item barcode | P2 | Not started | Optional |
 | Custom theme editor | Colors, fonts, layout | P2 | Not started | Start with built-in themes |
-| Multi-language invoice | Hindi and regional labels | P1 | Not started | Template-level locale |
+| Multi-language invoice | Hindi and regional labels | P1 | Done | English or Hindi labels per business on A4/A5 templates, Noto Sans Devanagari embedded; amount in words stays English; thermal receipts English; other regional languages later |
 | Print preview | WYSIWYG before printing | P0 | Done | Shared renderer |
 | Bulk print | Print a selection of invoices in order | P0 | Done | Desktop (W, L): a sequential loop over silent print with progress, cancellation, and per-invoice failures; Android prints one at a time through the system print service |
 | Export notification | OS notification after an export, backup, or download, with a show-in-folder action | P0 | Done | Desktop; Android uses the system download notification |
@@ -330,7 +330,7 @@ Report correctness rules:
 | Theme gallery | Downloadable invoice themes | P2 | Not started | Free community theme packs as files (import from file or a repository); no paid store and no vendor assets |
 | Custom theme creator | User-defined header, columns, footer | P2 | Not started | Same as theme editor |
 | Show bank details, phone, timestamp, alternate unit, discount-on-MRP on document | Per-template toggles | P0 | Done | Template options |
-| Label-printer barcode sheets | Dedicated label printers | P1 | Not started | Desktop and thermal |
+| Label-printer barcode sheets | Dedicated label printers | P1 | Done | Roll label stock (50x25, 38x25, 50x30, 100x50 mm), one label per PDF page through the printer driver; no raw TSPL/ZPL |
 | PDF password | Protect shared PDF | P2 | Not started | Optional |
 | Share as image | PNG/JPG | P0 | Done | Android share sheet; desktop save |
 
@@ -353,7 +353,7 @@ Rendering strategy:
 | Invoice CSV export | P0 | Done | For accountants |
 | Tally XML export | P0 | Done | Phase 6 |
 | GSTR-1 export | P0 | Done | Phase 6 |
-| Attachment export | P1 | Not started | Preserve folder structure |
+| Attachment export | P1 | Done | One ZIP per business, a folder per document or party, index.csv |
 | Bulk PDF/ZIP export of invoices | P0 | Done | Selected invoices or a date range as PDFs or one zip, generated locally; desktop at 1.0, Android follows in Phase 7 |
 | Competitor file import | P2 | Not started | Only if a public format spec exists |
 | Auto online backup | P2 | Not started | Replaced by optional encrypted user-owned storage |
@@ -405,7 +405,7 @@ signal.
 | Feature | Priority | Status | Notes |
 | --- | --- | --- | --- |
 | WhatsApp invoice sharing | P0 | Done | Android intent; desktop opens wa.me link |
-| SMS or email sharing | P1 | Partial | User's own app or mail client |
+| SMS or email sharing | P1 | Done | User's own SMS app or mail client with the amount, due date and payment link; email attaches the PDF (desktop saves it next to a mailto draft) |
 | Payment reminder templates | P0 | Done | Editable, localized |
 | Online catalogue | P2 | Not started | Static export first |
 | Hosted storefront | P2 | Not started | Self-hosted server module (Phase 9); not core app |
@@ -434,14 +434,14 @@ signal.
 | Secure storage | P0 | Done | Android Keystore, Windows DPAPI, Linux libsecret |
 | Audit log | P0 | Done | Append-only; exportable |
 | Crash reporting | No | Not planned | No tracking SDK; the opt-in diagnostics export (P1) is the supported path |
-| Help center | P1 | Not started | Offline FAQ plus links |
-| Contact support | P1 | Not started | Email or issue tracker; no chat SDK in 1.0 |
-| Diagnostics export | P1 | Not started | Redacted logs and schema info |
+| Help center | P1 | Done | Offline topics bundled from docs/help.md |
+| Contact support | P1 | Done | GitHub issues link; no chat SDK |
+| Diagnostics export | P1 | Done | Versions, device, schema, device settings and recent errors; no business data; previewed before share or save |
 | Data deletion | P0 | Done | Export first, then delete firm or all data |
 | Legal and licenses | P0 | Done | Apache-2.0, third-party notices |
 | Additional-settings toggles | P0 | Done | Party balance on document and item description; the free-quantity and other-currency toggles arrive with those P1 features |
 | TDS/TCS enable switch | P2 | Not started | Per firm |
-| Reminder and notification preferences | P1 | Not started | Local notifications; per category |
+| Reminder and notification preferences | P1 | Done | Per-category switches and backup reminder interval |
 | E-invoice and e-way settings | P1 | Not started | Credentials stored in secure storage |
 | Recycle bin | P0 | Done | Deleted documents previewable and restorable |
 | Desktop access gating | No | Not planned | OpenBill desktop is free |
