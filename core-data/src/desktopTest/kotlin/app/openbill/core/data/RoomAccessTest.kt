@@ -75,7 +75,8 @@ class RoomAccessTest {
         assertFailsWith<PermissionDeniedException> { repos.parties.archiveParty("party-1", ARCHIVED_AT) }
         assertFailsWith<PermissionDeniedException> { repos.users.saveUser(cashier.copy(role = Role.MANAGER)) }
         assertFailsWith<PermissionDeniedException> { repos.firms.eraseFirm("firm-1") }
-        repos.parties.saveParty(testParty(id = "party-2", addresses = emptyList()))
+        repos.parties.saveParty(testParty(id = "party-2", addresses = emptyList()).copy(creditLimit = null))
+        assertFailsWith<PermissionDeniedException>("a new party with a credit limit") { repos.parties.saveParty(testParty(id = "party-3", addresses = emptyList())) }
 
         Access.current = null
         repos.vouchers.saveDraft(testVoucher(id = "v-6", lines = listOf(itemLine.copy(id = "v-6-l", rate = Money.of(1))), charges = emptyList()))
@@ -190,6 +191,41 @@ class RoomAccessTest {
         assertEquals(changed.map { it.salePrice }, changed.map { repos.catalog.findItem(it.id)!!.salePrice })
         assertEquals(2, repos.audit.observeRecent("firm-1", 100).first().count { it.action == "item.bulk_updated" })
         assertEquals(listOf("item-3"), repos.catalog.observeItemPage("firm-1", null, "", 10, categoryId = "category-1").first().map { it.id }, "the others left the category")
+    }
+
+    @Test
+    fun partyRatesAndCreditTermsAreForManagersAndTheLimitCanBlockASale(): Unit = runBlocking {
+        val p = app.openbill.core.domain.model.PartyItemPrice("party-1", "item-1", Money.of(8_800))
+        Access.current = cashier
+        assertFailsWith<PermissionDeniedException> { repos.parties.savePrice("firm-1", p) }
+        val party = repos.parties.findParty("party-1")!!
+        assertFailsWith<PermissionDeniedException>("credit terms are a control") { repos.parties.saveParty(party.copy(creditDays = 30)) }
+        repos.parties.saveParty(party.copy(phone = "9876543210")) // contact details stay open to cashiers
+        Access.current = null
+        repos.parties.savePrice("firm-1", p)
+        repos.parties.savePrice("firm-1", p.copy(price = Money.of(8_900))) // replaces, never duplicates
+        assertEquals(listOf(Money.of(8_900)), repos.parties.observePrices("party-1").first().map { it.price })
+
+        // A cashier may bill the party's special rate, but no other off-list rate.
+        repos.catalog.saveGodown(testGodown())
+        Access.current = cashier
+        val line = testLine(id = "pr-l", itemId = "item-1", rate = Money.of(8_900), godownId = "godown-1")
+        repos.vouchers.saveDraft(testVoucher(id = "pr-1", lines = listOf(line), charges = emptyList()))
+        assertFailsWith<PermissionDeniedException> {
+            repos.vouchers.saveDraft(testVoucher(id = "pr-2", lines = listOf(line.copy(id = "pr-2-l")), charges = emptyList(), partyId = null))
+        }
+        Access.current = null
+
+        val owes = repos.ledger.partyBalance("firm-1", "party-1", LocalDate(9999, 12, 31)).net
+        repos.parties.saveParty(repos.parties.findParty("party-1")!!.copy(creditLimit = owes + Money.of(10_000), creditDays = 15))
+        repos.firms.saveSettings(testSettings(negativeStockAllowed = true).copy(blockOverCreditLimit = true))
+        val err = assertFailsWith<IllegalArgumentException> { repos.vouchers.post("pr-1", POSTED_AT) }
+        assertTrue("credit limit" in err.message.orEmpty(), err.message)
+        repos.firms.saveSettings(testSettings(negativeStockAllowed = true))
+        repos.vouchers.post("pr-1", POSTED_AT) // warning only
+        assertEquals(listOf(Money.of(8_900)), repos.vouchers.lastSaleRates("party-1", "item-1").map { it.second })
+        repos.parties.deletePrice("party-1", "item-1")
+        assertTrue(repos.parties.observePrices("party-1").first().isEmpty())
     }
 
     @Test

@@ -67,6 +67,10 @@ interface PlatformServices {
     suspend fun loadItemImage(itemId: String): LogoImage? = loadFirmImage("item-$itemId", ImageKind.LOGO)
     suspend fun saveItemImage(itemId: String, image: LogoImage?) = saveFirmImage("item-$itemId", ImageKind.LOGO, image)
 
+    /** Android contacts picker: one contact's name and phone (no contacts permission; only the picked row is shared). */
+    val supportsContactPicker: Boolean get() = false
+    suspend fun pickContact(): app.openbill.core.domain.csv.Contact? = null
+
     /** Camera capture (Android); [captureImage] returns a downscaled PNG like [pickImage], or null if cancelled. */
     val supportsCamera: Boolean get() = false
     suspend fun captureImage(maxEdgePx: Int = 600): LogoImage? = null

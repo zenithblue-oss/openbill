@@ -241,6 +241,12 @@ fun MoreScreen(
                     session.settings.requirePaymentReference,
                     { on -> scope.launch { container.repositories.firms.saveSettings(session.settings.copy(requirePaymentReference = on)) } },
                 )
+                if (can(Permission.SETTINGS)) app.openbill.ui.inventory.SwitchRow(
+                    "Block sales over credit limit",
+                    if (session.settings.blockOverCreditLimit) "A sale that takes a customer past its credit limit cannot be posted" else "The invoice shows a warning; posting is still allowed",
+                    session.settings.blockOverCreditLimit,
+                    { on -> scope.launch { container.repositories.firms.saveSettings(session.settings.copy(blockOverCreditLimit = on)) } },
+                )
                 if (can(Permission.SETTINGS)) {
                     val days = session.settings.nearExpiryDays
                     ListItem(

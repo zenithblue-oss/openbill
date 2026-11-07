@@ -3,7 +3,10 @@ package app.openbill.core.data
 import app.openbill.core.database.DatabaseTransactionRunner
 import app.openbill.core.database.OpenBillDatabase
 import app.openbill.core.domain.model.Access
+import app.openbill.core.database.PartyItemPriceEntity
 import app.openbill.core.domain.model.Party
+import app.openbill.core.domain.model.PartyItemPrice
+import app.openbill.core.model.Money
 import app.openbill.core.domain.model.Permission
 import app.openbill.core.domain.model.PartyType
 import app.openbill.core.domain.repository.PartyRepository
@@ -26,8 +29,8 @@ class RoomPartyRepository(
         values.map { party -> party.toDomain(addressesByParty[party.id].orEmpty()) }
     }
 
-    override fun observePartyPage(firmId: String, types: Set<PartyType>, query: String, limit: Int): Flow<List<Party>> =
-        parties.observePage(firmId, types.map { it.name.lowercase() }, query.trim(), limit)
+    override fun observePartyPage(firmId: String, types: Set<PartyType>, query: String, limit: Int, category: String?): Flow<List<Party>> =
+        parties.observePage(firmId, types.map { it.name.lowercase() }, query.trim(), limit, category)
             .map { values -> values.map { it.toDomain(emptyList()) } }
 
     override fun observeParty(id: String): Flow<Party?> = combine(
@@ -44,7 +47,16 @@ class RoomPartyRepository(
         Access.require(Permission.EDIT_PARTIES)
         transactions.write {
             val existing = parties.findById(party.id)
-            database.audit(party.firmId, "party", party.id, if (existing == null) "party.created" else "party.updated")
+            // Credit terms are a control, not contact details: only roles that manage masters set them.
+            val creditChanged = party.creditLimit?.paise != existing?.creditLimit || party.creditDays != existing?.creditDays
+            if (creditChanged) Access.require(Permission.MANAGE_MASTERS)
+            database.audit(
+                party.firmId, "party", party.id, if (existing == null) "party.created" else "party.updated",
+                if (creditChanged && existing != null) AuditDetails.json(
+                    "creditLimit" to party.creditLimit?.paise, "oldCreditLimit" to existing.creditLimit,
+                    "creditDays" to party.creditDays, "oldCreditDays" to existing.creditDays,
+                ) else null,
+            )
             val addressEntities = parties.addressesFor(party.id).associateBy { it.id }
             val entity = party.toEntity(existing)
             if (existing == null) {
@@ -76,6 +88,47 @@ class RoomPartyRepository(
                 updatedAt = at.toEpochMillis(),
             )
             firmId?.let { database.audit(it, "party", id, "party.deleted", at = at) }
+        }
+    }
+
+    override fun observeCategories(firmId: String): Flow<List<String>> = parties.observeCategories(firmId)
+
+    override fun observePrices(partyId: String): Flow<List<PartyItemPrice>> =
+        parties.observePrices(partyId).map { rows -> rows.map { PartyItemPrice(it.partyId, it.itemId, Money.of(it.price)) } }
+
+    override suspend fun findPrice(partyId: String, itemId: String): PartyItemPrice? =
+        parties.findPrice(partyId, itemId)?.let { PartyItemPrice(it.partyId, it.itemId, Money.of(it.price)) }
+
+    override suspend fun savePrice(firmId: String, price: PartyItemPrice) {
+        Access.require(Permission.MANAGE_MASTERS)
+        transactions.write {
+            val party = parties.findById(price.partyId)
+            require(party != null && party.firmId == firmId) { "Unknown party" }
+            val item = database.itemDao().findById(price.itemId)
+            require(item != null && item.firmId == firmId) { "Unknown item" }
+            val existing = parties.findPrice(price.partyId, price.itemId)
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            parties.upsertPrice(
+                PartyItemPriceEntity(
+                    id = existing?.id ?: app.openbill.core.model.Ulid.create(now).toString(),
+                    firmId = firmId, partyId = price.partyId, itemId = price.itemId, price = price.price.paise,
+                    createdAt = existing?.createdAt ?: now, updatedAt = now,
+                ),
+            )
+            database.audit(
+                firmId, "party", price.partyId, "party.price_set",
+                AuditDetails.json("itemId" to price.itemId, "price" to price.price.paise, "oldPrice" to existing?.price),
+            )
+        }
+    }
+
+    override suspend fun deletePrice(partyId: String, itemId: String) {
+        Access.require(Permission.MANAGE_MASTERS)
+        transactions.write {
+            val party = parties.findById(partyId) ?: return@write
+            if (parties.deletePrice(partyId, itemId) > 0) {
+                database.audit(party.firmId, "party", partyId, "party.price_removed", AuditDetails.json("itemId" to itemId))
+            }
         }
     }
 

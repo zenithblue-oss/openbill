@@ -24,4 +24,22 @@ class PartyAgeingTest {
             assertEquals(PartyAgeing.of(opening, moves, asOf), PartyAgeing.fromSums(opening, PartyAgeing.sums(moves, asOf)), "case $case")
         }
     }
+
+    @Test
+    fun overdueIsTheOpenReceivablePastTheCreditDays() {
+        val asOf = LocalDate(2026, 3, 31)
+        fun sale(day: LocalDate, rupees: Long) = PartyMovement("p", "v$day", VoucherType.SALE, null, day, Money.of(rupees * 100))
+        val moves = listOf(
+            sale(LocalDate(2026, 1, 10), 1000), // 80 days old
+            sale(LocalDate(2026, 3, 1), 500), // 30 days old
+            sale(LocalDate(2026, 3, 25), 200), // 6 days old
+            sale(LocalDate(2026, 3, 28), -600), // payment settles the oldest first
+        )
+        // 30 days of credit: 400 left of the January sale is overdue; March's 500 is exactly 30 days, not yet.
+        assertEquals(Money.of(40_000), PartyAgeing.overdue(Money.ZERO, moves, asOf, 30))
+        assertEquals(Money.of(90_000), PartyAgeing.overdue(Money.ZERO, moves, asOf, 7))
+        assertEquals(Money.of(110_000), PartyAgeing.overdue(Money.ZERO, moves, asOf, 0))
+        assertEquals(Money.of(15_000), PartyAgeing.overdue(Money.of(15_000), emptyList(), asOf, 30), "the opening balance counts as overdue")
+        assertEquals(Money.ZERO, PartyAgeing.overdue(Money.ZERO, listOf(sale(asOf, -100)), asOf, 0), "an advance is never overdue")
+    }
 }

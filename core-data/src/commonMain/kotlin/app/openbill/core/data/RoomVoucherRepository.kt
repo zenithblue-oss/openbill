@@ -57,6 +57,9 @@ class RoomVoucherRepository(
     private val ledger: RoomLedgerRepository = RoomLedgerRepository(database, transactions),
 ) : VoucherRepository {
     private val vouchers get() = database.voucherDao()
+
+    override suspend fun lastSaleRates(partyId: String, itemId: String, limit: Int): List<Pair<LocalDate, Money>> =
+        vouchers.lastSaleRates(partyId, itemId, limit).map { LocalDate.parse(it.date) to Money.of(it.rate) }
     private val sequences get() = database.voucherNumberSequenceDao()
     private val audits get() = database.auditDao()
     private val settings get() = database.firmSettingsDao()
@@ -175,7 +178,8 @@ class RoomVoucherRepository(
 
     /**
      * Without [Permission.MANAGE_MASTERS] (cashiers), sales-side lines of a stocked item keep one of
-     * its own prices and carry no line discount, so a price can only be changed in the item.
+     * its own prices (or the party's special rate) and carry no line discount, so a price can only
+     * be changed in the item or the party's rates.
      * On a foreign-currency invoice the entered rate must be a list price converted at the
      * invoice's exchange rate (as the editor fills it in), so conversion is not a price change.
      * The exchange rate itself is a price too: a cashier keeps the currency and rate already on
@@ -191,7 +195,9 @@ class RoomVoucherRepository(
         }
         for (line in voucher.lines) {
             val item = line.itemId?.let { items.findById(it) } ?: continue
-            val prices = listOfNotNull(item.salePrice, item.wholesalePrice).filter { it != 0L }
+            // The party's own special rate for the item counts as a list price too.
+            val partyPrice = voucher.partyId?.let { database.partyDao().findPrice(it, item.id)?.price }
+            val prices = listOfNotNull(item.salePrice, item.wholesalePrice, partyPrice).filter { it != 0L }
             if (prices.isEmpty()) continue
             val listed = if (fx != null && line.foreignRate != null) {
                 // Same rounding as the editor's InvoiceMath.fromInr.
@@ -247,11 +253,17 @@ class RoomVoucherRepository(
             require(order?.shortClosedAt == null) { "Order ${order?.number.orEmpty()} was closed; what it still had pending is no longer billed from it".replace("  ", " ") }
         }
         val firmSettings = settingsFor(entity.firmId)
+        val type = decodeEnum<VoucherType>(entity.type, "voucher type")
+        // Business setting: a sale that takes the customer past its credit limit is refused (the editor warns otherwise).
+        if (type == VoucherType.SALE && firmSettings.blockOverCreditLimit) {
+            val party = entity.partyId?.let { database.partyDao().findById(it) }?.toDomain(emptyList())
+            val over = party?.let { p -> p.overCreditLimit(ledger.partyBalance(entity.firmId, p.id, LocalDate(9999, 12, 31)).net, voucher.total) }
+            require(over == null) { "${party?.name} would be ₹${over?.format()} over the credit limit of ₹${party?.creditLimit?.format()}; collect a payment or raise the limit first" }
+        }
         val movements = derivePosted(voucher, firmSettings, at)
         enforceStock(movements, firmSettings)
         applySerials(voucher, firmSettings, at, reverse = false)
 
-        val type = decodeEnum<VoucherType>(entity.type, "voucher type")
         val number = allocateNumber(entity, type, at)
         val atMillis = at.toEpochMillis()
         val updated = entity.copy(

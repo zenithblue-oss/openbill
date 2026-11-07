@@ -138,8 +138,16 @@ fun InvoiceEditorScreen(
     // Foreign-currency invoice: rates are typed in [currency]; an item's rupee price starts converted.
     val currency = state.currency
     val fxRate = state.fields.takeIf { currency != null }?.let { DocFieldRules.exchange(it)?.second }
-    fun itemForm(item: app.openbill.core.domain.model.Item): LineForm {
-        val form = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] })
+    // Sales to a known party start at its special rate (if any) and show the last rates it was charged.
+    suspend fun itemForm(item: app.openbill.core.domain.model.Item): LineForm {
+        val partyId = state.party?.id?.takeIf { !purchaseSide }
+        val special = partyId?.let { runCatching { container.repositories.parties.findPrice(it, item.id) }.getOrNull()?.price }
+        val last = partyId?.let { runCatching { container.repositories.vouchers.lastSaleRates(it, item.id) }.getOrNull() }.orEmpty()
+        val hint = listOfNotNull(
+            special?.let { "Party rate ${Fmt.inr(it)} (item price ${Fmt.inr(item.salePrice)})" },
+            last.takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "Last charged: ") { (d, r) -> "${Fmt.inr(r)} on ${Fmt.date(d)}" },
+        ).joinToString("\n").ifEmpty { null }
+        val form = LineRules.fromItem(item, unitSymbol[item.unitId], purchaseSide, item.alternateUnitId?.let { unitSymbol[it] }, special, hint)
         return if (fxRate == null) form else LineRules.inCurrency(form, fxRate)
     }
 
@@ -201,6 +209,7 @@ fun InvoiceEditorScreen(
             CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
                 FormColumn(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = pageGutter, vertical = Spacing.sm)) {
                     PartyCard(state.party, state.errors["party"], if (purchaseSide) "Supplier *" else "Bill to *", if (purchaseSide) "Supplier you are buying from" else "Customer this ${doc.noun} is for") { pickParty = true }
+                    if (state.type == VoucherType.SALE) CreditTermsNote(container, session, state.party, model.parsedDate(), state.summary?.grandTotal)
                     if (purchaseSide && state.type != VoucherType.PURCHASE_ORDER) {
                         FormField(
                             if (state.type == VoucherType.PURCHASE) "Supplier bill number" else "Debit note against",
@@ -247,7 +256,13 @@ fun InvoiceEditorScreen(
                         state.lines.forEachIndexed { index, line ->
                             val result = state.summary?.lineResults?.getOrNull(index)
                             val zeroRated = result?.treatment == TaxTreatment.ZERO_RATED
-                            DraftLineCard(line, result?.totalAmount, !zeroRated && date?.let { d -> line.gstRate !in gstSlabsOn(d) } == true, zeroRated, currency) { lineForm = items.firstOrNull { it.id == line.itemId }.let { item -> LineRules.fromDraft(line, item, item?.alternateUnitId?.let { unitSymbol[it] }) } }
+                            DraftLineCard(line, result?.totalAmount, !zeroRated && date?.let { d -> line.gstRate !in gstSlabsOn(d) } == true, zeroRated, currency) {
+                                val item = items.firstOrNull { it.id == line.itemId }
+                                val form = LineRules.fromDraft(line, item, item?.alternateUnitId?.let { unitSymbol[it] })
+                                lineForm = form
+                                // Editing keeps the item's list prices (party rate included) and the rate hint.
+                                if (item != null) scope.launch { itemForm(item).let { f -> if (lineForm?.key == form.key) lineForm = form.copy(listPrices = f.listPrices, rateHint = f.rateHint) } }
+                            }
                         }
                     }
                     state.errors["lines"]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -336,7 +351,9 @@ fun InvoiceEditorScreen(
                     val item = items.firstOrNull { it.id == line.itemId }
                     val master = if (purchaseSide) item?.purchasePrice else item?.salePrice
                     // Not on foreign-currency invoices: their rates are not rupee prices.
+                    // A party's special rate (in the list prices) is not an item price change either.
                     if (item != null && master != null && currency == null && line.rate != master && line.rate > Money.ZERO &&
+                        (purchaseSide || line.rate !in form2.listPrices) &&
                         app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS) &&
                         state.type != VoucherType.CREDIT_NOTE && state.type != VoucherType.DEBIT_NOTE
                     ) {
@@ -489,7 +506,7 @@ fun InvoiceEditorScreen(
             leading = { app.openbill.ui.items.ItemThumbnail(container, it.id, it.name) },
             onSelect = { item ->
                 pickItem = false
-                lineForm = itemForm(item)
+                scope.launch { lineForm = itemForm(item) }
             },
             onDismiss = { pickItem = false },
         )
@@ -676,6 +693,30 @@ private fun TotalsBar(
     }
 }
 
+/** The sale's due date from the party's credit terms, and a warning when it takes the party past its credit limit. */
+@Composable
+private fun CreditTermsNote(container: AppContainer, session: Session, party: app.openbill.core.domain.model.Party?, date: kotlinx.datetime.LocalDate?, total: Money?) {
+    party ?: return
+    val balance by androidx.compose.runtime.produceState<Money?>(null, party.id, party.creditLimit) {
+        value = if (party.creditLimit == null) null
+        else runCatching { container.repositories.ledger.partyBalance(session.firm.id, party.id, kotlinx.datetime.LocalDate(9999, 12, 31)).net }.getOrNull()
+    }
+    val due = date?.let { party.dueDateFor(it) }
+    if (due != null) {
+        Text("Due ${Fmt.date(due)} (${party.creditDays} days credit)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    val over = balance?.let { party.overCreditLimit(it, total ?: Money.ZERO) }
+    if (over != null) {
+        val blocks = session.settings.blockOverCreditLimit
+        Text(
+            "${party.name} owes ${Fmt.inr(balance!!)}; this ${if (total == null) "sale" else "invoice"} goes ${Fmt.inr(over)} over the ${Fmt.inr(party.creditLimit!!)} credit limit." +
+                if (blocks) " Posting is blocked until a payment comes in or the limit is raised." else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
 @Composable
 internal fun LineEditor(
     form: LineForm?,
@@ -733,6 +774,7 @@ internal fun LineEditor(
                     modifier = Modifier.weight(1f),
                 )
             }
+            current.rateHint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             val alt = current.altUnit
             val factor = current.altFactor
             if (alt != null && factor != null) {

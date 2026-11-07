@@ -74,6 +74,16 @@ data class Party(
         require(updatedAt >= createdAt) { "Party updatedAt cannot precede createdAt" }
     }
 
+    /**
+     * How far a new sale of [total] takes this party past its credit limit, given what it owes
+     * now ([balance], positive = owes us); null when there is no limit or it stays within it.
+     */
+    fun overCreditLimit(balance: Money, total: Money): Money? {
+        val limit = creditLimit ?: return null
+        val over = balance + total - limit
+        return over.takeIf { it > Money.ZERO }
+    }
+
     /** Due date of a document dated [date] under this party's credit terms; null without terms. */
     fun dueDateFor(date: kotlinx.datetime.LocalDate): kotlinx.datetime.LocalDate? =
         creditDays?.let { date.plus(kotlinx.datetime.DatePeriod(days = it)) }

@@ -113,9 +113,10 @@ suspend fun Repositories.loadReportData(
     }
     val usesStock = all || kind == ReportKind.ITEM_PROFIT || kind == ReportKind.BATCH_EXPIRY
     val usesBatches = all || kind == ReportKind.BATCH_EXPIRY
-    val usesPartyMovements = all || kind == ReportKind.PARTY_STATEMENT
     val settings = firms.findSettings(firmId)
     val parties = parties.observeParties(firmId).first()
+    // ponytail: outstanding reads every party movement once any party has credit terms (for its overdue column); a per-party SQL query if that gets slow.
+    val usesPartyMovements = all || kind == ReportKind.PARTY_STATEMENT || (kind == ReportKind.OUTSTANDING && parties.any { it.creditDays != null })
     val items = catalog.observeItems(firmId).first()
     val units = catalog.observeUnits(firmId).first()
     val list = if (usesVouchers) periodVouchers(firmId, period, onProgress) else emptyList()

@@ -11,6 +11,9 @@ import kotlinx.datetime.LocalDate
 import kotlin.time.Instant
 
 interface VoucherRepository {
+    /** The last [limit] rupee rates [itemId] was sold to [partyId] at on posted sales, newest first. */
+    suspend fun lastSaleRates(partyId: String, itemId: String, limit: Int = 3): List<Pair<LocalDate, Money>> = emptyList()
+
     fun observeVouchers(
         firmId: String,
         fromDate: LocalDate,

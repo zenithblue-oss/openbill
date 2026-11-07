@@ -239,17 +239,33 @@ object Reports {
         fun pos(m: Money) = if (m > Money.ZERO) m else Money.ZERO
         fun neg(m: Money) = if (m < Money.ZERO) -m else Money.ZERO
         val total = rows.fold(app.openbill.core.domain.service.AgeingBuckets()) { t, (_, a) -> t + a }
+        // Past the party's credit terms; only parties with terms have a figure.
+        val overdue = rows.associate { (p, _) ->
+            p.id to p.creditDays?.let { d -> PartyAgeing.overdue(p.signedOpening, byParty[p.id].orEmpty(), data.to, d) }
+        }
         return ReportTable(
             "Party-wise outstanding",
-            listOf(col("party", "Party"), col("type", "Type"), col("gstin", "GSTIN"), money("receivable", "Receivable"), money("payable", "Payable"), money("d0_30", "0-30 days"), money("d31_60", "31-60 days"), money("d61_90", "61-90 days"), money("d90", "90+ days")),
+            listOf(
+                col("party", "Party"), col("type", "Type"), col("group", "Group"), col("gstin", "GSTIN"), money("receivable", "Receivable"), money("payable", "Payable"),
+                col("terms", "Credit days"), money("overdue", "Overdue"),
+                money("d0_30", "0-30 days"), money("d31_60", "31-60 days"), money("d61_90", "61-90 days"), money("d90", "90+ days"),
+            ),
             rows.map { (p, a) ->
-                listOf(p.name, p.type.name.lowercase(), p.gstin.orEmpty(), pos(a.total).cell(), neg(a.total).cell(), a.upTo30.cell(), a.days31To60.cell(), a.days61To90.cell(), a.over90.cell())
+                listOf(
+                    p.name, p.type.name.lowercase(), p.category.orEmpty(), p.gstin.orEmpty(), pos(a.total).cell(), neg(a.total).cell(),
+                    p.creditDays?.toString().orEmpty(), overdue[p.id]?.cell() ?: "",
+                    a.upTo30.cell(), a.days31To60.cell(), a.days61To90.cell(), a.over90.cell(),
+                )
             },
             listOf(
-                "Total", "", "", rows.fold(Money.ZERO) { t, r -> t + pos(r.second.total) }.cell(), rows.fold(Money.ZERO) { t, r -> t + neg(r.second.total) }.cell(),
+                "Total", "", "", "", rows.fold(Money.ZERO) { t, r -> t + pos(r.second.total) }.cell(), rows.fold(Money.ZERO) { t, r -> t + neg(r.second.total) }.cell(),
+                "", overdue.values.filterNotNull().fold(Money.ZERO) { t, m -> t + m }.cell(),
                 total.upTo30.cell(), total.days31To60.cell(), total.days61To90.cell(), total.over90.cell(),
             ),
-            notes = listOf("As of ${data.to}; ageing buckets are signed (negative = payable or advance)."),
+            notes = listOf(
+                "As of ${data.to}; ageing buckets are signed (negative = payable or advance).",
+                "Overdue is the receivable still open (oldest settled first) from sales older than the party's credit days; blank for parties without terms.",
+            ),
         )
     }
 

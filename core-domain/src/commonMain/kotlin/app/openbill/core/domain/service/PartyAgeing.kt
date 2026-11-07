@@ -74,6 +74,33 @@ object PartyAgeing {
      * amounts first. [opening] (party master opening balance) counts as the oldest item.
      */
     fun of(opening: Money, movements: List<PartyMovement>, asOf: LocalDate): AgeingBuckets {
+        var b = AgeingBuckets()
+        for ((date, amount) in openItems(opening, movements, asOf)) {
+            val m = Money.of(amount)
+            val days = date?.daysUntil(asOf) ?: Int.MAX_VALUE
+            b = when {
+                days <= 30 -> b.copy(upTo30 = b.upTo30 + m)
+                days <= 60 -> b.copy(days31To60 = b.days31To60 + m)
+                days <= 90 -> b.copy(days61To90 = b.days61To90 + m)
+                else -> b.copy(over90 = b.over90 + m)
+            }
+        }
+        return b
+    }
+
+    /**
+     * Receivable still open (FIFO, as [of]) from movements more than [creditDays] old on [asOf]:
+     * what is past the party's credit terms. The opening balance always counts as overdue.
+     */
+    fun overdue(opening: Money, movements: List<PartyMovement>, asOf: LocalDate, creditDays: Int): Money =
+        Money.of(
+            openItems(opening, movements, asOf)
+                .filter { (date, amount) -> amount > 0 && (date == null || date.daysUntil(asOf) > creditDays) }
+                .sumOf { it.second },
+        )
+
+    /** FIFO open items (date, signed paise); null date = the opening balance. */
+    private fun openItems(opening: Money, movements: List<PartyMovement>, asOf: LocalDate): List<Pair<LocalDate?, Long>> {
         val open = ArrayDeque<Pair<LocalDate?, Long>>()
         fun apply(date: LocalDate?, amount: Long) {
             var left = amount
@@ -90,18 +117,7 @@ object PartyAgeing {
         movements.filter { it.date <= asOf && it.net != Money.ZERO }
             .sortedBy { it.date }
             .forEach { apply(it.date, it.net.paise) }
-        var b = AgeingBuckets()
-        for ((date, amount) in open) {
-            val m = Money.of(amount)
-            val days = date?.daysUntil(asOf) ?: Int.MAX_VALUE
-            b = when {
-                days <= 30 -> b.copy(upTo30 = b.upTo30 + m)
-                days <= 60 -> b.copy(days31To60 = b.days31To60 + m)
-                days <= 90 -> b.copy(days61To90 = b.days61To90 + m)
-                else -> b.copy(over90 = b.over90 + m)
-            }
-        }
-        return b
+        return open.toList()
     }
 
     private fun sign(v: Long): Long = if (v < 0) -1L else 1L

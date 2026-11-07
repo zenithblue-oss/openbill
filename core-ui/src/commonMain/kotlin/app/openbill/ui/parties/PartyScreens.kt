@@ -111,9 +111,9 @@ enum class PartyFilter(val label: String) {
     fun matches(party: Party): Boolean = party.type in types
 }
 
-/** One-line summary for list rows and pickers: "98xxxxxx · 29AAGFN… · Karnataka". */
+/** One-line summary for list rows and pickers: "Retail · 98xxxxxx · 29AAGFN… · Karnataka". */
 fun Party.summaryLine(): String =
-    listOfNotNull(phone, gstin, stateCode?.let { IndianState.fromCode(it)?.displayName ?: it })
+    listOfNotNull(category, phone, gstin, stateCode?.let { IndianState.fromCode(it)?.displayName ?: it })
         .joinToString(" · ")
         .ifEmpty { "No contact details" }
 
@@ -129,9 +129,12 @@ fun PartyListScreen(
     val filter = PartyFilter.valueOf(filterName)
     // Paged by name, searched in SQL; grows as the list scrolls.
     val limit = remember(session.firm.id) { mutableIntStateOf(PAGE_SIZE) }
+    var group by rememberSaveable { mutableStateOf<String?>(null) }
+    var pickGroup by remember { mutableStateOf(false) }
+    val groups by remember(session.firm.id) { container.repositories.parties.observeCategories(session.firm.id) }.collectAsState(initial = emptyList())
     val parties by remember(session.firm.id) {
-        snapshotFlow { Triple(query, PartyFilter.valueOf(filterName).types, limit.intValue) }
-            .flatMapLatest { (q, types, n) -> container.repositories.parties.observePartyPage(session.firm.id, types, q, n) }
+        snapshotFlow { listOf(query, filterName, limit.intValue, group) }
+            .flatMapLatest { _ -> container.repositories.parties.observePartyPage(session.firm.id, PartyFilter.valueOf(filterName).types, query, limit.intValue, group) }
     }.collectAsState(initial = null)
     val anyParty by remember(session.firm.id) {
         container.repositories.parties.observePartyPage(session.firm.id, PartyType.entries.toSet(), "", 1)
@@ -178,6 +181,7 @@ fun PartyListScreen(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
                         PartyFilter.entries.forEach { f -> SelectableChip(f.label, filter == f, { filterName = f.name; limit.intValue = PAGE_SIZE }) }
+                        if (groups.isNotEmpty() || group != null) SelectableChip(group ?: "Any group", group != null, { pickGroup = true })
                     }
                 }
                 if (filtered.isEmpty()) {
@@ -213,6 +217,16 @@ fun PartyListScreen(
             }
         }
     }
+    if (pickGroup) {
+        app.openbill.ui.components.PickerSheet(
+            title = "Party group",
+            options = listOf<String?>(null) + groups,
+            label = { it ?: "Any group" },
+            selected = { it == group },
+            onSelect = { group = it; pickGroup = false; limit.intValue = PAGE_SIZE },
+            onDismiss = { pickGroup = false },
+        )
+    }
 }
 
 data class PartyForm(
@@ -233,6 +247,12 @@ data class PartyForm(
     val notes: String = "",
     /** ISO code prefilled on new export/SEZ invoices for this party; blank for none. */
     val defaultCurrency: String = "",
+    /** Credit limit in rupees; blank for none. */
+    val creditLimit: String = "",
+    /** Credit terms in days; blank for none (cash or due on receipt). */
+    val creditDays: String = "",
+    /** Party group for filters and reports; blank for none. */
+    val category: String = "",
     /** Delivery sites; the first is the default ship-to on documents. */
     val shipping: List<ShipForm> = emptyList(),
     val errors: Map<String, String> = emptyMap(),
@@ -266,6 +286,9 @@ object PartyRules {
         Validation.gstinError(form.gstin)?.let { put("gstin", it) }
             ?: Validation.gstinStateMismatch(form.gstin, form.stateCode)?.let { put("gstin", it) }
         Validation.moneyError(form.openingBalance)?.let { put("opening", it) }
+        Validation.moneyError(form.creditLimit)?.let { put("creditLimit", it) }
+        form.creditDays.takeIf { it.isNotBlank() && (it.trim().toIntOrNull() ?: -1) !in 0..365 }?.let { put("creditDays", "Enter 0 to 365 days") }
+        if (form.category.trim().length > 40) put("category", "At most 40 characters")
         form.defaultCurrency.takeIf { it.isNotEmpty() && (!ExportDetails.isCurrencyCode(it) || it == "INR") }
             ?.let { put("currency", "Use a 3-letter code such as USD, or leave blank for rupees") }
         val anyAddress = form.addressLine1.isNotBlank() || form.city.isNotBlank()
@@ -323,6 +346,9 @@ class PartyEditorModel(
                         openingType = p.openingBalanceType,
                         notes = p.notes.orEmpty(),
                         defaultCurrency = p.defaultCurrency.orEmpty(),
+                        creditLimit = p.creditLimit?.format().orEmpty(),
+                        creditDays = p.creditDays?.toString().orEmpty(),
+                        category = p.category.orEmpty(),
                         shipping = p.addresses.filter { it.kind == AddressKind.SHIPPING }.sortedByDescending { it.isDefault }.map {
                             ShipForm(it.id, it.line1, it.city, it.pincode.orEmpty(), it.stateCode, it.gstin.orEmpty())
                         },
@@ -411,7 +437,9 @@ class PartyEditorModel(
                     openingBalanceType = form.openingType,
                     addresses = listOfNotNull(address) + otherAddresses,
                     notes = form.notes.trim().ifBlank { null },
-                    creditLimit = old?.creditLimit,
+                    creditLimit = form.creditLimit.takeIf { it.isNotBlank() }?.let { Parse.money(it) },
+                    creditDays = form.creditDays.trim().toIntOrNull(),
+                    category = form.category.trim().ifBlank { null },
                     defaultCurrency = form.defaultCurrency.ifBlank { null },
                     createdAt = old?.createdAt ?: now,
                     updatedAt = now,
@@ -471,6 +499,7 @@ fun PartyEditScreen(
     }
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost() },
         topBar = {
             AppTopBar(if (partyId == null) "New party" else "Edit party", onBack = requestClose) {
                 if (partyId != null && onLedger != null) {
@@ -490,6 +519,15 @@ fun PartyEditScreen(
         }
         CenteredContent(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
             FormColumn(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = pageGutter, vertical = Spacing.sm)) {
+                if (partyId == null && container.platform.supportsContactPicker) {
+                    androidx.compose.material3.OutlinedButton(onClick = {
+                        scope.launch {
+                            runCatching { container.platform.pickContact() }
+                                .onSuccess { c -> if (c != null) model.edit { it.copy(name = it.name.ifBlank { c.name }, phone = c.phone ?: it.phone) } }
+                                .onFailure { messages?.show("Could not read the contact: ${it.message}") }
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Fill from contacts") }
+                }
                 PartyCoreFields(form, model::edit, onPickState = { pickState = true })
 
                 SectionHeader("Billing address")
@@ -532,6 +570,33 @@ fun PartyEditScreen(
                     SelectableChip("They owe me (Dr)", form.openingType == OpeningBalanceType.DEBIT, { model.edit { it.copy(openingType = OpeningBalanceType.DEBIT) } })
                     SelectableChip("I owe them (Cr)", form.openingType == OpeningBalanceType.CREDIT, { model.edit { it.copy(openingType = OpeningBalanceType.CREDIT) } })
                 }
+                SectionHeader("Credit and group")
+                val canSetCredit = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.MANAGE_MASTERS)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    FormField(
+                        "Credit limit", form.creditLimit, { v -> model.edit { it.copy(creditLimit = v) } }, Modifier.weight(1f),
+                        error = form.errors["creditLimit"], keyboardType = KeyboardType.Decimal, prefix = "₹", readOnly = !canSetCredit,
+                        supporting = if (canSetCredit) "Blank for no limit" else "Set by an owner or manager",
+                    )
+                    FormField(
+                        "Credit days", form.creditDays, { v -> model.edit { it.copy(creditDays = v.filter(Char::isDigit).take(3)) } }, Modifier.weight(1f),
+                        error = form.errors["creditDays"], keyboardType = KeyboardType.Number, suffix = "days", readOnly = !canSetCredit,
+                        supporting = "Sets the invoice due date",
+                    )
+                }
+                val groups by remember { container.repositories.parties.observeCategories(session.firm.id) }.collectAsState(initial = emptyList())
+                FormField(
+                    "Group", form.category, { v -> model.edit { it.copy(category = v.take(40)) } },
+                    error = form.errors["category"], capitalization = KeyboardCapitalization.Words,
+                    supporting = "Optional, such as Retail or Wholesale; filter parties and reports by it",
+                )
+                val suggestions = groups.filter { it != form.category.trim() && (form.category.isBlank() || it.contains(form.category.trim(), true)) }
+                if (suggestions.isNotEmpty()) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        suggestions.take(8).forEach { g -> SelectableChip(g, false, { model.edit { it.copy(category = g) } }) }
+                    }
+                }
+                if (partyId != null && canSetCredit && form.type != PartyType.SUPPLIER) PartyPricesSection(container, session, partyId)
                 SectionHeader("Export")
                 FormField(
                     "Default currency",
@@ -596,6 +661,89 @@ fun PartyEditScreen(
     }
 }
 
+/** A customer's special rates per item: new sale lines for this party start at them (owner/manager only). */
+@Composable
+private fun PartyPricesSection(container: AppContainer, session: Session, partyId: String) {
+    val repos = container.repositories
+    val scope = rememberCoroutineScope()
+    val messages = LocalAppMessages.current
+    val prices by remember(partyId) { repos.parties.observePrices(partyId) }.collectAsState(initial = emptyList())
+    val items by remember { repos.catalog.observeItems(session.firm.id) }.collectAsState(initial = emptyList())
+    val byId = items.associateBy { it.id }
+    var picking by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Pair<app.openbill.core.domain.model.Item, String>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    SectionHeader("Special rates")
+    Text(
+        "New sale lines for this party start at these rates instead of the item price; you can still change a line.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    prices.forEach { p ->
+        val item = byId[p.itemId] ?: return@forEach
+        androidx.compose.material3.ListItem(
+            headlineContent = { Text(item.name) },
+            supportingContent = { Text("Item price ${Fmt.inr(item.salePrice)}") },
+            trailingContent = { Text(Fmt.inr(p.price), style = MaterialTheme.typography.labelLarge) },
+            colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+            modifier = Modifier.clickable(onClickLabel = "Change rate") { error = null; editing = item to p.price.format() },
+        )
+    }
+    androidx.compose.material3.OutlinedButton(onClick = { picking = true }, modifier = Modifier.fillMaxWidth()) { Text("Add special rate") }
+    if (picking) {
+        val taken = prices.map { it.itemId }.toSet()
+        app.openbill.ui.components.PickerSheet(
+            title = "Special rate for",
+            options = items.filter { it.deletedAt == null && it.id !in taken },
+            label = { it.name },
+            supporting = { "Item price ${Fmt.inr(it.salePrice)}" },
+            key = { it.id },
+            searchable = true,
+            emptyText = "Every item already has a special rate, or there are no items yet.",
+            onSelect = { picking = false; error = null; editing = it to it.salePrice.format() },
+            onDismiss = { picking = false },
+        )
+    }
+    editing?.let { (item, text) ->
+        val existing = prices.any { it.itemId == item.id }
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text(item.name) },
+            text = {
+                FormField(
+                    "Rate for this party", text, { editing = item to it }, error = error,
+                    keyboardType = KeyboardType.Decimal, prefix = "₹", supporting = "Before GST. Item price ${Fmt.inr(item.salePrice)}",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val price = Parse.money(text)
+                    error = Validation.moneyError(text, required = true)
+                    if (error == null && price != null) {
+                        scope.launch {
+                            runCatching { repos.parties.savePrice(session.firm.id, app.openbill.core.domain.model.PartyItemPrice(partyId, item.id, price)) }
+                                .onSuccess { editing = null }
+                                .onFailure { error = it.message ?: "Could not save the rate" }
+                        }
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
+                    if (existing) TextButton(onClick = {
+                        scope.launch {
+                            runCatching { repos.parties.deletePrice(partyId, item.id) }
+                                .onSuccess { editing = null; messages?.show("Special rate removed") }
+                                .onFailure { error = it.message ?: "Could not remove the rate" }
+                        }
+                    }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { editing = null }) { Text("Cancel") }
+                }
+            },
+        )
+    }
+}
+
 /** Name, role, phone, email, GSTIN and state: shared by the full form and the quick add. */
 @Composable
 fun PartyCoreFields(
@@ -615,7 +763,10 @@ fun PartyCoreFields(
         { v -> edit { it.copy(gstin = v.uppercase()) } },
         error = form.errors["gstin"],
         capitalization = KeyboardCapitalization.Characters,
-        supporting = "Optional. A valid GSTIN fills in the state.",
+        // Offline: the state code and PAN are read from the GSTIN itself; there is no GST portal lookup.
+        supporting = Validation.normalizedGstin(form.gstin)?.takeIf { Validation.gstinError(form.gstin) == null }?.let { g ->
+            "PAN ${g.substring(2, 12)} · ${Validation.stateFromGstin(g)?.let { Fmt.stateName(it) } ?: "unknown state"} (read from the GSTIN offline; name and address are not looked up)"
+        } ?: "Optional. A valid GSTIN fills in the state and shows the PAN.",
     )
     PickerField(
         "State (place of supply)",

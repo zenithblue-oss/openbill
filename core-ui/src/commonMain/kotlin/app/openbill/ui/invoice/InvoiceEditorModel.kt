@@ -52,11 +52,14 @@ data class LineForm(
     val itcEligible: Boolean = true,
     /** The item's own sale prices; a user who cannot change prices must keep one (also enforced on save). */
     val listPrices: List<Money> = emptyList(),
+    /** Read-only note under the rate: the party's special rate and the last rates charged to it. */
+    val rateHint: String? = null,
 )
 
 object LineRules {
-    fun fromItem(item: Item, unitSymbol: String?, purchase: Boolean = false, altUnitSymbol: String? = null): LineForm {
-        val price = if (purchase) item.purchasePrice else item.salePrice
+    /** [partyPrice]: the party's special rate for the item (sales side), used instead of the item price and still overridable. */
+    fun fromItem(item: Item, unitSymbol: String?, purchase: Boolean = false, altUnitSymbol: String? = null, partyPrice: Money? = null, rateHint: String? = null): LineForm {
+        val price = (if (purchase) null else partyPrice) ?: if (purchase) item.purchasePrice else item.salePrice
         val stock = item.trackInventory && !item.isService
         return LineForm(
             itemId = item.id,
@@ -70,7 +73,8 @@ object LineRules {
             trackSerial = stock && item.trackSerial,
             altUnit = altUnitSymbol?.takeIf { item.alternateUnitFactor != null },
             altFactor = item.alternateUnitFactor.takeIf { altUnitSymbol != null },
-            listPrices = if (purchase) emptyList() else listOfNotNull(item.salePrice, item.wholesalePrice).filter { it.paise != 0L },
+            listPrices = if (purchase) emptyList() else listOfNotNull(item.salePrice, item.wholesalePrice, partyPrice).filter { it.paise != 0L },
+            rateHint = rateHint,
         )
     }
 
@@ -501,6 +505,9 @@ class InvoiceEditorModel(
                 financialYearId = fy.id,
                 type = s.type,
                 date = date,
+                // A sale's due date follows the party's credit terms; otherwise a draft keeps the one it had.
+                dueDate = (if (s.type == VoucherType.SALE) s.party?.dueDateFor(date) else null)
+                    ?: existing?.dueDate?.takeIf { it >= date },
                 referenceVoucherId = s.referenceVoucherId,
                 referenceNumber = s.referenceNumber.trim().ifBlank { null },
                 partyId = s.party?.id,

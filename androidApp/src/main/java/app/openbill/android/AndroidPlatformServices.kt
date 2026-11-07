@@ -60,6 +60,8 @@ class ActivityHooks(
     val requestPermission: suspend (permission: String) -> Boolean,
     /** Camera app preview capture (TakePicturePreview, no FileProvider); null if cancelled. */
     val capturePhoto: suspend () -> android.graphics.Bitmap? = { null },
+    /** Contacts app picker for one phone number; the returned data row is readable without READ_CONTACTS. */
+    val pickPhoneContact: suspend () -> Uri? = { null },
 )
 
 class AndroidPlatformServices(
@@ -170,7 +172,7 @@ class AndroidPlatformServices(
     }
 
     override suspend fun openTextFile(): String? {
-        val uri = requireHooks().openFile(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel")) ?: return null
+        val uri = requireHooks().openFile(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel", "text/x-vcard", "text/vcard")) ?: return null
         return withContext(Dispatchers.IO) {
             context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: error("Could not open the chosen file")
         }
@@ -369,6 +371,24 @@ class AndroidPlatformServices(
         }
         val bytes = ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
         return LogoImage(bytes, scaled.width, scaled.height)
+    }
+
+    override val supportsContactPicker: Boolean get() = true
+
+    override suspend fun pickContact(): app.openbill.core.domain.csv.Contact? {
+        val uri = requireHooks().pickPhoneContact() ?: return null
+        return withContext(Dispatchers.IO) {
+            val cols = arrayOf(
+                android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
+            )
+            context.contentResolver.query(uri, cols, null, null, null)?.use { c ->
+                if (!c.moveToFirst()) return@use null
+                val name = c.getString(0)?.trim().orEmpty()
+                val phone = c.getString(1)?.filter { it.isDigit() || it == '+' }?.ifEmpty { null }
+                if (name.isEmpty() && phone == null) null else app.openbill.core.domain.csv.Contact(name.ifEmpty { phone!! }, phone, null)
+            }
+        }
     }
 
     override val supportsCamera: Boolean

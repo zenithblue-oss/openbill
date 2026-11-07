@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.Flow
 
 data class VoucherStatRow(val status: String, val count: Int, val total: Long)
 
+data class DatedRate(val date: String, val rate: Long)
+
 @Dao
 interface VoucherDao {
     @Insert
@@ -102,6 +104,14 @@ interface VoucherDao {
 
     @Query("UPDATE vouchers SET fulfilment = :fulfilment WHERE id = :id")
     suspend fun setFulfilment(id: String, fulfilment: String?): Int
+
+    /** Rupee rates of [itemId] on the party's posted sales, newest first (the invoice line's price history). */
+    @Query(
+        "SELECT v.date AS date, l.rate AS rate FROM voucher_lines l JOIN vouchers v ON v.id = l.voucherId " +
+            "WHERE v.partyId = :partyId AND l.itemId = :itemId AND v.type = 'sale' AND v.status = 'posted' " +
+            "AND v.deletedAt IS NULL ORDER BY v.date DESC, v.createdAt DESC, l.lineNumber LIMIT :limit",
+    )
+    suspend fun lastSaleRates(partyId: String, itemId: String, limit: Int): List<DatedRate>
 
     /** v17: short-close an open order once; 0 rows when it already was. */
     @Query("UPDATE vouchers SET shortClosedAt = :at, shortCloseNote = :note, updatedAt = :at, revision = revision + 1 WHERE id = :id AND shortClosedAt IS NULL")

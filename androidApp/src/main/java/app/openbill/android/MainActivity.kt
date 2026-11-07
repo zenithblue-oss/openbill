@@ -36,6 +36,18 @@ class MainActivity : FragmentActivity() {
         pendingPhoto?.complete(bitmap)
         pendingPhoto = null
     }
+    private var pendingContact: CompletableDeferred<Uri?>? = null
+    private val pickContact = registerForActivityResult(
+        object : androidx.activity.result.contract.ActivityResultContract<Unit, Uri?>() {
+            override fun createIntent(context: android.content.Context, input: Unit) =
+                android.content.Intent(android.content.Intent.ACTION_PICK).setType(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_TYPE)
+            override fun parseResult(resultCode: Int, intent: android.content.Intent?): Uri? =
+                intent?.data.takeIf { resultCode == RESULT_OK }
+        },
+    ) { uri ->
+        pendingContact?.complete(uri)
+        pendingContact = null
+    }
     private val createPdf = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         pendingCreate?.complete(uri)
         pendingCreate = null
@@ -132,6 +144,12 @@ class MainActivity : FragmentActivity() {
                     val d = CompletableDeferred<android.graphics.Bitmap?>().also { pendingPhoto = it }
                     // No camera app at all: report it rather than hang.
                     runCatching { takePhoto.launch(null) }.onFailure { pendingPhoto = null; d.complete(null); throw IllegalStateException("No camera app found") }
+                    d.await()
+                },
+                pickPhoneContact = {
+                    pendingContact?.complete(null)
+                    val d = CompletableDeferred<Uri?>().also { pendingContact = it }
+                    runCatching { pickContact.launch(Unit) }.onFailure { pendingContact = null; d.complete(null); throw IllegalStateException("No contacts app found") }
                     d.await()
                 },
             ),

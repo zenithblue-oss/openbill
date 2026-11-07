@@ -126,6 +126,7 @@ import app.openbill.ui.nav.LocalSearchFocus
 import app.openbill.ui.parties.summaryLine
 import app.openbill.ui.theme.Spacing
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.datetime.toLocalDateTime
 
@@ -216,6 +217,12 @@ fun PosScreen(
     val unsaved = state.loaded && state.dirty && state.lines.isNotEmpty()
     val cashParty = PosCheckout.isCashSale(state.party)
     val total = state.summary?.grandTotal
+    // The chosen customer's special rates, applied to lines added after choosing them.
+    val partyPrices: Map<String, app.openbill.core.model.Money> by remember(state.party?.id) {
+        val id = state.party?.id
+        if (id == null) kotlinx.coroutines.flow.flowOf(emptyMap<String, app.openbill.core.model.Money>())
+        else container.repositories.parties.observePrices(id).map { l -> l.associate { p -> p.itemId to p.price } }
+    }.collectAsState(initial = emptyMap<String, app.openbill.core.model.Money>())
 
     // New bills start on the walk-in "Cash sale" customer.
     LaunchedEffect(model) {
@@ -270,7 +277,8 @@ fun PosScreen(
         searchError = null
         query = ""
         val alt = item.alternateUnitId?.let { unitSymbol[it] }
-        val form = LineRules.fromItem(item, unitSymbol[item.unitId], false, alt)
+        val special = partyPrices[item.id]
+        val form = LineRules.fromItem(item, unitSymbol[item.unitId], false, alt, special, special?.let { "Party rate ${Fmt.inr(it)} (item price ${Fmt.inr(item.salePrice)})" })
         if (item.trackInventory && !item.isService && (item.trackBatch || item.trackSerial)) {
             lineForm = form
             return
