@@ -104,7 +104,12 @@ suspend fun buildInvoiceDocument(container: AppContainer, session: Session, vouc
             if (fields.isEmpty()) line else line.copy(description = line.description + " (" + fields.joinToString("; ") { "${it.label}: ${it.value}" } + ")")
         },
     )
-    val built = InvoiceDocument.build(printed, firm, session.settings, party, unitsByItem(container, session, voucher.lines))
+    val upi = container.invoiceStyles.style(firm.id).value.options.upiId.trim()
+    val payable = voucher.type in setOf(VoucherType.SALE, VoucherType.PROFORMA) && voucher.status != VoucherStatus.CANCELLED && voucher.currency == null
+    val built = InvoiceDocument.build(printed, firm, session.settings, party, unitsByItem(container, session, voucher.lines)).let { d ->
+        if (!payable || upi.isEmpty() || d.grandTotalPaise <= 0) d
+        else d.copy(paymentLink = app.openbill.ui.pdf.InvoiceLayoutEngine.upiUri(upi, d.seller.name, d.grandTotalPaise, d.number))
+    }
     // A short-closed order prints when and what was closed, and why.
     val doc = voucher.shortClosedAt?.let { at ->
         val closed = Orders.shortClosed(voucher, repos.vouchers.observeConversions(voucher.id).first())
@@ -171,6 +176,30 @@ fun InvoiceDetailScreen(
             runCatching { InvoicePdf.share(container, session.firm.id, buildInvoiceDocument(container, session, v)) }
                 .onSuccess { msg -> msg?.let { messages?.show(it) } }
                 .onFailure { messages?.show("Could not create the PDF: ${it.message}") }
+            busy = false
+        }
+    }
+
+    // SMS or email in the user's own app: amount, balance still due, due date and a UPI link for that balance.
+    fun send(v: Voucher, email: Boolean) {
+        busy = true
+        scope.launch {
+            runCatching {
+                val built = buildInvoiceDocument(container, session, v)
+                val due = outstanding?.takeIf { v.type == VoucherType.SALE && v.status == VoucherStatus.POSTED }
+                val doc = when {
+                    due == null || built.paymentLink == null -> built
+                    due.paise <= 0 -> built.copy(paymentLink = null)
+                    due.paise < built.grandTotalPaise -> built.copy(
+                        paymentLink = app.openbill.ui.pdf.InvoiceLayoutEngine.upiUri(container.invoiceStyles.style(session.firm.id).value.options.upiId.trim(), built.seller.name, due.paise, built.number),
+                    )
+                    else -> built
+                }
+                val balance = due?.takeIf { it.paise != doc.grandTotalPaise }?.let { if (it.paise <= 0) "nil, paid in full. Thank you" else Fmt.inr(it) }
+                val pdf = if (email) doc.fileStem to InvoicePdf.layout(container, session.firm.id, doc) else null
+                container.platform.composeMessage(email, if (email) party?.email else party?.phone, "${doc.title} ${doc.number}", doc.messageText(balance), pdf)
+            }.onSuccess { msg -> msg?.let { messages?.show(it) } }
+                .onFailure { messages?.show("Could not prepare the message: ${it.message}") }
             busy = false
         }
     }
@@ -317,6 +346,16 @@ fun InvoiceDetailScreen(
                     Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                     Text(if (busy) "Preparing PDF…" else "Share PDF")
+                }
+                if (v.status != VoucherStatus.CANCELLED && v.type in setOf(VoucherType.SALE, VoucherType.PROFORMA, VoucherType.QUOTATION, VoucherType.CREDIT_NOTE, VoucherType.SALES_ORDER)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        if (container.platform.supportsSms) OutlinedButton(onClick = { send(v, email = false) }, enabled = !busy, modifier = Modifier.weight(1f)) {
+                            Text(if (party?.phone.isNullOrBlank()) "Send by SMS" else "SMS ${party?.phone}", maxLines = 1)
+                        }
+                        OutlinedButton(onClick = { send(v, email = true) }, enabled = !busy, modifier = Modifier.weight(1f)) {
+                            Text("Email with PDF", maxLines = 1)
+                        }
+                    }
                 }
                 val canCreate = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CREATE_VOUCHERS)
                 val canCancel = app.openbill.core.domain.model.Access.can(app.openbill.core.domain.model.Permission.CANCEL_DELETE)

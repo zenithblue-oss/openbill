@@ -62,6 +62,8 @@ data class InvoiceDocument(
     val details: List<Pair<String, String>> = emptyList(),
     /** Heading over the party block when it is not the buyer, e.g. "SUPPLIER" on a purchase order. */
     val partyLabel: String? = null,
+    /** `upi://pay` link for the total (the business's UPI ID); null when none is set or nothing is payable. */
+    val paymentLink: String? = null,
 ) {
     /** Plain-text summary sent along with a shared PDF; WhatsApp and SMS pick it up from the share sheet. */
     fun shareSummary(): String = buildString {
@@ -69,7 +71,22 @@ data class InvoiceDocument(
         buyer?.let { append("\nTo: ${it.name}") }
         append("\nAmount: $grandTotal")
         dueDate?.let { append("\nDue by: $it") }
+        paymentLink?.let { append("\nPay by UPI: $it") }
         append("\nFrom: ${seller.name}")
+    }
+
+    /**
+     * SMS or email body: greeting, number, date, amount, balance still due (when known) and due
+     * date, the UPI payment link and the seller. No other links; nothing leaves without the user.
+     */
+    fun messageText(balanceDue: String? = null): String = buildString {
+        append("Dear ${buyer?.name ?: "customer"},\n\n")
+        append("$title $number dated $date for $grandTotal from ${seller.name}.")
+        if (balanceDue != null) append("\nBalance due: $balanceDue")
+        dueDate?.let { append("\nPlease pay by $it.") }
+        paymentLink?.let { append("\n\nPay by UPI: $it") }
+        append("\n\nThank you!\n${seller.name}")
+        seller.phone?.let { append("\n$it") }
     }
 
     data class PartyBlock(

@@ -99,6 +99,16 @@ interface PlatformServices {
      */
     suspend fun shareFiles(subject: String, files: List<Pair<String, ByteArray>>, email: Boolean = false): String? = "Sharing files is not available here"
 
+    /**
+     * Opens the user's own SMS app ([email] false) or mail app with [to] and [text] filled in;
+     * for email, [pdf] (file name and layout) is attached on Android, or saved next to the mail
+     * draft on desktop. The user reviews and sends; the app sends nothing. Returns a message.
+     */
+    suspend fun composeMessage(email: Boolean, to: String?, subject: String, text: String, pdf: Pair<String, InvoiceLayout>? = null): String? = shareText(subject, text)
+
+    /** Whether [composeMessage] can open an SMS app (Android). */
+    val supportsSms: Boolean get() = false
+
     /** Lets the user choose a CSV or text file and returns its UTF-8 text; null if cancelled or unsupported. */
     suspend fun openTextFile(): String? = null
 

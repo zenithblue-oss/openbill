@@ -25,6 +25,18 @@ class InboxTest {
     }
 
     @Test
+    fun invoiceMessageCarriesAmountDueDateAndPaymentLink() {
+        val doc = app.openbill.ui.pdf.SampleInvoice.document()
+        val link = app.openbill.ui.pdf.InvoiceLayoutEngine.upiUri("shop@upi", doc.seller.name, doc.grandTotalPaise, doc.number)
+        val text = doc.copy(dueDate = "30-11-2026", paymentLink = link).messageText("₹1,000.00")
+        assertTrue(doc.number in text && doc.grandTotal in text, text)
+        assertTrue("Balance due: ₹1,000.00" in text && "Please pay by 30-11-2026." in text, text)
+        assertTrue("Pay by UPI: upi://pay?pa=shop%40upi" in text || "Pay by UPI: upi://pay?pa=shop@upi" in text, text)
+        assertTrue("Pay by UPI" !in doc.messageText(), "no link without a UPI ID")
+        assertTrue("Pay by UPI: $link" in doc.copy(paymentLink = link).shareSummary())
+    }
+
+    @Test
     fun setupChecklist() {
         val at = Instant.fromEpochMilliseconds(0)
         val bare = app.openbill.core.domain.model.Firm(id = "f", name = "F", stateCode = "27", addressLine1 = "1 Road", city = "Pune", createdAt = at, updatedAt = at)

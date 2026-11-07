@@ -207,18 +207,60 @@ class AndroidPlatformServices(
             if (email) putExtra(Intent.EXTRA_TEXT, "$subject: ${files.joinToString { it.first }}")
             // Grants every file to the receiving app, not only the first.
             clipData = android.content.ClipData.newRawUri(subject, uris[0]).apply { uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) } }
-            if (email) selector = mailto
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
+        val target = if (email) mailOnly(send, "Email $subject") ?: return "No email app is installed. Use Share or Download ZIP instead."
+        else Intent.createChooser(send, "Share $subject")
         return try {
-            context.startActivity(
-                Intent.createChooser(send, if (email) "Email $subject" else "Share $subject")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
-            )
+            context.startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
             null
         } catch (_: ActivityNotFoundException) {
             if (email) "No email app is installed. Use Share or Download ZIP instead." else "No app can receive these files"
         }
+    }
+
+    override val supportsSms: Boolean get() = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")).resolveActivity(context.packageManager) != null
+
+    override suspend fun composeMessage(email: Boolean, to: String?, subject: String, text: String, pdf: Pair<String, InvoiceLayout>?): String? {
+        val recipient = to?.trim().orEmpty()
+        val intent = if (!email) {
+            Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(recipient.filter { it.isDigit() || it == '+' }))).putExtra("sms_body", text)
+        } else {
+            val mailto = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+            if (mailto.resolveActivity(context.packageManager) == null) return "No email app is installed. Use Share PDF instead."
+            val uri = pdf?.let { (stem, layout) -> uriFor(writeCachedPdf(stem, layout)) }
+            Intent(Intent.ACTION_SEND).apply {
+                type = if (uri != null) "application/pdf" else "text/plain"
+                if (recipient.isNotEmpty()) putExtra(Intent.EXTRA_EMAIL, arrayOf(recipient))
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                putExtra(Intent.EXTRA_TEXT, text)
+                uri?.let {
+                    putExtra(Intent.EXTRA_STREAM, it)
+                    clipData = android.content.ClipData.newRawUri(subject, it)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }.let { mailOnly(it, "Email $subject") ?: return "No email app is installed. Use Share PDF instead." }
+        }
+        return try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            null
+        } catch (_: ActivityNotFoundException) {
+            if (email) "No email app is installed. Use Share PDF instead." else "No SMS app found. Use Share PDF instead."
+        }
+    }
+
+    /**
+     * [send] limited to mail apps. Some vendor choosers (Lenovo ZUI) ignore a mailto selector and
+     * show "No apps", so the mail apps are resolved here: one opens directly, several get a chooser.
+     */
+    @Suppress("DEPRECATION")
+    private fun mailOnly(send: Intent, title: String): Intent? {
+        val pkgs = context.packageManager.queryIntentActivities(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")), 0)
+            .map { it.activityInfo.packageName }.distinct()
+        if (pkgs.isEmpty()) return null
+        val each = pkgs.map { Intent(send).setPackage(it) }
+        return if (each.size == 1) each[0]
+        else Intent.createChooser(each[0], title).putExtra(Intent.EXTRA_INITIAL_INTENTS, each.drop(1).toTypedArray()).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
     private fun shareMime(name: String) = when (name.substringAfterLast('.').lowercase()) {

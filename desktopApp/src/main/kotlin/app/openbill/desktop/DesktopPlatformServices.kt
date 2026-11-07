@@ -256,6 +256,29 @@ internal class DesktopPlatformServices(private val dataDir: File) : PlatformServ
         if (mailed) "Mail draft opened; attach the file(s) from ${dir.absolutePath}" else "No mail app found. The file(s) are in ${dir.absolutePath}"
     }
 
+    /**
+     * Email: the PDF is saved where the user chooses (cancel stops), then a mail draft opens with
+     * [to], subject and body (mailto cannot attach, so the folder is revealed for attaching).
+     * SMS: desktop has none, so the text goes to the clipboard.
+     */
+    override suspend fun composeMessage(email: Boolean, to: String?, subject: String, text: String, pdf: Pair<String, InvoiceLayout>?): String? {
+        if (!email) return shareText(subject, text)
+        val saved = pdf?.let { (stem, layout) -> pdfAction(stem, stem, layout, PdfAction.SAVE) ?: return null }
+        fun enc(s: String) = java.net.URLEncoder.encode(s, Charsets.UTF_8).replace("+", "%20")
+        val mailed = withContext(Dispatchers.IO) {
+            runCatching {
+                val uri = java.net.URI("mailto:${enc(to?.trim().orEmpty())}?subject=${enc(subject)}&body=${enc(text)}")
+                if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.MAIL)) Desktop.getDesktop().mail(uri)
+                else ProcessBuilder("xdg-open", uri.toString()).start()
+            }.isSuccess
+        }
+        return when {
+            !mailed -> shareText(subject, text).let { "No mail app found; the message was copied to the clipboard" + (saved?.let { s -> ". $s" } ?: "") }
+            saved != null -> "Mail draft opened; attach the PDF ($saved)"
+            else -> "Mail draft opened"
+        }
+    }
+
     /** Desktop has no share sheet: the text goes to the clipboard for pasting into WhatsApp Web or mail. */
     override suspend fun shareText(subject: String, text: String): String? {
         java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(text), null)
