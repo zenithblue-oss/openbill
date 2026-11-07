@@ -256,6 +256,33 @@ class CliTest {
     }
 
     @Test
+    fun ordersConvertInPartAndShortClose() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        val so = ok("-q", "order", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:10", "--line", "SVC:2@1000.00", "--post").out.trim()
+        assertEquals(5, run("order", "post", so).code)
+        // Part delivery: 4 bolts now, no service yet.
+        val inv = ok("-q", "order", "convert", so, "--qty", "1=4", "--qty", "2=0", "--date", "2026-10-05", "--post").out.trim()
+        assertTrue(ok("invoice", "show", inv).out.contains("Steel Bolt"))
+        val shown = ok("--json", "order", "show", so).out
+        assertTrue("\"orderStatus\": \"partial\"" in shown && "\"delivered\": \"4\"" in shown && "\"pending\": \"6\"" in shown, shown)
+        assertEquals(3, run("order", "convert", so, "--qty", "1=7").code) // only 6 pending
+        // The rest goes to a draft; a second convert finds nothing left (the draft reserves it).
+        ok("order", "convert", so, "--date", "2026-10-06")
+        assertEquals(5, run("order", "convert", so).code)
+        assertEquals(2, run("order", "short-close", so).code) // needs --yes
+        ok("--yes", "order", "short-close", so, "--note", "Customer cancelled the rest")
+        assertTrue(ok("--json", "order", "show", so).out.contains("\"orderStatus\": \"closed\""))
+        assertEquals(5, run("--yes", "order", "short-close", so).code)
+        // Purchase order to a bill that quotes it.
+        val po = ok("-q", "order", "create", "--type", "purchase", "--party", "Bharat Supplies", "--date", "2026-10-01", "--line", "BOLT:5@8.00", "--post").out.trim()
+        val bill = ok("--json", "order", "convert", po, "--date", "2026-10-02").out
+        assertTrue("\"type\": \"purchase\"" in bill && "\"PO no.\": \"$po\"" in bill, bill)
+        assertTrue(ok("order", "list", "--type", "purchase").out.contains(po))
+        ok("--yes", "order", "cancel", po, "--reason", "Supplier out of stock")
+    }
+
+    @Test
     fun exitCodes() {
         seed()
         assertEquals(2, run("party", "add").code) // missing --name

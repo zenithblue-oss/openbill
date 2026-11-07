@@ -72,18 +72,23 @@ suspend fun Data.invoices(firmId: String, from: LocalDate = ALL_FROM, to: LocalD
         .sortedWith(compareBy({ it.date }, { it.number ?: "￿" }, { it.id }))
 
 /** Sale invoice headers (no lines), oldest first, matched in SQL like the app's list. */
-suspend fun Data.invoiceHeaders(firmId: String, status: VoucherStatus? = null, query: String = "", limit: Int = Int.MAX_VALUE): List<Voucher> =
-    repos.vouchers.observeVoucherPage(firmId, setOf(VoucherType.SALE), status, query, limit).first()
+suspend fun Data.invoiceHeaders(
+    firmId: String, status: VoucherStatus? = null, query: String = "", limit: Int = Int.MAX_VALUE, types: Set<VoucherType> = setOf(VoucherType.SALE),
+): List<Voucher> =
+    repos.vouchers.observeVoucherPage(firmId, types, status, query, limit).first()
         .sortedWith(compareBy({ it.date }, { it.number ?: "￿" }, { it.id }))
 
 /** By id or invoice number. */
-suspend fun Data.findInvoice(firmId: String, ref: String): Voucher =
-    repos.vouchers.findVoucher(ref)?.takeIf { it.firmId == firmId && it.type == VoucherType.SALE }
-        ?: invoiceHeaders(firmId, query = ref).filter { it.number.equals(ref, true) }.let {
+suspend fun Data.findInvoice(firmId: String, ref: String): Voucher = findDocument(firmId, ref, setOf(VoucherType.SALE), "invoice")
+
+/** A document of [types] by id or number. */
+suspend fun Data.findDocument(firmId: String, ref: String, types: Set<VoucherType>, noun: String): Voucher =
+    repos.vouchers.findVoucher(ref)?.takeIf { it.firmId == firmId && it.type in types }
+        ?: invoiceHeaders(firmId, query = ref, types = types).filter { it.number.equals(ref, true) }.let {
             when (it.size) {
-                0 -> fail(Exit.NOT_FOUND, "No invoice '$ref'")
+                0 -> fail(Exit.NOT_FOUND, "No $noun '$ref'")
                 1 -> repos.vouchers.findVoucher(it.single().id)!!
-                else -> fail(Exit.USAGE, "Invoice number '$ref' is ambiguous; use its id")
+                else -> fail(Exit.USAGE, "${noun.replaceFirstChar(Char::uppercase)} number '$ref' is ambiguous; use its id")
             }
         }
 
