@@ -29,5 +29,24 @@ value class Money private constructor(val paise: Long) : Comparable<Money> {
 
     fun format(): String = formatScaledDecimal(paise, 2, trimTrailingZeros = false)
 
+    /** Indian digit grouping with a rupee sign, e.g. "₹12,34,567.89"; the app's standard display form. */
+    fun formatInr(symbol: Boolean = true): String {
+        val negative = paise < 0
+        val abs = if (negative) -paise else paise
+        var rest = (abs / PAISE_PER_RUPEE).toString()
+        val groups = ArrayDeque<String>()
+        if (rest.length > 3) {
+            groups.addFirst(rest.takeLast(3))
+            rest = rest.dropLast(3)
+            while (rest.length > 2) {
+                groups.addFirst(rest.takeLast(2))
+                rest = rest.dropLast(2)
+            }
+        }
+        groups.addFirst(rest)
+        val body = groups.joinToString(",") + "." + (abs % PAISE_PER_RUPEE).toString().padStart(2, '0')
+        return (if (negative) "-" else "") + (if (symbol) "₹" else "") + body
+    }
+
     override fun toString(): String = format()
 }

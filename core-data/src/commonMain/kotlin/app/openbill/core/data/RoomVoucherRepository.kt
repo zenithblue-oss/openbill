@@ -258,7 +258,7 @@ class RoomVoucherRepository(
         if (type == VoucherType.SALE && firmSettings.blockOverCreditLimit) {
             val party = entity.partyId?.let { database.partyDao().findById(it) }?.toDomain(emptyList())
             val over = party?.let { p -> p.overCreditLimit(ledger.partyBalance(entity.firmId, p.id, LocalDate(9999, 12, 31)).net, voucher.total) }
-            require(over == null) { "${party?.name} would be ₹${over?.format()} over the credit limit of ₹${party?.creditLimit?.format()}; collect a payment or raise the limit first" }
+            require(over == null) { "${party?.name} would be ${over?.formatInr()} over the credit limit of ${party?.creditLimit?.formatInr()}; collect a payment or raise the limit first" }
         }
         val movements = derivePosted(voucher, firmSettings, at)
         enforceStock(movements, firmSettings)

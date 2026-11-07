@@ -51,7 +51,7 @@ object PosCheckout {
         val tendered = tenders.fold(Money.ZERO) { s, t -> s + t.amount }
         if (tendered < total) {
             require(creditAllowed) {
-                "Paid ${(tendered).format()} of ${total.format()}. Collect the rest, or choose the customer to put ${(total - tendered).format()} on their account"
+                "Paid ${tendered.formatInr()} of ${total.formatInr()}. Collect the rest, or choose the customer to put ${(total - tendered).formatInr()} on their account"
             }
         }
         val change = if (tendered > total) tendered - total else Money.ZERO

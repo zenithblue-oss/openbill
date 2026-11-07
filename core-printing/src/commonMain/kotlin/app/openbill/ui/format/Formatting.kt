@@ -9,16 +9,7 @@ import kotlinx.datetime.LocalDate
 /** Formatting and parsing helpers shared by every screen and by the PDF renderer. */
 object Fmt {
     /** Indian digit grouping (12,34,567.89) with a rupee sign. */
-    fun inr(money: Money, symbol: Boolean = true): String {
-        val negative = money.paise < 0
-        val abs = if (negative) -money.paise else money.paise
-        val rupees = abs / 100
-        val paise = abs % 100
-        val grouped = groupIndian(rupees.toString())
-        val body = grouped + "." + paise.toString().padStart(2, '0')
-        val prefix = if (symbol) "₹" else ""
-        return (if (negative) "-" else "") + prefix + body
-    }
+    fun inr(money: Money, symbol: Boolean = true): String = money.formatInr(symbol)
 
     /**
      * [money] in [currency]: rupees as [inr]; a foreign currency as its code with Western

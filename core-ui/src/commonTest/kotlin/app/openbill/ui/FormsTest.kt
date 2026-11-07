@@ -127,6 +127,9 @@ class FormsTest {
     fun indianFormattingAndWords() {
         assertEquals("₹1,23,45,678.90", Fmt.inr(Money.parse("12345678.90")))
         assertEquals("₹999.00", Fmt.inr(Money.parse("999")))
+        assertEquals("₹4,649.00", Money.parse("4649").formatInr())
+        assertEquals("-₹1,00,000.50", Money.parse("-100000.50").formatInr())
+        assertEquals("12,345.00", Fmt.inr(Money.parse("12345"), symbol = false))
         assertEquals("0.25", Fmt.percent(Rate.ofBasisPoints(25)))
         assertEquals("18", Fmt.percent(Rate.ofPercent(18)))
         assertEquals("22-10-2026", Fmt.date(LocalDate(2026, 10, 22)))

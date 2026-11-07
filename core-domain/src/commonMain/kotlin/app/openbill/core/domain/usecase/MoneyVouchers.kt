@@ -164,7 +164,7 @@ class MoneyVouchers(
             require(d != Money.ZERO) { "The amount equals the outstanding; there is no difference to settle" }
             val size = if (d < Money.ZERO) -d else d
             require(size * 100 <= outstanding * EXCHANGE_CAP_PERCENT) {
-                "The difference of ${size.format()} is more than $EXCHANGE_CAP_PERCENT% of the outstanding ${outstanding.format()}; check the amount, or record a part payment"
+                "The difference of ${size.formatInr()} is more than $EXCHANGE_CAP_PERCENT% of the outstanding ${outstanding.formatInr()}; check the amount, or record a part payment"
             }
             return d
         }
