@@ -43,7 +43,7 @@ class CaPackCmd(private val cli: CliState) : CliktCommand("ca-pack") {
 
     override fun run() = cli.withData(write = false) {
         val period = reportPeriod(from, to)
-        val files = repos.caPack(firm().id, period, cli.progress)
+        val files = repos.caPack(firm().id, period, cli.progress, now().toLocalDateTime(TimeZone.currentSystemDefault()).date)
         cli.progressDone()
         val target = out.absoluteFile
         target.parentFile.mkdirs()
@@ -63,7 +63,7 @@ fun auditCommands(cli: CliState) = Group("audit", "Append-only audit trail").sub
 
 /** Loads the snapshot for `--from/--to` (default: the current financial year). */
 private suspend fun Data.reportData(from: String?, to: String?, kind: ReportKind? = null): ReportData =
-    repos.loadReportData(firm().id, reportPeriod(from, to), kind, cli.progress).also { cli.progressDone() }
+    repos.loadReportData(firm().id, reportPeriod(from, to), kind, now().toLocalDateTime(TimeZone.currentSystemDefault()).date, cli.progress).also { cli.progressDone() }
 
 /** Writes [text] to [out] (reporting the path) or stdout. */
 private fun CliState.emit(text: String, out: File?) = emitStreamed(out) { it.append(text) }

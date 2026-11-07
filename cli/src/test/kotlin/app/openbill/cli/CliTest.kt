@@ -161,6 +161,17 @@ class CliTest {
         val items = File(root, "items.csv").apply { writeText("name,sku,unit,gst_rate,sale_price\nNut,NUT,pcs,18,2.00\nWasher,WSH,box,5,1.00\n") }
         assertEquals(3, run("import", "items", items.path).code) // unknown unit 'box'
         assertEquals(2, run("-q", "item", "list").out.lines().count { it.isNotBlank() })
+
+        // Opening stock columns, shared with the app's import: one posted "Opening stock" adjustment.
+        items.writeText("name,sku,unit,gst_rate,sale_price,opening_qty,opening_cost,godown,batch,expiry\nNut,NUT,pcs,18,2.00,40,1.50,Main,B1,2027-01-31\nWasher,WSH,pcs,5,1.00,7,,,,\nPin,PIN,pcs,5,1.00,,,,,\n")
+        assertEquals(0, run("import", "items", items.path, "--dry-run").code)
+        val imported = run("import", "items", items.path)
+        assertEquals(0, imported.code, imported.err)
+        assertTrue("2 with opening stock" in imported.out, imported.out)
+        assertTrue(run("stock", "ledger", "NUT").out.contains("40"))
+        assertTrue(run("stock", "ledger", "WSH").out.contains("7"))
+        items.writeText("name,sku,unit,gst_rate,sale_price,opening_qty,godown\nBolt2,B2,pcs,18,2.00,5,Nowhere\n")
+        assertEquals(3, run("import", "items", items.path).code) // unknown godown
     }
 
     @Test

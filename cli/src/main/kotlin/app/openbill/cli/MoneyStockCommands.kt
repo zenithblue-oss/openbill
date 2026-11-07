@@ -38,7 +38,7 @@ fun stockCommands(cli: CliState) = Group("stock", "Stock levels, movements, adju
     ReportNamed(cli, ReportKind.STOCK_SUMMARY, "summary"), StockLedger(cli), StockChange(cli, transfer = false), StockChange(cli, transfer = true),
 )
 
-private suspend fun Data.dateAndYear(f: Firm, text: String?): Pair<LocalDate, String> {
+internal suspend fun Data.dateAndYear(f: Firm, text: String?): Pair<LocalDate, String> {
     val date = text?.let(::parseDate) ?: now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val fy = repos.firms.observeFinancialYears(f.id).first().firstOrNull { date >= it.startDate && date <= it.endDate }
         ?: fail(Exit.VALIDATION, "No financial year covers $date")

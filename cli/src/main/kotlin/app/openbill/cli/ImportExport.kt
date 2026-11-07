@@ -6,6 +6,9 @@ import app.openbill.core.domain.csv.MasterCsv
 import app.openbill.core.model.Progress
 import app.openbill.core.domain.model.Item
 import app.openbill.core.domain.model.Party
+import app.openbill.core.domain.usecase.PostVoucher
+import app.openbill.core.domain.usecase.StockVouchers
+import kotlinx.coroutines.flow.first
 import androidx.room.Transactor
 import androidx.room.useWriterConnection
 import com.github.ajalt.clikt.core.CliktCommand
@@ -23,7 +26,8 @@ private val ITEM_COLUMNS = MasterCsv.ITEM_COLUMNS
 
 /** `import parties|items FILE.csv [--dry-run]`: every row validated; all rows or none written. */
 class ImportCsv(private val cli: CliState, private val entity: String) : CliktCommand(entity) {
-    override fun help(context: Context) = "Import $entity from CSV (header: ${(if (entity == "parties") PARTY_COLUMNS else ITEM_COLUMNS).joinToString(",")})"
+    override fun help(context: Context) = "Import $entity from CSV (header: ${(if (entity == "parties") PARTY_COLUMNS else ITEM_COLUMNS).joinToString(",")})" +
+        if (entity == "parties") "" else "; optional opening stock columns: ${MasterCsv.OPENING_COLUMNS.joinToString(",")}"
     private val file by argument().file(mustExist = true, canBeDir = false)
     private val dryRun by option("--dry-run", help = "Validate only; write nothing").flag()
 
@@ -32,7 +36,7 @@ class ImportCsv(private val cli: CliState, private val entity: String) : CliktCo
         val text = file.readText()
         cli.progress(Progress("Checking rows"))
         val result: CsvImport<*> = if (entity == "parties") MasterCsv.parties(text, f.id, cli.env.newId, now())
-        else MasterCsv.items(text, f.id, units(f.id), items(f.id), cli.env.newId, now())
+        else MasterCsv.items(text, f.id, units(f.id), items(f.id), cli.env.newId, now(), repos.catalog.observeGodowns(f.id).first())
         val errors = result.errors
         if (cli.json) {
             cli.printJson(jsonOf("rows" to result.rows, "valid" to result.valid.size, "errors" to errors.map { jsonOf("row" to it.first, "message" to it.second) }, "imported" to (!dryRun && errors.isEmpty())))
@@ -40,8 +44,8 @@ class ImportCsv(private val cli: CliState, private val entity: String) : CliktCo
             errors.forEach { (row, msg) -> cli.env.err.println("row $row: $msg") }
         }
         if (errors.isNotEmpty()) fail(Exit.VALIDATION, "${errors.size} invalid row(s); nothing imported")
-        // ponytail: CLI does not post opening stock; import those rows in the app or use `stock adjust`.
-        if (result.openings.isNotEmpty()) fail(Exit.VALIDATION, "Opening stock columns are imported in the app; remove them or post with `stock adjust`")
+        // Opening stock is posted as one "Opening stock" adjustment dated today, as in the app.
+        val openingYear = if (result.openings.isEmpty()) null else dateAndYear(f, null)
         if (dryRun) {
             if (!cli.json) cli.out.println("${result.valid.size} row(s) valid (dry run; nothing written)")
             return@withData
@@ -54,10 +58,23 @@ class ImportCsv(private val cli: CliState, private val entity: String) : CliktCo
                     if (it is Party) repos.parties.saveParty(it) else repos.catalog.saveItem(it as Item)
                     cli.progress(Progress("Importing $entity", i + 1L, total))
                 }
+                if (openingYear != null) {
+                    val (today, fy) = openingYear
+                    StockVouchers(repos.vouchers, PostVoucher(repos.vouchers)).postOpenings(
+                        cli.env.newId(), f.id, fy, f.stateCode, today, result.valid.filterIsInstance<Item>(), result.openings,
+                        {
+                            val godowns = repos.catalog.observeGodowns(f.id).first()
+                            repos.firms.findSettings(f.id)?.defaultGodownId?.takeIf { id -> godowns.any { it.id == id } }
+                                ?: godowns.firstOrNull { it.isDefault }?.id ?: godowns.firstOrNull()?.id
+                                ?: error("No godown; add one before importing opening stock")
+                        },
+                        now(),
+                    )
+                }
             }
         }
         cli.progressDone()
-        if (!cli.json) cli.out.println("Imported ${result.valid.size} $entity")
+        if (!cli.json) cli.out.println("Imported ${result.valid.size} $entity" + if (result.openings.isEmpty()) "" else " (${result.openings.size} with opening stock)")
     }
 }
 

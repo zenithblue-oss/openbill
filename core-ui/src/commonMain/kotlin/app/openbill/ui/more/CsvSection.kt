@@ -51,18 +51,10 @@ private suspend fun postOpenings(container: AppContainer, firmId: String, items:
     val fy = repos.firms.observeFinancialYears(firmId).first().firstOrNull { today >= it.startDate && today <= it.endDate }
         ?: error("No financial year covers today; add one before importing opening stock")
     val firm = repos.firms.findFirm(firmId) ?: error("Unknown firm")
-    var defaultGodown: String? = null
-    val lines = items.mapNotNull { item ->
-        val o = openings[item.id] ?: return@mapNotNull null
-        app.openbill.core.domain.usecase.StockLineInput(
-            itemId = item.id, description = item.name, quantity = o.quantity, unitCost = o.unitCost,
-            godownId = o.godownId ?: defaultGodown ?: app.openbill.ui.inventory.Inventory.ensureDefaultGodown(container, firmId).also { defaultGodown = it },
-            batchNumber = o.batch, expiryDate = o.expiry,
-        )
-    }
-    val id = container.newId()
-    app.openbill.core.domain.usecase.StockVouchers(repos.vouchers, container.postVoucher)
-        .adjust(id, firmId, fy.id, firm.stateCode, today, "Opening stock", lines, { i -> "$id-$i" }, container.now())
+    app.openbill.core.domain.usecase.StockVouchers(repos.vouchers, container.postVoucher).postOpenings(
+        container.newId(), firmId, fy.id, firm.stateCode, today, items, openings,
+        { app.openbill.ui.inventory.Inventory.ensureDefaultGodown(container, firmId) }, container.now(),
+    )
 }
 
 /** CSV import of parties and items (dry-run preview first, all rows or none), CSV export, and the recycle bin. */

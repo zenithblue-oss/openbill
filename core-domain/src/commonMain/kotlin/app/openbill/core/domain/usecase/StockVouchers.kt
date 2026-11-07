@@ -47,6 +47,34 @@ class StockVouchers(
         at: Instant,
     ): Voucher = postNew(VoucherType.STOCK_ADJUSTMENT, id, firmId, financialYearId, stateCode, date, reason, lines, lineId, at)
 
+    /**
+     * An item CSV import's opening stock as one posted "Opening stock" adjustment (app and CLI);
+     * rows without a godown go to [defaultGodown], asked for at most once. Null when there is none.
+     */
+    suspend fun postOpenings(
+        id: String,
+        firmId: String,
+        financialYearId: String,
+        stateCode: String,
+        date: LocalDate,
+        items: List<app.openbill.core.domain.model.Item>,
+        openings: Map<String, app.openbill.core.domain.csv.OpeningStock>,
+        defaultGodown: suspend () -> String,
+        at: Instant,
+    ): Voucher? {
+        var fallback: String? = null
+        val lines = items.mapNotNull { item ->
+            val o = openings[item.id] ?: return@mapNotNull null
+            StockLineInput(
+                itemId = item.id, description = item.name, quantity = o.quantity, unitCost = o.unitCost,
+                godownId = o.godownId ?: fallback ?: defaultGodown().also { fallback = it },
+                batchNumber = o.batch, expiryDate = o.expiry,
+            )
+        }
+        if (lines.isEmpty()) return null
+        return adjust(id, firmId, financialYearId, stateCode, date, "Opening stock", lines, { "$id-$it" }, at)
+    }
+
     suspend fun transfer(
         id: String,
         firmId: String,
