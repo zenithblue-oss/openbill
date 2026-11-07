@@ -132,7 +132,7 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - name: Build and test
-        run: ./gradlew --console=plain :cli:test :cli:installDist
+        run: ./gradlew --console=plain -Popenbill.version="${GITHUB_REF_NAME#v}" :cli:test :cli:installDist
       - name: Package tar.gz, zip and deb
         run: |
           set -euo pipefail
@@ -153,7 +153,7 @@ jobs:
             "Maintainer: OpenBill <noreply@github.com>" \
             "Description: OpenBill command-line client" " Reads and writes OpenBill data and backups from scripts." > "$pkg/DEBIAN/control"
           dpkg-deb --root-owner-group --build "$pkg" "$out/openbill-cli_${ver}_all.deb"
-          "$pkg/usr/bin/openbill" version
+          "$pkg/usr/bin/openbill" version | grep -F "openbill $ver "
           ls -l "$out"
       - uses: actions/upload-artifact@v4
         with:

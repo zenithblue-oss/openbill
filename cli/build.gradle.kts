@@ -17,7 +17,7 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
-version = "1.0.1"
+version = providers.gradleProperty("openbill.version").get()
 
 dependencies {
     implementation(project(":core-data"))
