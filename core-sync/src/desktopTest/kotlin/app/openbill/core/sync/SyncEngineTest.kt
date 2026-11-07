@@ -15,7 +15,7 @@ import kotlinx.coroutines.runBlocking
 /** Two and three devices through the engine and the in-process server, one conflict rule at a time (docs/10-server.md 6.3-6.5). */
 class SyncEngineTest {
     private val root: File = Files.createTempDirectory("openbill-sync").toFile()
-    private val server = InMemorySyncServer(File(root, "server"))
+    private val server = SyncServer(File(root, "server"))
     private val devices = mutableListOf<SimDevice>()
 
     @AfterTest
@@ -185,5 +185,38 @@ class SyncEngineTest {
         assertEquals(listOf(ref), b.db.ids("SELECT logoPath FROM firms"), "b has no copy yet: it keeps the reference")
         assertTrue(File(a.db.ids("SELECT logoPath FROM firms").single()).readBytes().contentEquals(byteArrayOf(1, 2, 3)), "a resolves its own blob")
         assertConverged(listOf(a, b))
+    }
+
+    /** The log append is durable but the database commit is lost (power cut): the tail is replayed, the device's retry is a duplicate. */
+    @Test
+    fun aLostDatabaseCommitIsReplayedFromTheLog(): Unit = runBlocking {
+        var cut = false
+        val crashing = SyncServer(File(root, "crash")) { file ->
+            val real = SqliteSyncLog(file)
+            object : SyncLog by real {
+                override fun append(ops: List<SyncOperation>) = real.append(ops).also { if (cut) { cut = false; error("power cut") } }
+            }
+        }
+        try {
+            val a = SimDevice("A", File(root, "ca"), "A", crashing, 7).also { devices += it }
+            a.open()
+            seedFirm(a.repos)
+            val snapshot = File(root, "crash-seed.db")
+            SyncSnapshots.vacuumInto(a.file, snapshot)
+            crashing.createWorkspace(WS, snapshot.readBytes())
+            SyncOutbox(a.db).enable("A")
+            a.repos.vouchers.saveDraft(bill("s-1", VoucherType.SALE, "cust-1", a.today(), a.now(), listOf(Triple("item-widget", 1L, 1_000L))))
+            a.repos.vouchers.post("s-1", a.now())
+            cut = true
+            assertFailsWith<IllegalStateException> { crashing.push(WS, SyncOutbox(a.db).pending()) }
+            assertEquals(listOf("s-1"), crashing.database(WS).ids("SELECT id FROM vouchers WHERE status = 'posted'"), "replayed from the log")
+            a.sync()
+            assertEquals(0L, SyncOutbox(a.db).size())
+            assertEquals("", dumpDiff(crashing.database(WS).canonicalDump(BlobRefs.None), a.db.canonicalDump(a.blobs)))
+            crashing.restart(WS)
+            assertEquals(crashing.head(WS), crashing.database(WS).syncDao().state()!!.cursor, "the database records the seq it holds")
+        } finally {
+            crashing.close()
+        }
     }
 }

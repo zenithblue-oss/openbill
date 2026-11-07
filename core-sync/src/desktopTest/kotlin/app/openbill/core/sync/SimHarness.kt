@@ -70,9 +70,10 @@ internal class FlakyTransport(private val server: SyncTransport, private val ran
     override suspend fun snapshot(workspaceId: String) = server.snapshot(workspaceId)
 }
 
-internal class SimDevice(val name: String, val dir: File, val series: String, private val server: InMemorySyncServer, seed: Long) {
+/** [link]: how the device reaches [server] (in process, or over HTTP in the contract test). */
+internal class SimDevice(val name: String, val dir: File, val series: String, private val server: SyncServer, seed: Long, link: SyncTransport = server) {
     val random = Random(seed)
-    val transport = FlakyTransport(server, Random(seed + 1), faults = 0.0)
+    val transport = FlakyTransport(link, Random(seed + 1), faults = 0.0)
     val file = File(dir, "openbill.db")
     val blobs = FileBlobRefs(File(dir, "blobs"))
     lateinit var db: OpenBillDatabase

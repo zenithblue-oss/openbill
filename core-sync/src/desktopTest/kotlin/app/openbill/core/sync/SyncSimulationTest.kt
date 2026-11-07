@@ -56,14 +56,25 @@ class SyncSimulationTest {
     }
 }
 
-private class Simulation(seed: Long, private val root: File, private val steps: Int, private val faults: Double) {
+/**
+ * [link]: how devices reach [server] (the HTTP contract test passes the real HTTP transport);
+ * [seedWith]: how the first device's snapshot gets there.
+ */
+internal class Simulation(
+    seed: Long,
+    private val root: File,
+    private val steps: Int,
+    private val faults: Double,
+    private val server: SyncServer = SyncServer(File(root, "server")),
+    link: SyncTransport = server,
+    private val seedWith: suspend (ByteArray) -> Unit = { server.createWorkspace(WS, it) },
+) {
     class Result(val failures: List<String>, val serverOps: Long, val rejectedGroups: Long, val files: List<String>)
 
     private class Posted(val number: String, val total: String, val journal: Map<String, Long>, val stock: Map<String, Long>)
 
     private val random = Random(seed)
-    private val server = InMemorySyncServer(File(root, "server"))
-    private val devices = listOf("A", "B", "C").mapIndexed { i, s -> SimDevice(s, File(root, "device-$s"), s, server, seed * 31 + i) }
+    private val devices = listOf("A", "B", "C").mapIndexed { i, s -> SimDevice(s, File(root, "device-$s"), s, server, seed * 31 + i, link) }
     private val posted = HashMap<String, Posted>()
     private val failures = ArrayList<String>()
     private var backedUp = false
@@ -75,7 +86,7 @@ private class Simulation(seed: Long, private val root: File, private val steps: 
         seedFirm(a.repos)
         val seedFile = File(root, "seed.db")
         SyncSnapshots.vacuumInto(a.file, seedFile)
-        server.createWorkspace(WS, seedFile.readBytes())
+        seedWith(seedFile.readBytes())
         SyncOutbox(a.db).enable(a.series)
         devices.drop(1).forEach { it.join() }
         devices.forEach { it.transport.faults = faults }

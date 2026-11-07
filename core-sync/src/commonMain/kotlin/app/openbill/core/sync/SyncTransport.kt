@@ -1,8 +1,8 @@
 package app.openbill.core.sync
 
 /**
- * The device's view of a sync server (docs/10-server.md section 6.3). [InMemorySyncServer] runs
- * it in process for the simulation suite; S1 puts the same calls behind HTTP.
+ * The device's view of a sync server (docs/10-server.md section 6.3). `SyncServer` (JVM) runs it
+ * in process for the simulation suite; [HttpSyncTransport] makes the same calls over HTTP.
  */
 interface SyncTransport {
     /**
