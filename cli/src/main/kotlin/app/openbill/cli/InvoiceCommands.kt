@@ -8,6 +8,7 @@ import app.openbill.core.domain.model.VoucherStatus
 import app.openbill.core.domain.model.VoucherType
 import app.openbill.core.domain.usecase.CancelVoucher
 import app.openbill.core.domain.usecase.PostVoucher
+import app.openbill.core.domain.usecase.RestoreVoucher
 import app.openbill.core.model.Money
 import app.openbill.core.model.Quantity
 import app.openbill.core.model.Rate
@@ -49,7 +50,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 fun invoiceCommands(cli: CliState) = Group("invoice", "Sales invoices").subcommands(
-    InvoiceList(cli), InvoiceShow(cli), InvoiceCreate(cli), InvoicePost(cli), InvoiceCancel(cli), InvoicePdfCmd(cli),
+    InvoiceList(cli), InvoiceShow(cli), InvoiceCreate(cli), InvoicePost(cli), InvoiceCancel(cli), InvoiceRestore(cli),
+    InvoiceDelete(cli), InvoiceRecycleBin(cli), InvoicePdfCmd(cli),
 )
 
 private val ALL_FROM = LocalDate(1900, 1, 1)
@@ -266,6 +268,68 @@ class InvoiceCancel(private val cli: CliState) : CliktCommand("cancel") {
         if (cli.json) cli.printJson(invoiceJson(cancelled, withLines = false))
         else if (cli.quiet) cli.out.println(cancelled.number)
         else cli.out.println("Cancelled ${cancelled.number}")
+    }
+}
+
+/**
+ * `invoice restore REF --reason TEXT`, as the app does: a cancelled invoice is restored (stock and
+ * ledger re-applied, reason audited); a deleted draft comes back from the recycle bin.
+ */
+class InvoiceRestore(private val cli: CliState) : CliktCommand("restore") {
+    override fun help(context: Context) = "Restore a cancelled invoice (reason required) or a deleted draft from the recycle bin"
+    private val ref by argument()
+    private val reason by option("--reason", help = "Why it is restored (required for cancelled invoices)")
+
+    override fun run() = cli.withData(write = true) {
+        val v = findInvoice(firm().id, ref)
+        val restored = when {
+            v.deletedAt != null -> repos.vouchers.restoreDraft(v.id, now())
+            v.status == VoucherStatus.CANCELLED -> {
+                val why = reason?.takeIf { it.isNotBlank() } ?: fail(Exit.USAGE, "restore needs --reason")
+                cli.confirm("Restore cancelled invoice ${v.number} (${v.total.indian()})?")
+                RestoreVoucher(repos.vouchers)(v.id, v.cancellationReason ?: "Cancelled", why, now())
+            }
+            else -> fail(Exit.CONFLICT, "Invoice ${v.number ?: v.id} is ${v.status.name.lowercase()}; only cancelled invoices and deleted drafts can be restored")
+        }
+        if (cli.json) cli.printJson(invoiceJson(restored, withLines = false))
+        else if (cli.quiet) cli.out.println(restored.number ?: restored.id)
+        else cli.out.println("Restored ${restored.number ?: restored.id}")
+    }
+}
+
+/** `invoice delete REF`: a draft goes to the recycle bin (posted invoices are cancelled instead). */
+class InvoiceDelete(private val cli: CliState) : CliktCommand("delete") {
+    override fun help(context: Context) = "Move a draft invoice to the recycle bin"
+    private val ref by argument()
+
+    override fun run() = cli.withData(write = true) {
+        val v = findInvoice(firm().id, ref)
+        if (v.status != VoucherStatus.DRAFT || v.deletedAt != null) fail(Exit.CONFLICT, "Only drafts can be deleted; cancel posted invoices")
+        repos.vouchers.softDeleteDraft(v.id, now())
+        if (cli.json) cli.printJson(jsonOf("id" to v.id, "deleted" to true)) else cli.out.println(v.id)
+    }
+}
+
+/** `invoice recycle-bin [--purge ID --yes]`: deleted drafts, newest first; purge removes one for good. */
+class InvoiceRecycleBin(private val cli: CliState) : CliktCommand("recycle-bin") {
+    override fun help(context: Context) = "List deleted drafts (all document types); --purge ID removes one permanently"
+    private val purge by option("--purge", help = "Deleted draft id to remove permanently")
+
+    override fun run() = cli.withData(write = purge != null) {
+        val f = firm()
+        val bin = repos.vouchers.observeRecycleBin(f.id).first()
+        purge?.let { id ->
+            val v = bin.firstOrNull { it.id == id } ?: fail(Exit.NOT_FOUND, "No deleted draft '$id' in the recycle bin")
+            cli.confirm("Permanently remove draft ${v.id} (${v.total.indian()})?")
+            repos.vouchers.purgeDraft(v.id)
+            if (cli.json) cli.printJson(jsonOf("id" to v.id, "purged" to true)) else cli.out.println(v.id)
+            return@withData
+        }
+        when {
+            cli.json -> cli.printJson(toJson(bin.map { jsonOf("id" to it.id, "type" to it.type.label(), "date" to it.date, "total" to it.total, "deletedAt" to it.deletedAt?.toString()) }))
+            cli.quiet -> bin.forEach { cli.out.println(it.id) }
+            else -> cli.printTable(listOf(Col("ID"), Col("TYPE"), Col("DATE"), Col("TOTAL", true), Col("DELETED")), bin.map { listOf(it.id, it.type.label(), it.date.toString(), it.total.indian(), it.deletedAt.toString()) })
+        }
     }
 }
 

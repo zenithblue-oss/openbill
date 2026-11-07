@@ -18,6 +18,8 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
+import com.github.ajalt.clikt.parameters.types.int
+import app.openbill.core.domain.model.VoucherType
 import kotlinx.coroutines.flow.first
 
 // ---- Shared views (JSON field names are a public contract) ----
@@ -203,6 +205,59 @@ class ItemAdd(private val cli: CliState) : CliktCommand("add") {
         if (cli.json) cli.printJson(itemJson(i, units(f.id).symbolOf(i.unitId))) else cli.out.println(i.id)
     }
 }
+
+// ---- search ----
+
+/** `search QUERY`: the app's list searches (number, reference or party name; name, phone or GSTIN; name, SKU, HSN, barcode or fields) in one go. */
+class Search(private val cli: CliState) : CliktCommand("search") {
+    override fun help(context: Context) = "Search invoices, parties, items, payments, expenses and other documents"
+    private val query by argument()
+    private val type by option("--type").choice(*SEARCH_TYPES.keys.toTypedArray(), "parties", "items", "all").default("all")
+    private val limit by option("--limit", help = "Matches per kind (default 20)").int().default(20)
+
+    override fun run() = cli.withData(write = false) {
+        if (query.isBlank()) fail(Exit.USAGE, "Give something to search for")
+        if (limit < 1) fail(Exit.USAGE, "--limit must be 1 or more")
+        val f = firm()
+        val rows = buildList {
+            if (type == "all" || type == "parties") {
+                repos.parties.observePartyPage(f.id, PartyType.entries.toSet(), query, limit).first()
+                    .forEach { add(listOf("party", it.name, null, it.phone ?: it.gstin, null, null, it.id)) }
+            }
+            if (type == "all" || type == "items") {
+                repos.catalog.observeItemPage(f.id, null, query, limit).first()
+                    .forEach { add(listOf("item", it.name, null, it.sku, it.salePrice, null, it.id)) }
+            }
+            val kinds = if (type == "all") SEARCH_TYPES.values.toList() else listOfNotNull(SEARCH_TYPES[type])
+            for (types in kinds) {
+                val docs = repos.vouchers.observeVoucherPage(f.id, types, null, query, limit).first()
+                val names = docs.mapNotNull { it.partyId }.distinct().associateWith { repos.parties.findParty(it)?.name }
+                docs.forEach { v -> add(listOf(v.type.label(), v.number ?: "(draft)", v.date, v.partyId?.let(names::get), v.total, v.status.name.lowercase(), v.id)) }
+            }
+        }
+        when {
+            cli.json -> cli.printJson(toJson(rows.map { r -> jsonOf("kind" to r[0], "title" to r[1], "date" to r[2], "detail" to r[3], "amount" to r[4], "status" to r[5], "id" to r[6]) }))
+            cli.quiet -> rows.forEach { cli.out.println(it[6]) }
+            else -> cli.printTable(
+                listOf(Col("KIND"), Col("TITLE"), Col("DATE"), Col("DETAIL"), Col("AMOUNT", true), Col("STATUS"), Col("ID")),
+                rows.map { r -> r.map { c -> (c as? Money)?.indian() ?: c?.toString() ?: "-" } },
+            )
+        }
+    }
+}
+
+/** `search --type` names of document kinds. */
+val SEARCH_TYPES = linkedMapOf(
+    "invoices" to setOf(VoucherType.SALE),
+    "purchases" to setOf(VoucherType.PURCHASE),
+    "payments" to setOf(VoucherType.PAYMENT_IN, VoucherType.PAYMENT_OUT),
+    "expenses" to setOf(VoucherType.EXPENSE),
+    "orders" to setOf(VoucherType.SALES_ORDER, VoucherType.PURCHASE_ORDER),
+    "documents" to setOf(VoucherType.CREDIT_NOTE, VoucherType.DEBIT_NOTE, VoucherType.QUOTATION, VoucherType.PROFORMA, VoucherType.DELIVERY_CHALLAN, VoucherType.CONTRA, VoucherType.STOCK_ADJUSTMENT, VoucherType.STOCK_TRANSFER),
+)
+
+/** Lower-case, dash-separated voucher type: `sale`, `payment-in`, `sales-order`. */
+fun VoucherType.label() = name.lowercase().replace('_', '-')
 
 suspend fun Data.newItem(
     firmId: String, name: String, sku: String?, unit: String?, hsn: String?,

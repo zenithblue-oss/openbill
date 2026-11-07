@@ -124,6 +124,35 @@ class CliTest {
     }
 
     @Test
+    fun searchRestoreAndRecycleBin() {
+        seed()
+        fun ok(vararg a: String) = run(*a).also { assertEquals(0, it.code, it.err) }
+        val number = ok("-q", "invoice", "create", "--party", "Acme Stores", "--date", "2026-10-01", "--line", "BOLT:2", "--post").out.trim()
+        val all = ok("--json", "search", "Acme").out
+        assertTrue("\"kind\": \"party\"" in all && "\"kind\": \"sale\"" in all, all)
+        assertTrue(ok("search", "bolt", "--type", "items").out.contains("Steel Bolt"))
+        assertTrue(ok("--json", "search", "Acme", "--type", "payments").out.trim() == "[]")
+        assertEquals(2, run("search", "x", "--type", "nope").code)
+
+        assertEquals(5, run("invoice", "restore", number, "--reason", "x").code) // posted, not cancelled
+        ok("--yes", "invoice", "cancel", number, "--reason", "Wrong rate")
+        assertEquals(2, run("--yes", "invoice", "restore", number).code) // needs --reason
+        ok("--yes", "invoice", "restore", number, "--reason", "Rate was right")
+        assertTrue(ok("invoice", "show", number).out.contains("posted"))
+        assertTrue(ok("audit", "list").out.contains("restore"))
+
+        val draft = ok("invoice", "create", "--party", "Acme Stores", "--date", "2026-10-02", "--line", "BOLT:1").out.trim()
+        ok("invoice", "delete", draft)
+        assertTrue(ok("-q", "invoice", "recycle-bin").out.contains(draft))
+        ok("invoice", "restore", draft)
+        assertTrue(ok("-q", "invoice", "recycle-bin").out.isBlank())
+        ok("invoice", "delete", draft)
+        assertEquals(2, run("invoice", "recycle-bin", "--purge", draft).code) // needs --yes
+        ok("--yes", "invoice", "recycle-bin", "--purge", draft)
+        assertEquals(4, run("invoice", "show", draft).code)
+    }
+
+    @Test
     fun exitCodes() {
         seed()
         assertEquals(2, run("party", "add").code) // missing --name
